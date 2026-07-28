@@ -1,0 +1,4 @@
+[workspace]
+members = ["crates/eck-integrity"]
+resolver = "2"
+

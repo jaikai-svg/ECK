@@ -1,0 +1,40 @@
+name: eck-digital-life-kernel
+
+services:
+  eck:
+    build:
+      context: .
+    image: eck-digital-life-kernel:0.1.0
+    restart: unless-stopped
+    read_only: true
+    init: true
+    ports:
+      - "127.0.0.1:8420:8420"
+    environment:
+      ECK_ENVIRONMENT: production
+      ECK_BIND_HOST: 0.0.0.0
+      ECK_BIND_PORT: 8420
+      ECK_ALLOW_REMOTE_BIND: "true"
+      ECK_DATA_DIR: /app/data
+      ECK_WORKSPACE_DIR: /app/workspace
+      ECK_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      ECK_OLLAMA_MODEL: ${ECK_OLLAMA_MODEL:-}
+      ECK_NETWORK_ENABLED: "false"
+      ECK_SYSTEM_FILE_MUTATION_ENABLED: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - eck-data:/app/data
+      - eck-workspace:/app/workspace
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+
+volumes:
+  eck-data:
+  eck-workspace:
+

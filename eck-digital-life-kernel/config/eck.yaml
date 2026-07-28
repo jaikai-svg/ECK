@@ -1,0 +1,27 @@
+# ECK Digital Life Kernel v0.1 reference configuration.
+# Environment variables prefixed with ECK_ override these values.
+environment: development
+identity: eck-local
+data_dir: data
+workspace_dir: workspace
+
+bind_host: 127.0.0.1
+bind_port: 8420
+allow_remote_bind: false
+auto_start_kernel: true
+
+heartbeat_seconds: 5
+sleep_cycle_seconds: 3600
+task_poll_seconds: 0.5
+
+brain_provider: ollama
+ollama_base_url: http://127.0.0.1:11434
+ollama_model:
+ollama_timeout_seconds: 120
+
+network_enabled: false
+system_file_mutation_enabled: false
+require_approval_for_medium_risk: false
+max_task_attempts: 5
+max_events_page_size: 500
+

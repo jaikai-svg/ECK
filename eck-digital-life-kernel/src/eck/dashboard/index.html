@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECK Digital Life Kernel</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">EMBODIED COGNITIVE KERNEL</p>
+      <h1>Digital Life Kernel <span>v0.1</span></h1>
+      <p class="subtitle">持續存活、累積經驗、以外部證據約束學習。</p>
+    </div>
+    <div class="phase" id="phase">CONNECTING</div>
+  </header>
+
+  <main>
+    <section class="metrics" aria-label="Kernel metrics">
+      <article><span>Boot count</span><strong id="boot-count">–</strong></article>
+      <article><span>Events</span><strong id="event-count">–</strong></article>
+      <article><span>Pending tasks</span><strong id="pending-tasks">–</strong></article>
+      <article><span>Approvals</span><strong id="pending-approvals">–</strong></article>
+    </section>
+
+    <section class="control-panel">
+      <div>
+        <h2>生命週期控制</h2>
+        <p>所有狀態轉移都會寫入可重播事件鏈。</p>
+      </div>
+      <div class="actions">
+        <button data-action="resume">Resume</button>
+        <button data-action="pause" class="secondary">Pause</button>
+        <button data-action="sleep" class="secondary">Sleep cycle</button>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-title">
+          <div><p class="eyebrow">ACCEPTANCE</p><h2>驗收情境</h2></div>
+          <button id="run-demos">執行全部</button>
+        </div>
+        <div class="demo-list">
+          <div><span>持續生命與事件鏈</span><b id="demo-persistence">尚未執行</b></div>
+          <div><span>可驗證程式任務</span><b id="demo-code">尚未執行</b></div>
+          <div><span>GridWorld經驗重用</span><b id="demo-grid">尚未執行</b></div>
+        </div>
+        <pre id="demo-output">按下「執行全部」後，結果會顯示於此。</pre>
+      </article>
+
+      <article class="panel">
+        <div class="panel-title">
+          <div><p class="eyebrow">SAFETY</p><h2>行動邊界</h2></div>
+        </div>
+        <ul class="safety-list">
+          <li><i class="ok"></i><span>Success Contract必須存在</span></li>
+          <li><i class="ok"></i><span>外部證據才能授予成功</span></li>
+          <li><i class="ok"></i><span>重現與回歸後才結晶技能</span></li>
+          <li><i id="network-dot"></i><span id="network-state">網路能力檢查中</span></li>
+          <li><i id="system-dot"></i><span id="system-state">系統檔案能力檢查中</span></li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-title"><div><p class="eyebrow">TIMELINE</p><h2>最新事件</h2></div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>事件</th><th>Aggregate</th><th>時間</th></tr></thead>
+            <tbody id="events"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">MEMORY</p>
+            <h2>技能狀態</h2>
+            <p id="memory-counts">E / K / R / S：載入中</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>技能</th><th>成功</th><th>狀態</th></tr></thead>
+            <tbody id="skills"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer>Local only · Apache-2.0 · ECK v0.1</footer>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
