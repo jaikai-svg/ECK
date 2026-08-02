@@ -2,6 +2,18 @@
 
 All notable changes are documented here.
 
+## [0.2.0] - Unreleased
+
+### Planned
+
+- Contract-guided candidate planning with bounded repair and fixed verification.
+- Work Portfolio scheduling and measurable learning-yield telemetry.
+- Provenance-preserving Experience Graph and counterexample memory.
+- Capability-gap-driven skill generation, isolated validation, hot activation, and rollback.
+- Versioned evaluation comparisons and a human-gated candidate LoRA laboratory.
+
+The running package remains v0.1.0 until every v0.2.0 release gate passes.
+
 ## [0.1.0] - 2026-08-02
 
 ### Added

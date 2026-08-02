@@ -9,7 +9,7 @@
 - **Future**：已定義方向，v0.1沒有實作。
 - **Research**：仍是可被證偽的假說，不得視為產品承諾。
 
-## 十三卷
+## 文件索引
 
 1. [Vision, Philosophy & Constitution](01-vision-philosophy-constitution.md)
 2. [Architecture Specification](02-architecture-specification.md)
@@ -25,6 +25,12 @@
 12. [Testing & Validation](12-testing-validation.md)
 13. [Roadmap & Research](13-roadmap-research.md)
 14. [v0.1.0 Completion Report](14-v0.1.0-completion-report.md)
+15. [v0.2.0 Development Specification](15-v0.2.0-development-specification.md)
+
+## v0.2 開發規格下載
+
+- [DOCX](ECK_Digital_Life_Kernel_v0.2.0_Development_Specification_zh-TW.docx)
+- [PDF](ECK_Digital_Life_Kernel_v0.2.0_Development_Specification_zh-TW.pdf)
 
 ## 文件治理
 

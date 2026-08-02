@@ -2,6 +2,9 @@
 
 **Digital Life Kernel v0.1**
 
+> v0.1.0 is the current verified runtime. v0.2.0 is now in specification and
+> development; the runtime version will not change until its release gate passes.
+
 ECK v0.1 is a local, persistent lifecycle runtime that can remain active, restore
 its identity after restart, accumulate Experience, evidence-grounded Knowledge,
 deterministic Reflection, and reusable Skills. It is deliberately **not**

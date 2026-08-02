@@ -339,6 +339,68 @@ def create_ordered_list_numbering(doc: DocumentType, *, start: int = 1) -> int:
     abstract_reference = OxmlElement("w:abstractNumId")
     abstract_reference.set(qn("w:val"), str(abstract_id))
     num.append(abstract_reference)
+    level_override = OxmlElement("w:lvlOverride")
+    level_override.set(qn("w:ilvl"), "0")
+    start_override = OxmlElement("w:startOverride")
+    start_override.set(qn("w:val"), str(start))
+    level_override.append(start_override)
+    num.append(level_override)
+    numbering.append(num)
+    return num_id
+
+
+def create_bullet_list_numbering(doc: DocumentType) -> int:
+    numbering = doc.part.numbering_part.element
+    abstract_ids = [
+        int(element.get(qn("w:abstractNumId"), "0"))
+        for element in numbering.findall(qn("w:abstractNum"))
+    ]
+    num_ids = [
+        int(element.get(qn("w:numId"), "0"))
+        for element in numbering.findall(qn("w:num"))
+    ]
+    abstract_id = max(abstract_ids, default=0) + 1
+    num_id = max(num_ids, default=0) + 1
+
+    abstract = OxmlElement("w:abstractNum")
+    abstract.set(qn("w:abstractNumId"), str(abstract_id))
+    multi_level = OxmlElement("w:multiLevelType")
+    multi_level.set(qn("w:val"), "multilevel")
+    abstract.append(multi_level)
+    markers = ("•", "◦", "▪")
+    for level, marker in enumerate(markers):
+        lvl = OxmlElement("w:lvl")
+        lvl.set(qn("w:ilvl"), str(level))
+        start_element = OxmlElement("w:start")
+        start_element.set(qn("w:val"), "1")
+        num_format = OxmlElement("w:numFmt")
+        num_format.set(qn("w:val"), "bullet")
+        level_text = OxmlElement("w:lvlText")
+        level_text.set(qn("w:val"), marker)
+        suffix = OxmlElement("w:suff")
+        suffix.set(qn("w:val"), "space")
+        paragraph_properties = OxmlElement("w:pPr")
+        indentation = OxmlElement("w:ind")
+        indentation.set(qn("w:left"), str(540 + level * 360))
+        indentation.set(qn("w:hanging"), "270")
+        paragraph_properties.append(indentation)
+        lvl.extend(
+            [
+                start_element,
+                num_format,
+                level_text,
+                suffix,
+                paragraph_properties,
+            ]
+        )
+        abstract.append(lvl)
+    numbering.append(abstract)
+
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), str(num_id))
+    abstract_reference = OxmlElement("w:abstractNumId")
+    abstract_reference.set(qn("w:val"), str(abstract_id))
+    num.append(abstract_reference)
     numbering.append(num)
     return num_id
 
@@ -835,6 +897,7 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
     index = 0
     paragraph_buffer: list[str] = []
     active_ordered_num_id: int | None = None
+    active_bullet_num_id: int | None = None
 
     def flush_paragraph() -> None:
         if not paragraph_buffer:
@@ -851,11 +914,13 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
         if not stripped:
             flush_paragraph()
             active_ordered_num_id = None
+            active_bullet_num_id = None
             index += 1
             continue
         if stripped.startswith("```"):
             flush_paragraph()
             active_ordered_num_id = None
+            active_bullet_num_id = None
             language = stripped[3:].strip()
             index += 1
             code_lines: list[str] = []
@@ -870,6 +935,7 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
             if separator.startswith("|") and re.fullmatch(r"\|?[\s:|-]+\|?", separator):
                 flush_paragraph()
                 active_ordered_num_id = None
+                active_bullet_num_id = None
                 table_lines = [line, lines[index + 1]]
                 index += 2
                 while index < len(lines) and lines[index].strip().startswith("|"):
@@ -881,6 +947,7 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
         if heading_match:
             flush_paragraph()
             active_ordered_num_id = None
+            active_bullet_num_id = None
             level = len(heading_match.group(1))
             if skip_title and level == 1:
                 index += 1
@@ -898,12 +965,14 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
         if stripped == "---":
             flush_paragraph()
             active_ordered_num_id = None
+            active_bullet_num_id = None
             add_rule(doc)
             index += 1
             continue
         if stripped.startswith(">"):
             flush_paragraph()
             active_ordered_num_id = None
+            active_bullet_num_id = None
             quote_lines = []
             while index < len(lines) and lines[index].strip().startswith(">"):
                 quote_lines.append(lines[index].strip()[1:].strip())
@@ -917,6 +986,7 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
             if active_ordered_num_id is None:
                 start = int(ordered_match.group(2)[:-1])
                 active_ordered_num_id = create_ordered_list_numbering(doc, start=start)
+            active_bullet_num_id = None
             paragraph = doc.add_paragraph()
             paragraph.paragraph_format.left_indent = Inches(0.375 + 0.25 * indent)
             paragraph.paragraph_format.first_line_indent = Inches(-0.188)
@@ -933,19 +1003,20 @@ def render_markdown(doc: DocumentType, path: Path, *, skip_title: bool = True) -
         if bullet_match:
             flush_paragraph()
             active_ordered_num_id = None
+            if active_bullet_num_id is None:
+                active_bullet_num_id = create_bullet_list_numbering(doc)
             indent = min(len(bullet_match.group(1)) // 2, 2)
-            base_style = "List Bullet"
-            style_name = f"{base_style} {indent + 1}" if indent else base_style
-            if style_name not in doc.styles:
-                style_name = base_style
-            paragraph = doc.add_paragraph(style=style_name)
-            if indent:
-                paragraph.paragraph_format.left_indent = Inches(0.375 + 0.25 * indent)
-                paragraph.paragraph_format.first_line_indent = Inches(-0.188)
+            paragraph = doc.add_paragraph()
+            paragraph.paragraph_format.left_indent = Inches(0.375 + 0.25 * indent)
+            paragraph.paragraph_format.first_line_indent = Inches(-0.188)
+            paragraph.paragraph_format.space_after = Pt(4)
+            paragraph.paragraph_format.line_spacing = 1.25
+            apply_ordered_list_numbering(paragraph, active_bullet_num_id, indent)
             add_inline(paragraph, bullet_match.group(2))
             index += 1
             continue
         active_ordered_num_id = None
+        active_bullet_num_id = None
         paragraph_buffer.append(stripped)
         index += 1
 
