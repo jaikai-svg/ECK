@@ -3,97 +3,320 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ECK Digital Life Kernel</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <meta name="theme-color" content="#07111f">
+  <title>ECK 數位生命核心</title>
+  <link rel="stylesheet" href="/static/styles.css?v=15">
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">EMBODIED COGNITIVE KERNEL</p>
-      <h1>Digital Life Kernel <span>v0.1</span></h1>
-      <p class="subtitle">持續存活、累積經驗、以外部證據約束學習。</p>
-    </div>
-    <div class="phase" id="phase">CONNECTING</div>
-  </header>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
 
-  <main>
-    <section class="metrics" aria-label="Kernel metrics">
-      <article><span>Boot count</span><strong id="boot-count">–</strong></article>
-      <article><span>Events</span><strong id="event-count">–</strong></article>
-      <article><span>Pending tasks</span><strong id="pending-tasks">–</strong></article>
-      <article><span>Approvals</span><strong id="pending-approvals">–</strong></article>
-    </section>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#home" aria-label="ECK 首頁">
+        <span class="brand-mark">E</span>
+        <span><b>ECK</b><small>DIGITAL LIFE KERNEL</small></span>
+      </a>
 
-    <section class="control-panel">
-      <div>
-        <h2>生命週期控制</h2>
-        <p>所有狀態轉移都會寫入可重播事件鏈。</p>
+      <nav class="nav" aria-label="主要頁面">
+        <a href="#home" data-view-link="home" class="active"><span>01</span>對話與狀態</a>
+        <a href="#challenges" data-view-link="challenges"><span>02</span>課題挑戰</a>
+        <a href="#learning" data-view-link="learning"><span>03</span>學習成果</a>
+        <a href="#roadmap" data-view-link="roadmap"><span>04</span>使命與路線圖</a>
+        <a href="#system" data-view-link="system"><span>05</span>系統資訊</a>
+      </nav>
+
+      <div class="sidebar-status">
+        <div class="live-row"><i id="connection-dot"></i><span id="connection-state">連線中</span></div>
+        <div class="sidebar-status-row"><span>模型</span><b id="sidebar-model">—</b></div>
+        <div class="sidebar-status-row"><span>狀態</span><b id="sidebar-phase">—</b></div>
       </div>
-      <div class="actions">
-        <button data-action="resume">Resume</button>
-        <button data-action="pause" class="secondary">Pause</button>
-        <button data-action="sleep" class="secondary">Sleep cycle</button>
+
+      <div class="sidebar-footer">
+        <span>Kernel v<span id="version">0.1.0</span></span>
+        <span>Local only</span>
       </div>
-    </section>
+    </aside>
 
-    <section class="grid">
-      <article class="panel">
-        <div class="panel-title">
-          <div><p class="eyebrow">ACCEPTANCE</p><h2>驗收情境</h2></div>
-          <button id="run-demos">執行全部</button>
+    <main class="workspace">
+      <div class="topbar">
+        <div>
+          <span class="eyebrow">ECK CONTROL CENTER</span>
+          <h1 id="page-title">對話與狀態</h1>
         </div>
-        <div class="demo-list">
-          <div><span>持續生命與事件鏈</span><b id="demo-persistence">尚未執行</b></div>
-          <div><span>可驗證程式任務</span><b id="demo-code">尚未執行</b></div>
-          <div><span>GridWorld經驗重用</span><b id="demo-grid">尚未執行</b></div>
+        <div class="topbar-status">
+          <span class="live-badge"><i></i><b id="phase">CONNECTING</b></span>
+          <span id="uptime"><b id="uptime-days">00天</b><b id="uptime-clock">00:00:00</b></span>
         </div>
-        <pre id="demo-output">按下「執行全部」後，結果會顯示於此。</pre>
-      </article>
+      </div>
 
-      <article class="panel">
-        <div class="panel-title">
-          <div><p class="eyebrow">SAFETY</p><h2>行動邊界</h2></div>
-        </div>
-        <ul class="safety-list">
-          <li><i class="ok"></i><span>Success Contract必須存在</span></li>
-          <li><i class="ok"></i><span>外部證據才能授予成功</span></li>
-          <li><i class="ok"></i><span>重現與回歸後才結晶技能</span></li>
-          <li><i id="network-dot"></i><span id="network-state">網路能力檢查中</span></li>
-          <li><i id="system-dot"></i><span id="system-state">系統檔案能力檢查中</span></li>
-        </ul>
-      </article>
-    </section>
+      <section class="view active" data-view="home">
+        <div class="home-grid">
+          <article class="panel chat-panel primary-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">TALK TO ECK</p>
+                <h2>你現在想完成什麼？</h2>
+                <p>直接提問、交付任務或要求它解釋目前學到的內容。</p>
+              </div>
+              <button class="text-button" id="clear-chat" type="button">清除對話</button>
+            </div>
+            <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
+            <form class="chat-form" id="chat-form">
+              <textarea id="chat-input" maxlength="4000" rows="4" placeholder="傳訊息給 ECK…" required></textarea>
+              <div class="chat-actions">
+                <span id="chat-context">使用本機已驗證記憶</span>
+                <button type="submit">傳送</button>
+              </div>
+            </form>
+          </article>
 
-    <section class="grid">
-      <article class="panel">
-        <div class="panel-title"><div><p class="eyebrow">TIMELINE</p><h2>最新事件</h2></div></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>#</th><th>事件</th><th>Aggregate</th><th>時間</th></tr></thead>
-            <tbody id="events"></tbody>
-          </table>
+          <article class="panel activity-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">CURRENT ACTIVITY</p>
+                <h2>它現在正在做什麼</h2>
+              </div>
+              <span class="pill" id="activity-state">讀取中</span>
+            </div>
+            <div class="eck-presence" id="eck-presence" data-mood="waiting">
+              <div class="eck-face" aria-hidden="true"><span id="eck-face">•‿•</span><i></i></div>
+              <div class="eck-presence-copy">
+                <span>ECK LIVE</span>
+                <b id="dynamic-activity">正在觀察下一個學習機會</b>
+                <small id="supervisor-label">監督者待命</small>
+              </div>
+            </div>
+            <div class="activity-focus">
+              <span class="activity-indicator" id="activity-indicator"></span>
+              <div><b id="current-activity">確認核心狀態</b><p id="activity-detail">正在讀取任務與課題。</p></div>
+            </div>
+            <div class="thought-head">
+              <span>可稽核思考摘要</span>
+              <small>計畫、動作、證據、結論</small>
+            </div>
+            <div class="thought-feed" id="thought-feed"></div>
+            <p class="thought-policy">這裡呈現可驗證的決策摘要與行動紀錄，不顯示模型不可驗證的私有推理文字。</p>
+            <div class="supervisor-card">
+              <div class="supervisor-head"><span>監督者評估</span><small id="supervisor-model">—</small></div>
+              <p id="supervisor-assessment">尚未完成第一次學習檢查。</p>
+              <ul id="supervisor-recommendations"></ul>
+              <div class="supervisor-challenge" id="supervisor-challenge">下一輪會在閒置時自動提出考驗。</div>
+            </div>
+          </article>
         </div>
-      </article>
-      <article class="panel">
-        <div class="panel-title">
-          <div>
-            <p class="eyebrow">MEMORY</p>
-            <h2>技能狀態</h2>
-            <p id="memory-counts">E / K / R / S：載入中</p>
+
+        <section class="result-strip" aria-label="核心學習結果">
+          <article><span>已驗證經驗</span><b id="experience-count">—</b><small>可正向使用</small></article>
+          <article><span>活躍技能</span><b id="active-skill-count">—</b><small id="skill-total-label">—</small></article>
+          <article><span>目前課題</span><b id="home-challenge-state">—</b><small id="home-challenge-title">尚未建立</small></article>
+          <article><span>最近學習</span><b id="last-learning-time">—</b><small id="last-learning-label">尚無紀錄</small></article>
+        </section>
+
+        <div class="home-secondary">
+          <article class="panel">
+            <div class="panel-head compact">
+              <div><p class="eyebrow">LATEST RESULTS</p><h2>最近學到了什麼</h2></div>
+              <a class="panel-link" href="#learning">查看全部</a>
+            </div>
+            <div class="compact-list" id="home-learning-results"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head compact">
+              <div><p class="eyebrow">NEXT STEP</p><h2>接下來會做什麼</h2></div>
+            </div>
+            <div class="next-step-card">
+              <span id="next-step-kind">等待中</span>
+              <p id="next-step-text">目前沒有可執行的下一步。</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view="challenges" hidden>
+        <header class="page-intro">
+          <div><p class="eyebrow">MISSION BOARD</p><p>課題獨立使用 10% 執行資源，不會阻塞日常自主學習；只有建立者勾選通過才算完成。</p></div>
+        </header>
+
+        <article class="panel challenge-create-panel">
+          <div class="panel-head compact">
+            <div><h2>新增課題</h2><p>建立後仍可修改或取消；緊急課題可暫時提高排程優先度。</p></div>
+            <span class="pill">90% 學習 · 10% 課題</span>
           </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>技能</th><th>成功</th><th>狀態</th></tr></thead>
-            <tbody id="skills"></tbody>
-          </table>
-        </div>
-      </article>
-    </section>
-  </main>
+          <form id="mission-form" class="challenge-form">
+            <label>課題名稱<input id="mission-title" maxlength="240" placeholder="例如：完成一個可交付 App" required></label>
+            <label>課題目標<textarea id="mission-objective" maxlength="4000" rows="3" placeholder="描述要達成的真實結果…" required></textarea></label>
+            <label class="wide-field">完成與驗證要求<textarea id="mission-requirements" maxlength="8000" rows="4" placeholder="逐行描述成果、證據、限制與通過標準…" required></textarea></label>
+            <label>排程<select id="mission-schedule"><option value="manual">一般課題</option><option value="monthly">每月課題</option></select></label>
+            <label>優先度<select id="mission-priority"><option value="normal">一般</option><option value="urgent">緊急</option></select></label>
+            <label>目標月份<input id="mission-month" type="month"></label>
+            <div class="form-footer"><span>完成成果先進入待驗收，不會由 ECK 自行宣告通過。</span><button type="submit">建立課題</button></div>
+          </form>
+        </article>
 
-  <footer>Local only · Apache-2.0 · ECK v0.1</footer>
+        <div class="mission-section">
+          <div class="section-title"><h2>進行中課題</h2><span id="active-mission-count">0</span></div>
+          <div class="challenge-list" id="active-missions"></div>
+        </div>
+        <div class="mission-section review-section">
+          <div class="section-title"><h2>等待你驗收</h2><span id="review-mission-count">0</span></div>
+          <div class="challenge-list" id="review-missions"></div>
+        </div>
+        <div class="mission-section completed-section">
+          <div class="section-title"><h2>已完成課題</h2><span id="completed-mission-count">0</span></div>
+          <div class="challenge-list" id="completed-missions"></div>
+        </div>
+      </section>
+
+      <section class="view" data-view="learning" hidden>
+        <header class="page-intro">
+          <div><p class="eyebrow">VERIFIED LEARNING</p><p>只看已驗證結果、技能與可追溯研究；失敗結果仍保留但不會成為正向能力。</p></div>
+        </header>
+
+        <section class="learning-summary">
+          <article><span>全部經驗</span><b id="memory-experiences">—</b></article>
+          <article><span>准入經驗</span><b id="memory-admitted">—</b></article>
+          <article><span>知識紀錄</span><b id="memory-knowledge">—</b></article>
+          <article><span>反思紀錄</span><b id="memory-reflections">—</b></article>
+        </section>
+
+        <div class="learning-grid">
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">EXPERIENCE</p><h2>最近驗證結果</h2></div><span class="count-label" id="experience-label">0</span></div>
+            <div class="detail-list" id="experiences"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">SKILLS</p><h2>技能狀態</h2></div><span class="count-label" id="skills-label">0</span></div>
+            <div class="detail-list" id="skills"></div>
+          </article>
+        </div>
+
+        <article class="panel runtime-skills-panel">
+          <div class="panel-head compact"><div><p class="eyebrow">HOT-SWAPPABLE SKILLS</p><h2>可熱切換能力</h2></div><span class="count-label" id="runtime-skills-count">0 active</span></div>
+          <div class="detail-list runtime-skill-list" id="runtime-skills"></div>
+        </article>
+
+        <div class="learning-grid">
+          <article class="panel research-panel">
+            <div class="panel-head compact"><div><p class="eyebrow">RESEARCH</p><h2>研究課程</h2></div><span class="pill" id="research-state">等待主題</span></div>
+            <form class="research-form" id="research-form">
+              <input id="research-topic" maxlength="200" placeholder="輸入研究主題" required>
+              <button type="submit">建立 2 輪研究</button>
+            </form>
+            <div class="detail-list" id="research-list"></div>
+          </article>
+          <article class="panel benchmark-panel">
+            <div class="panel-head compact"><div><p class="eyebrow">EVALUATION</p><h2>能力基準</h2></div><span class="count-label" id="benchmark-count">0 runs</span></div>
+            <div class="benchmark-list" id="benchmarks"></div>
+            <p class="subtle-copy" id="benchmark-policy"></p>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view="roadmap" hidden>
+        <header class="page-intro">
+          <div><p class="eyebrow">MISSION & CAPABILITY ROADMAP</p><p>清楚分開長期願景、工程進度與已通過外部證據驗證的能力，避免把目標誤認為現況。</p></div>
+        </header>
+
+        <div class="roadmap-truth-grid">
+          <article class="panel mission-vision-card">
+            <div class="panel-head compact"><div><p class="eyebrow">LONG-TERM TARGET</p><h2>長期使命</h2></div><span class="pill">目標</span></div>
+            <p id="roadmap-mission">讀取長期使命。</p>
+          </article>
+          <article class="panel current-truth-card">
+            <div class="panel-head compact"><div><p class="eyebrow">CURRENT TRUTH</p><h2>目前真實狀態</h2></div><span class="pill danger">非 AGI 宣稱</span></div>
+            <p id="roadmap-current-truth">讀取目前能力邊界。</p>
+          </article>
+        </div>
+
+        <section class="learning-summary roadmap-summary">
+          <article><span>已註冊能力</span><b id="roadmap-capability-count">—</b></article>
+          <article><span>已驗證經驗</span><b id="roadmap-experience-count">—</b></article>
+          <article><span>熱啟用技能</span><b id="roadmap-runtime-skill-count">—</b></article>
+          <article><span>事件鏈</span><b id="roadmap-chain-state">—</b></article>
+        </section>
+
+        <article class="panel roadmap-panel">
+          <div class="panel-head compact"><div><p class="eyebrow">MEASURABLE MILESTONES</p><h2>能力發展里程碑</h2></div><span class="count-label" id="roadmap-target-count">0 targets</span></div>
+          <div class="roadmap-list" id="roadmap-targets"></div>
+          <p class="roadmap-claim-policy" id="roadmap-claim-policy"></p>
+        </article>
+      </section>
+
+      <section class="view" data-view="system" hidden>
+        <header class="page-intro">
+          <div><p class="eyebrow">SYSTEM & AUDIT</p><p>模型、生命週期、安全邊界與事件稽核集中在這裡，不佔用首頁。</p></div>
+        </header>
+
+        <div class="system-grid">
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">BRAIN</p><h2>本機模型</h2></div><span class="pill" id="brain-state">檢查中</span></div>
+            <div class="model-name" id="model-name">—</div>
+            <p class="subtle-copy" id="brain-detail">—</p>
+            <div class="spec-list">
+              <div><span>Provider</span><b id="brain-provider">—</b></div>
+              <div><span>核心身份</span><b id="kernel-identity">—</b></div>
+              <div><span>啟動次數</span><b id="boot-count">—</b></div>
+              <div><span>最後心跳</span><b id="heartbeat-time">—</b></div>
+            </div>
+            <div class="control-actions">
+              <button data-action="resume">喚醒 / 繼續</button>
+              <button data-action="pause" class="secondary">暫停</button>
+              <button data-action="sleep" class="ghost">睡眠整理</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">SAFETY</p><h2>安全邊界</h2></div><span class="pill" id="chain-state">驗證中</span></div>
+            <div class="safety-list">
+              <div><span>外部證據</span><b>必要</b></div>
+              <div><span>網路能力</span><b id="network-state">檢查中</b></div>
+              <div><span>付費服務</span><b>禁止</b></div>
+              <div><span>公開 AI 揭露</span><b>必要</b></div>
+              <div><span>系統修改</span><b id="system-state">檢查中</b></div>
+            </div>
+            <div class="capabilities"><span>已註冊能力</span><div id="capability-tags"></div></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">RUNTIME</p><h2>技能工作程序</h2></div><span class="pill" id="worker-state">檢查中</span></div>
+            <div class="model-name" id="runtime-version">0.1.0</div>
+            <p class="subtle-copy" id="runtime-reason">讀取版本與技能狀態。</p>
+            <div class="spec-list">
+              <div><span>自主學習</span><b id="learning-share">90%</b></div>
+              <div><span>課題執行</span><b id="challenge-share">10%</b></div>
+              <div><span>已驗證技能</span><b id="verified-skill-total">0</b></div>
+              <div><span>下次小版本</span><b id="next-minor-skill">100</b></div>
+            </div>
+            <button id="validate-skills" class="secondary runtime-action" type="button">重新檢查技能工作程序</button>
+          </article>
+
+          <article class="panel image-stack-panel">
+            <div class="panel-head compact"><div><p class="eyebrow">LOCAL IMAGE STACK</p><h2>本機圖像能力</h2></div><span class="pill" id="image-stack-state">檢查中</span></div>
+            <div class="model-name" id="image-backend">—</div>
+            <p class="subtle-copy" id="image-checkpoint">讀取目前寫實模型。</p>
+            <div class="spec-list">
+              <div><span>寫實模型</span><b id="image-model-count">0</b></div>
+              <div><span>ADetailer</span><b id="image-adetailer">—</b></div>
+              <div><span>ControlNet</span><b id="image-controlnet">—</b></div>
+              <div><span>rembg</span><b id="image-rembg">—</b></div>
+              <div><span>成人內容</span><b id="image-content-mode">—</b></div>
+              <div><span>付費 API</span><b>無</b></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel events-panel">
+          <div class="panel-head compact"><div><p class="eyebrow">AUDIT LOG</p><h2>最近有效事件</h2></div><span class="count-label" id="event-count">—</span></div>
+          <div class="event-list" id="events"></div>
+        </article>
+      </section>
+
+      <footer><span>ECK Digital Life Kernel · Local-first cognitive runtime</span><span>每 5 秒更新</span></footer>
+    </main>
+  </div>
+
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>

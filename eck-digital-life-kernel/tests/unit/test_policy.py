@@ -91,6 +91,27 @@ def test_network_capability_is_blocked_when_network_is_disabled(settings: Settin
     assert "disabled" in decision.reasons[0]
 
 
+def test_allowlisted_read_only_network_can_run_without_approval(settings: Settings) -> None:
+    enabled = settings.model_copy(update={"network_enabled": True})
+    action = ActionProposal(
+        capability="academic.read",
+        operation="search",
+        declared_risk=RiskLevel.MEDIUM,
+    )
+    definition = CapabilityDefinition(
+        name="academic.read",
+        description="Allowlisted scholarly metadata search",
+        default_risk=RiskLevel.MEDIUM,
+        deterministic=False,
+        network_access=True,
+        autonomous_safe=True,
+    )
+    decision = PolicyGate(enabled).evaluate(contract(), action, definition)
+    assert decision.allowed
+    assert not decision.requires_approval
+    assert decision.risk_level is RiskLevel.MEDIUM
+
+
 def test_action_over_contract_cost_is_blocked(settings: Settings) -> None:
     action = ActionProposal(
         capability="compute",

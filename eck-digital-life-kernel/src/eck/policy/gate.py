@@ -52,7 +52,8 @@ class PolicyGate:
         risk = max((risk, definition.default_risk), key=lambda item: item.rank)
 
         if definition.network_access:
-            risk = max((risk, RiskLevel.HIGH), key=lambda item: item.rank)
+            network_risk = RiskLevel.MEDIUM if definition.autonomous_safe else RiskLevel.HIGH
+            risk = max((risk, network_risk), key=lambda item: item.rank)
             if not self.settings.network_enabled:
                 return PolicyDecision(
                     allowed=False,

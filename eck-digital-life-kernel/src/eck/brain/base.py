@@ -34,6 +34,6 @@ class BrainProvider(ABC):
         messages: list[dict[str, str]],
         *,
         format_schema: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
     ) -> BrainResponse:
         raise NotImplementedError
-

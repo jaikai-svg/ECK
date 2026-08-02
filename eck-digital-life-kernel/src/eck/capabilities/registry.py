@@ -24,8 +24,8 @@ class CapabilityRegistry:
                 "default_risk": item.definition.default_risk.value,
                 "deterministic": item.definition.deterministic,
                 "network_access": item.definition.network_access,
+                "autonomous_safe": item.definition.autonomous_safe,
                 "system_file_mutation": item.definition.system_file_mutation,
             }
             for item in sorted(self._items.values(), key=lambda item: item.definition.name)
         ]
-

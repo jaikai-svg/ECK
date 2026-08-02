@@ -6,8 +6,9 @@ from datetime import datetime
 
 from eck.config import Settings
 from eck.domain.enums import KernelPhase, TaskStatus
-from eck.domain.models import KernelStatus
+from eck.domain.models import KernelStatus, SupervisorReviewRecord, TaskRecord
 from eck.events.bus import EventBus
+from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
 from eck.storage.sqlite import SQLiteStore
 
@@ -19,19 +20,24 @@ class LifeKernel:
         store: SQLiteStore,
         events: EventBus,
         tasks: TaskService,
+        supervisor: SupervisorService,
     ) -> None:
         self.settings = settings
         self.store = store
         self.events = events
         self.tasks = tasks
+        self.supervisor = supervisor
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
+        self._execution_task: asyncio.Task[TaskRecord] | None = None
+        self._supervision_task: asyncio.Task[SupervisorReviewRecord | None] | None = None
         self._stop = asyncio.Event()
         self._sleep_requested = asyncio.Event()
         self._sleep_lock = asyncio.Lock()
         self._boot_count = 0
         self._started_at: datetime | None = None
         self._last_heartbeat_at: datetime | None = None
+        self._schedule_cursor = 0
 
     async def start(self) -> None:
         if self.phase not in {KernelPhase.STOPPED, KernelPhase.FAULTED}:
@@ -48,6 +54,7 @@ class LifeKernel:
             self.settings.identity,
             {"boot_count": self._boot_count, "recovered_unclean_shutdown": recovered},
         )
+        await self.tasks.recover_interrupted()
         self.phase = KernelPhase.RUNNING
         self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
         self._stop.clear()
@@ -86,6 +93,16 @@ class LifeKernel:
             with suppress(asyncio.CancelledError):
                 await self._run_task
             self._run_task = None
+        if self._execution_task:
+            self._execution_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._execution_task
+            self._execution_task = None
+        if self._supervision_task:
+            self._supervision_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._supervision_task
+            self._supervision_task = None
         await self.events.publish(
             "KernelStopped",
             self.settings.identity,
@@ -127,19 +144,63 @@ class LifeKernel:
     async def _life_loop(self) -> None:
         loop = asyncio.get_running_loop()
         next_heartbeat = loop.time()
+        next_heartbeat_event = loop.time()
         next_sleep = loop.time() + self.settings.sleep_cycle_seconds
+        next_supervision = loop.time() + self.settings.supervisor_initial_delay_seconds
         try:
             while not self._stop.is_set():
+                if self._execution_task and self._execution_task.done():
+                    await self._execution_task
+                    self._execution_task = None
+                    next_supervision = (
+                        loop.time() + self.settings.supervisor_initial_delay_seconds
+                    )
+                if (
+                    self._supervision_task
+                    and not self._supervision_task.done()
+                    and self.tasks.has_urgent_queued()
+                ):
+                    self._supervision_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await self._supervision_task
+                    self._supervision_task = None
+                    next_supervision = loop.time() + self.settings.supervisor_review_seconds
+                    await self.events.publish(
+                        "SupervisorPreempted",
+                        self.settings.identity,
+                        {"reason": "urgent_human_task"},
+                    )
+                if self._supervision_task and self._supervision_task.done():
+                    await self._supervision_task
+                    self._supervision_task = None
+                    next_supervision = loop.time() + self.settings.supervisor_review_seconds
                 if self.phase is KernelPhase.RUNNING:
-                    queued = self.tasks.next_queued()
-                    if queued:
-                        await self.tasks.execute(queued.task_id)
-                        continue
+                    if self._execution_task is None and self._supervision_task is None:
+                        prefer_challenge = (
+                            self._schedule_cursor >= self.settings.autonomous_learning_percent
+                        )
+                        queued = self.tasks.next_queued(prefer_challenge=prefer_challenge)
+                        if queued:
+                            self._schedule_cursor = (self._schedule_cursor + 1) % 100
+                            self._execution_task = asyncio.create_task(
+                                self.tasks.execute(queued.task_id),
+                                name=f"eck-task-{queued.task_id}",
+                            )
+                        elif self.settings.supervisor_enabled and loop.time() >= next_supervision:
+                            self._supervision_task = asyncio.create_task(
+                                self.supervisor.review_if_idle(),
+                                name="eck-supervisor-review",
+                            )
                     if self._sleep_requested.is_set() or loop.time() >= next_sleep:
                         await self.run_sleep_cycle()
                         next_sleep = loop.time() + self.settings.sleep_cycle_seconds
                     if loop.time() >= next_heartbeat:
-                        await self._heartbeat()
+                        publish_event = loop.time() >= next_heartbeat_event
+                        await self._heartbeat(publish_event=publish_event)
+                        if publish_event:
+                            next_heartbeat_event = (
+                                loop.time() + self.settings.heartbeat_event_seconds
+                            )
                         next_heartbeat = loop.time() + self.settings.heartbeat_seconds
                 await asyncio.sleep(self.settings.task_poll_seconds)
         except asyncio.CancelledError:
@@ -153,24 +214,23 @@ class LifeKernel:
                 {"type": type(exc).__name__, "detail": str(exc)},
             )
 
-    async def _heartbeat(self) -> None:
-        self.store.update_kernel_state(
-            self.settings.identity, self.phase, heartbeat=True
-        )
+    async def _heartbeat(self, *, publish_event: bool = True) -> None:
+        self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
         state = self.store.get_kernel_state(self.settings.identity)
         self._last_heartbeat_at = (
             datetime.fromisoformat(state["last_heartbeat_at"])
             if state and state["last_heartbeat_at"]
             else None
         )
-        await self.events.publish(
-            "Heartbeat",
-            self.settings.identity,
-            {
-                "phase": self.phase.value,
-                "pending_tasks": self.store.count_tasks((TaskStatus.QUEUED,)),
-            },
-        )
+        if publish_event:
+            await self.events.publish(
+                "Heartbeat",
+                self.settings.identity,
+                {
+                    "phase": self.phase.value,
+                    "pending_tasks": self.store.count_tasks((TaskStatus.QUEUED,)),
+                },
+            )
 
     async def _sleep_cycle(self) -> None:
         self._sleep_requested.clear()

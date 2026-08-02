@@ -24,6 +24,43 @@ class TaskStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class ChallengeStatus(StrEnum):
+    PLANNING = "planning"
+    EXPLORING = "exploring"
+    CAPABILITY_GAP = "capability_gap"
+    AWAITING_HUMAN = "awaiting_human"
+    ACTIVE = "active"
+    OBSERVING = "observing"
+    SUCCEEDED = "succeeded"
+    BLOCKED = "blocked"
+    STOPPED = "stopped"
+
+
+class MissionStatus(StrEnum):
+    ACTIVE = "active"
+    PREPARING = "preparing"
+    BLOCKED = "blocked"
+    AWAITING_REVIEW = "awaiting_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class RuntimeSkillStatus(StrEnum):
+    DRAFT = "draft"
+    TESTING = "testing"
+    ACTIVE = "active"
+    FAILED = "failed"
+    RETIRED = "retired"
+
+
+class BenchmarkSuite(StrEnum):
+    MMLU = "mmlu"
+    GSM8K = "gsm8k"
+    FRONTIER_SCIENCE = "frontier_science"
+    REAL_TASKS = "real_tasks"
+
+
 class RiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
@@ -76,4 +113,3 @@ class ComparisonOperator(StrEnum):
     LTE = "lte"
     CONTAINS = "contains"
     TRUTHY = "truthy"
-

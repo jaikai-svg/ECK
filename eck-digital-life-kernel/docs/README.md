@@ -24,8 +24,8 @@
 11. [Development Guide](11-development-guide.md)
 12. [Testing & Validation](12-testing-validation.md)
 13. [Roadmap & Research](13-roadmap-research.md)
+14. [v0.1.0 Completion Report](14-v0.1.0-completion-report.md)
 
 ## 文件治理
 
 重大架構選擇記錄於`docs/adr/`。Research想法不得直接成為正式規格；必須先定義成功條件、反證條件、實驗方法與資源上限。程式行為若與文件矛盾，變更不得合併，直到修正程式、文件或以ADR正式改變決策。
-

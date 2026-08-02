@@ -34,6 +34,8 @@ class _FakeResponse:
 
 
 class _FakeClient:
+    last_json = None
+
     def __init__(self, *, timeout) -> None:
         self.timeout = timeout
 
@@ -47,6 +49,7 @@ class _FakeClient:
         return _FakeResponse({"models": [{"name": "qwen:test"}]})
 
     async def post(self, url, json):
+        type(self).last_json = json
         return _FakeResponse(
             {"model": json["model"], "message": {"content": "verified response"}}
         )
@@ -58,8 +61,18 @@ async def test_ollama_health_and_chat(monkeypatch) -> None:
     brain = OllamaBrainProvider("http://ollama", "qwen:test", 10)
     health = await brain.health()
     assert health.available
-    response = await brain.chat([{"role": "user", "content": "hello"}])
+    response = await brain.chat(
+        [{"role": "user", "content": "hello"}],
+        options={"num_predict": 128, "num_ctx": 2048, "num_gpu": 0, "think": False},
+    )
     assert response.content == "verified response"
+    assert _FakeClient.last_json["options"] == {
+        "temperature": 0,
+        "num_predict": 128,
+        "num_ctx": 2048,
+        "num_gpu": 0,
+    }
+    assert _FakeClient.last_json["think"] is False
 
 
 @pytest.mark.asyncio
@@ -70,4 +83,3 @@ async def test_ollama_requires_explicit_model(monkeypatch) -> None:
     assert not health.available
     with pytest.raises(RuntimeError):
         await brain.chat([])
-

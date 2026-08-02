@@ -21,6 +21,11 @@ described as AGI and it does not update model weights automatically.
 - Experience admission, a Knowledge ledger, deterministic Reflection records,
   and candidate/active Skill states.
 - Replaceable Mock and Ollama brain providers.
+- Local dialogue grounded with admitted experience, active skills, and verified research.
+- Human-guided, bounded academic curricula using allowlisted Crossref metadata and abstracts.
+- Persistent idle supervisor that reviews verified learning and assigns bounded research tests.
+- Persistent multi-day challenge contracts with externally reviewed social metrics.
+- Versioned MMLU, GSM8K, FrontierScience, and real-task evaluation records.
 - CLI, REST API, OpenAPI, and a local Web Dashboard.
 - Safe arithmetic-expression capability without shell or file access.
 - Deterministic GridWorld capability for experience-reuse measurement.
@@ -41,6 +46,12 @@ Copy-Item .env.example .env
 notepad .env
 .\scripts\setup-windows.ps1
 .\scripts\start-windows.ps1
+```
+
+For a native Windows process with PID and log tracking instead of Compose, use:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-eck.ps1 -Wait
 ```
 
 Open:
@@ -82,7 +93,22 @@ The Ollama model is intentionally not hard-coded:
 
 ```dotenv
 ECK_OLLAMA_MODEL=<a model already present in ollama list>
+ECK_SUPERVISOR_MODEL=<optional second Ollama model; defaults to ECK_OLLAMA_MODEL>
 ```
+
+The supervisor is a separate role and provider instance. By default it uses the same
+local model sequentially, which avoids loading two models at once on limited VRAM. Its
+first review delay and recurring interval are controlled by
+`ECK_SUPERVISOR_INITIAL_DELAY_SECONDS` and `ECK_SUPERVISOR_REVIEW_SECONDS`.
+
+Supervisor inference is bounded independently from normal dialogue. The reference
+profile checks at most every 10 minutes, allows at most 48 reviews in a rolling 24-hour
+window, limits output to 512 tokens and context to 4096 tokens, and offloads only 12
+model layers to the GPU. Set `ECK_SUPERVISOR_NUM_GPU_LAYERS=0` for CPU-only supervision.
+GPU utilization can still briefly reach 100% during matrix operations; the limits reduce
+duration and heat rather than guaranteeing a particular utilization percentage.
+Previously reviewed topics are checked against the complete persisted review history;
+exact, contained, and highly similar topics are replaced or skipped before assignment.
 
 The deterministic acceptance tests use `MockBrainProvider`; they do not require
 Ollama or a GPU.
@@ -92,18 +118,134 @@ Ollama or a GPU.
 v0.1 defaults:
 
 - binds only to localhost;
-- disables network capabilities;
+- permits registered native capabilities plus tested Docker worker skills;
+- rejects arbitrary research URLs and limits each response, source count, and curriculum cycle;
 - prohibits system-file mutation;
 - exposes no arbitrary shell capability;
 - permits only registered actions;
-- sends high-risk actions to human approval;
+- permits policy-compliant public posts, likes, follows, replies, and private messages
+  without per-action approval, while requiring an explicit AI/ECK disclosure;
+- blocks paid APIs, real-money actions, deception, fake engagement, illegal content,
+  personal data in private messages, and platform-control evasion;
+- sends legal uncertainty, credentials/CAPTCHA/2FA, and tested structural
+  self-modification to human approval;
 - treats model self-report as non-external evidence;
-- never updates model weights.
+- refuses social actions when platform rules prohibit automation, and requires an
+  official adapter plus an explicit AI/ECK disclosure before any public action;
+- allows free PyPI/npm dependencies only inside the disposable Docker skill worker;
+- does not include a model-weight training pipeline yet.
 
-Docker adds a read-only root filesystem, dropped Linux capabilities, a
-`no-new-privileges` policy, and localhost-only port publishing. These controls
-reduce risk but are not a formal security sandbox for hostile code. Therefore
-v0.1 intentionally does not execute arbitrary generated Python.
+The reference configuration enables the allowlisted academic-research capability. It
+queries bibliographic metadata and available abstracts only; it does not claim to read
+paywalled or unavailable full text. This read-only, fixed-host capability may run
+autonomously without per-task approval, remains bounded to configured source and cycle
+limits, and must still pass its Success Contract before becoming positive learning.
+The supervisor only assigns a new test when no task is queued, running, or awaiting
+approval. Dialogue responses are not admitted as learning by themselves.
+
+## Legacy challenge 001
+
+The first persistent challenge is platform-neutral: ECK must publish one primary post
+per local day until one post receives at least 100 human-verified comments and 10 likes
+within the same 24-hour window. Platform, topic, language, audience, and experiments are
+planning decisions for ECK rather than fixed task inputs.
+
+Completion also requires a human-reviewed public URL, the disclosure
+`此帳號由 AI/ECK 協作營運`, policy compliance, and the daily-post cadence. Fake
+engagement, paid promotion, deception, and metric manipulation cannot satisfy the
+contract. The current release persists and plans the challenge, records evidence, and
+enforces its contract; it does **not** yet log in to or operate a social platform.
+
+Create or resume it from the Dashboard, or call:
+
+```text
+POST /v1/challenges/social-engagement
+GET  /v1/challenges
+```
+
+## Missions and resource allocation
+
+Missions are editable background objectives. Creating a mission schedules a bounded
+planning task, records capability gaps, and keeps the plan itself separate from positive
+learning. ECK allocates 90% of normal scheduling opportunities to autonomous learning
+and 10% to mission preparation or execution. Urgent human tasks override this ratio.
+
+Submitting evidence moves a mission to `awaiting_review`; it is not complete until the
+operator approves it. Approved missions remain in a collapsed history for later
+inspection. Monthly approved missions may trigger a major runtime version only when
+verified updates are pending. Every 100 active verified skills triggers one minor
+runtime version increment. Skill implementation patch versions do not restart or
+renumber the ECK runtime.
+
+Manage missions from the Dashboard or call:
+
+```text
+POST  /v1/missions
+PATCH /v1/missions/{mission_id}
+POST  /v1/missions/{mission_id}/completion
+POST  /v1/missions/{mission_id}/review
+```
+
+## Docker skill workers
+
+Build the worker image once after Docker Desktop starts:
+
+```powershell
+docker build -f docker/skill-worker/Dockerfile -t eck-skill-worker:0.1.0 .
+```
+
+Running the image directly performs a self-check and exits successfully. `validate` and
+`execute` are worker-protocol modes and require the ECK core to mount
+`/request/manifest.json`; they should not be launched manually from Docker Desktop.
+
+ECK validates generated or bundled skills in one-shot containers with a read-only root
+filesystem, dropped Linux capabilities, `no-new-privileges`, CPU/memory/PID limits,
+and no Docker socket. A skill is hot-activated only after its isolated tests pass. The
+initial worker pack covers browser inspection, documents, images, code tests, advanced
+data analysis, and policy-gated social adapters. The social adapter cannot perform or
+claim a platform action until a compliant official adapter is configured.
+
+## Local image generation
+
+ECK uses a local-only Stable Diffusion WebUI Forge API on `127.0.0.1:7861`; it does not
+call a paid image API. The installed image stack includes three SD1.5 SafeTensor
+checkpoints, ADetailer face repair, Forge's integrated ControlNet with OpenPose, and
+`rembg` with BiRefNet-General for transparent-background output.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-forge.ps1 -Wait
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-image-stack.ps1
+```
+
+The dialogue router sends image requests to `image.generate` and requests such as
+`移除上一張圖片背景` to `image.remove_background`. Model aliases are
+`realistic_vision`, `chilloutmix`, and `cyberrealistic`; their exact filenames, source
+URLs, hashes, intended strengths, and reuse flags are recorded in
+`config/image-models.json`.
+
+Legal adult nude or erotic image generation is enabled locally. ECK permanently rejects
+sexual content involving minors, non-consensual sexual content, and sexual content
+involving animals. These application checks do not replace applicable law or a human
+review before publishing generated material.
+
+Forge and ADetailer are AGPL-3.0 software; `rembg` is MIT software. Checkpoint terms are
+separate. The installed ChilloutMix release does not grant commercial use in its Civitai
+metadata, and Realistic Vision requires attribution; review the recorded model source
+before public or commercial distribution.
+
+## Capability evaluation
+
+ECK stores versioned benchmark runs rather than treating conversation quality or skill
+counts as proof of intelligence. The initial catalog includes
+[MMLU](https://arxiv.org/abs/2009.03300),
+[GSM8K](https://arxiv.org/abs/2110.14168),
+[FrontierScience](https://openai.com/index/frontierscience/), and a fixed suite of 20–50
+real tasks. A model cannot be the sole judge of its own growth claim, and a finite
+benchmark result is not presented as proof that a system has surpassed all humans.
+
+Docker isolation reduces risk but is not a formal security boundary for hostile code.
+Generated Python executes only through the restricted worker protocol; structural core
+changes and model-weight changes still require testing and human approval.
 
 ## Repository map
 
@@ -121,7 +263,7 @@ src/eck/
   services/        application workflows
   storage/         SQLite event/task/experience store
   verification/    external-evidence contract verifier
-docs/              13-volume v0.1 specification
+docs/              13-volume v0.1 specification and completion report
 tests/             unit and integration verification
 ```
 

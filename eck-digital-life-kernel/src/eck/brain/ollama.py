@@ -61,15 +61,22 @@ class OllamaBrainProvider(BrainProvider):
         messages: list[dict[str, str]],
         *,
         format_schema: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
     ) -> BrainResponse:
         if not self.model:
             raise RuntimeError("ECK_OLLAMA_MODEL must be configured before chat is used.")
+        generation_options: dict[str, Any] = {"temperature": 0}
+        if options:
+            generation_options.update(options)
+        think = generation_options.pop("think", None)
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": 0},
+            "options": generation_options,
         }
+        if isinstance(think, bool):
+            payload["think"] = think
         if format_schema:
             payload["format"] = format_schema
         async with httpx.AsyncClient(timeout=self.timeout) as client:

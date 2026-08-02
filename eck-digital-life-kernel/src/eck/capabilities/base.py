@@ -14,6 +14,7 @@ class CapabilityDefinition:
     default_risk: RiskLevel
     deterministic: bool
     network_access: bool = False
+    autonomous_safe: bool = False
     system_file_mutation: bool = False
 
 
@@ -23,4 +24,3 @@ class Capability(ABC):
     @abstractmethod
     async def execute(self, action: ActionProposal) -> CapabilityResult:
         raise NotImplementedError
-

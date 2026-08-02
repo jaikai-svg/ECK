@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from eck.capabilities.registry import CapabilityRegistry
 from eck.core.ids import new_id
 from eck.core.time import utc_now
@@ -114,6 +116,9 @@ class TaskService:
             report = self.verifier.verify(
                 task.success_contract, result, repeated_result=repeated
             )
+        except asyncio.CancelledError:
+            await self._recover_interrupted_task(task, reason="execution_cancelled")
+            raise
         except Exception as exc:  # safety boundary: capability failures become evidence
             now = utc_now()
             result = CapabilityResult(
@@ -147,7 +152,6 @@ class TaskService:
             result=result,
             verification=report,
         )
-        experience, knowledge, reflection, skill = self.experiences.admit(task)
         await self.events.publish(
             "TaskVerified",
             task_id,
@@ -159,6 +163,15 @@ class TaskService:
             },
             correlation_id=task_id,
         )
+        if "no-learning" in task.labels:
+            await self.events.publish(
+                "NonLearningTaskCompleted",
+                task_id,
+                {"status": report.status.value, "labels": list(task.labels)},
+                correlation_id=task_id,
+            )
+            return task
+        experience, knowledge, reflection, skill = self.experiences.admit(task)
         await self.events.publish(
             "ExperienceRecorded",
             experience.experience_id,
@@ -202,6 +215,41 @@ class TaskService:
             )
         return task
 
+    async def recover_interrupted(self) -> list[TaskRecord]:
+        recovered: list[TaskRecord] = []
+        for task in self.store.list_tasks(statuses=(TaskStatus.RUNNING,), limit=500):
+            recovered.append(
+                await self._recover_interrupted_task(task, reason="kernel_restart")
+            )
+        return recovered
+
+    async def _recover_interrupted_task(
+        self, task: TaskRecord, *, reason: str
+    ) -> TaskRecord:
+        if task.action.reversible:
+            status = TaskStatus.QUEUED
+            attempts = max(0, task.attempts - 1)
+        else:
+            status = TaskStatus.BLOCKED
+            attempts = task.attempts
+        recovered = self.store.update_task(
+            task.task_id,
+            status=status,
+            attempts=attempts,
+        )
+        await self.events.publish(
+            "TaskInterruptedRecovered",
+            task.task_id,
+            {
+                "reason": reason,
+                "previous_status": TaskStatus.RUNNING.value,
+                "status": status.value,
+                "reversible": task.action.reversible,
+            },
+            correlation_id=task.task_id,
+        )
+        return recovered
+
     async def decide_approval(
         self, approval_id: str, decision: ApprovalStatus
     ) -> TaskRecord:
@@ -220,6 +268,22 @@ class TaskService:
         )
         return task
 
-    def next_queued(self) -> TaskRecord | None:
-        tasks = self.store.list_tasks(statuses=(TaskStatus.QUEUED,), limit=1)
-        return tasks[0] if tasks else None
+    def next_queued(self, *, prefer_challenge: bool = False) -> TaskRecord | None:
+        tasks = self.store.list_tasks(statuses=(TaskStatus.QUEUED,), limit=500)
+        if not tasks:
+            return None
+        ordered = sorted(tasks, key=lambda item: item.created_at)
+        urgent = next((item for item in ordered if "priority:urgent" in item.labels), None)
+        if urgent:
+            return urgent
+        challenge = [item for item in ordered if "lane:challenge" in item.labels]
+        autonomous = [item for item in ordered if "lane:challenge" not in item.labels]
+        preferred = challenge if prefer_challenge else autonomous
+        fallback = autonomous if prefer_challenge else challenge
+        return (preferred or fallback)[0]
+
+    def has_urgent_queued(self) -> bool:
+        return any(
+            "priority:urgent" in item.labels
+            for item in self.store.list_tasks(statuses=(TaskStatus.QUEUED,), limit=500)
+        )

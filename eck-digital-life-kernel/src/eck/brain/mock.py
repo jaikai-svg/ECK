@@ -17,6 +17,7 @@ class MockBrainProvider(BrainProvider):
         messages: list[dict[str, str]],
         *,
         format_schema: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
     ) -> BrainResponse:
         content = json.dumps(
             {
@@ -29,6 +30,5 @@ class MockBrainProvider(BrainProvider):
         return BrainResponse(
             content=content,
             model="mock-deterministic",
-            raw={"messages": messages},
+            raw={"messages": messages, "options": options or {}},
         )
-

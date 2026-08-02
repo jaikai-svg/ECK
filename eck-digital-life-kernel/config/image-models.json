@@ -1,0 +1,49 @@
+{
+  "models": [
+    {
+      "alias": "realistic_vision",
+      "name": "Realistic Vision V6.0 B1 (VAE)",
+      "filename": "realisticVisionV60B1_v60B1VAE.safetensors",
+      "base_model": "SD 1.5",
+      "format": "SafeTensor",
+      "precision": "fp16",
+      "source": "https://civitai.com/models/4201/realistic-vision-v60-b1",
+      "download_url": "https://civitai.com/api/download/models/245598",
+      "sha256": "FE7578CB5EE0BE63AA15BAA894AB5D1751FF9B5B25EF611D5FAFB2186D930C30",
+      "commercial_use": ["Image", "RentCivit", "Rent"],
+      "credit_required": true,
+      "derivatives_allowed": true,
+      "different_license_allowed": false
+    },
+    {
+      "alias": "chilloutmix",
+      "name": "ChilloutMix Ni pruned fp16 fix",
+      "filename": "chilloutmix_NiPrunedFp16Fix.safetensors",
+      "base_model": "SD 1.5",
+      "format": "SafeTensor",
+      "precision": "fp16",
+      "source": "https://civitai.com/models/6424/chilloutmix",
+      "download_url": "https://civitai.com/api/download/models/11732",
+      "sha256": "59FFE2243A25C9FE137D590EB3C5C3D3273F1B4C86252DA11BBDC9568773DA0C",
+      "commercial_use": [],
+      "credit_required": true,
+      "derivatives_allowed": true,
+      "different_license_allowed": false
+    },
+    {
+      "alias": "cyberrealistic",
+      "name": "CyberRealistic Final",
+      "filename": "cyberrealistic_final.safetensors",
+      "base_model": "SD 1.5",
+      "format": "SafeTensor",
+      "precision": "fp16",
+      "source": "https://civitai.com/models/15003/cyberrealistic",
+      "download_url": "https://civitai.com/api/download/models/2681234",
+      "sha256": "2209C07B331A06CB28CF7C830EC758AE5B49EB97FAB21F5DE6B18C7BE8B41554",
+      "commercial_use": ["Image", "RentCivit", "Rent", "Sell"],
+      "credit_required": false,
+      "derivatives_allowed": true,
+      "different_license_allowed": true
+    }
+  ]
+}

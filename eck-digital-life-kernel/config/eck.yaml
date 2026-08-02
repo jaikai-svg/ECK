@@ -11,6 +11,7 @@ allow_remote_bind: false
 auto_start_kernel: true
 
 heartbeat_seconds: 5
+heartbeat_event_seconds: 60
 sleep_cycle_seconds: 3600
 task_poll_seconds: 0.5
 
@@ -19,9 +20,57 @@ ollama_base_url: http://127.0.0.1:11434
 ollama_model:
 ollama_timeout_seconds: 120
 
-network_enabled: false
+network_enabled: true
 system_file_mutation_enabled: false
 require_approval_for_medium_risk: false
 max_task_attempts: 5
 max_events_page_size: 500
 
+academic_research_timeout_seconds: 30
+academic_research_max_sources: 6
+academic_research_max_cycles: 3
+
+image_generation_enabled: true
+image_backend: forge
+image_engine_python: workspace/image_engine/.venv/Scripts/python.exe
+image_engine_script: scripts/run_image_engine.py
+image_model_dir: workspace/models/stable-diffusion-v1-5
+image_output_dir: workspace/generated_images
+image_generation_timeout_seconds: 300
+image_generation_steps: 36
+image_generation_guidance_scale: 7.5
+image_adult_content_enabled: true
+image_adetailer_enabled: true
+image_adetailer_model: face_yolov8s.pt
+image_model_catalog_path: config/image-models.json
+forge_root: workspace/forge
+forge_base_url: http://127.0.0.1:7861
+forge_checkpoint: realisticVisionV60B1_v60B1VAE.safetensors
+forge_auto_start: true
+forge_start_script: scripts/start-forge.ps1
+forge_startup_timeout_seconds: 900
+rembg_enabled: true
+rembg_python: workspace/rembg/.venv/Scripts/python.exe
+rembg_script: scripts/run_rembg.py
+rembg_model_dir: workspace/rembg/models
+rembg_model: birefnet-general
+
+supervisor_enabled: true
+supervisor_model:
+supervisor_initial_delay_seconds: 30
+supervisor_review_seconds: 600
+supervisor_auto_assign: true
+supervisor_max_reviews_per_day: 48
+supervisor_max_output_tokens: 512
+supervisor_context_window: 4096
+supervisor_num_gpu_layers: 12
+learning_stall_minutes: 30
+
+skill_worker_enabled: true
+skill_worker_image: eck-skill-worker:0.1.0
+skill_worker_timeout_seconds: 300
+skill_worker_memory_mb: 1024
+skill_dependency_install_enabled: true
+skill_forge_auto_enable: true
+autonomous_learning_percent: 90
+challenge_execution_percent: 10
