@@ -815,6 +815,7 @@ function renderChat() {
       const metadata = artifact.metadata || {};
       const details = [
         metadata.model,
+        metadata.width && metadata.height ? `${metadata.width}×${metadata.height}` : "",
         metadata.seed !== undefined ? `seed ${metadata.seed}` : "",
         metadata.total_elapsed_seconds !== undefined
           ? `${metadata.total_elapsed_seconds}s total`
@@ -824,7 +825,10 @@ function renderChat() {
       if (artifact.type === "video") {
         return `
         <figure class="chat-artifact">
-          <video class="chat-artifact-video" src="${escapeHtml(artifactUrl)}" controls preload="metadata"></video>
+          <video class="chat-artifact-video" controls playsinline preload="metadata">
+            <source src="${escapeHtml(artifactUrl)}" type="video/mp4">
+          </video>
+          <a class="artifact-download" href="${escapeHtml(artifactUrl)}" download>下載 MP4</a>
           <figcaption>${escapeHtml(details)}</figcaption>
         </figure>
         `;
@@ -833,7 +837,7 @@ function renderChat() {
       return `
         <figure class="chat-artifact">
           <a href="${escapeHtml(artifactUrl)}" target="_blank" rel="noopener">
-            <img class="chat-artifact-image" src="${escapeHtml(artifactUrl)}" alt="ECK 生成圖片" loading="lazy">
+            <img class="chat-artifact-image" src="${escapeHtml(artifactUrl)}" alt="ECK 生成圖片" loading="lazy"${metadata.width ? ` width="${escapeHtml(metadata.width)}"` : ""}${metadata.height ? ` height="${escapeHtml(metadata.height)}"` : ""}>
           </a>
           <figcaption>${escapeHtml(details)}</figcaption>
         </figure>
@@ -919,9 +923,9 @@ $("#chat-form").addEventListener("submit", async (event) => {
   button.textContent = "處理中…";
   $("#chat-context").textContent = /(移除|去除).{0,8}(背景|背影)|remove.{0,8}background/i.test(message)
     ? "正在使用本機 rembg 移除背景…"
-    : /(影片|視頻|動畫|短片|video|movie|animation|clip)/i.test(message)
-    ? "正在建立首幀並排入本機 FramePack 影片生成…"
-    : /(圖片|圖像|照片|插畫|image|picture|photo)/i.test(message)
+    : /^\s*\/video\b|影片|視頻|動畫|短片|video|movie|animation|clip/i.test(message)
+    ? "正在規劃提示並排入本機 CogVideoX 影片生成…"
+    : /^\s*\/image\b|圖片|圖像|照片|插畫|image|picture|photo/i.test(message)
     ? "正在規劃模型並執行本機 Forge 圖像生成…"
     : "正在使用本機思考模型…";
   try {

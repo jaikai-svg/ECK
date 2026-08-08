@@ -77,10 +77,59 @@ def test_adult_prompt_planner_has_deterministic_fallback() -> None:
         "生成一張 9:16 韓國成年女性全裸全身照片"
     )
 
-    assert "adult nudity" in plan["prompt"]
+    assert "fully nude adult" in plan["prompt"]
     assert "South Korean" in plan["prompt"]
     assert "head to toe" in plan["prompt"]
     assert plan["model"] == "chilloutmix"
+
+
+@pytest.mark.asyncio
+async def test_adult_image_request_bypasses_general_prompt_planner(application) -> None:
+    plan, response = await application.image_generation._plan_user_request(
+        "生成亞洲成年女性全裸全身圖片"
+    )
+
+    assert response.model == "deterministic-media-compiler.v1"
+    assert "East Asian appearance" in plan["prompt"]
+    assert "fully nude adult" in plan["prompt"]
+    assert "head to toe" in plan["prompt"]
+
+
+def test_image_prompt_rejects_instruction_echo_and_enforces_user_intent() -> None:
+    echoed = (
+        '{"prompt":"Convert the user request into a prompt. Select realistic_vision. '
+        'Never introduce minors and return only the requested JSON.",'
+        '"negative_prompt":"","model":"realistic_vision",'
+        '"use_adetailer":false}'
+    )
+    with pytest.raises(RuntimeError, match="echoed its instructions"):
+        ImageGenerationCapability._parse_plan(echoed)
+
+    prompt = ImageGenerationCapability._enforce_request_constraints(
+        "A South Korean adult woman in a studio",
+        "生成 9:16 韓國成年女性全裸全身入鏡圖片",
+    )
+    assert "fully nude" in prompt
+    assert "head to toe" in prompt
+    assert "vertical 9:16" in prompt
+    assert not ImageGenerationCapability._plan_satisfies_request(
+        "A Korean woman wearing a white dress, portrait",
+        "生成韓國成年女性全裸全身圖片",
+    )
+    assert ImageGenerationCapability._recommended_model_alias(
+        "韓國成年女性人體藝術"
+    ) == "chilloutmix"
+
+    negative = ImageGenerationCapability._negative_prompt(
+        "explicit sexual content, genitalia, clothing, sexual violence",
+        adult=True,
+        request="成年女性全身裸體",
+    )
+    assert "explicit sexual content" not in negative
+    assert "genitalia" not in negative
+    assert "clothing" in negative
+    assert "sexual violence" in negative
+    assert "cropped" in negative
 
 
 def test_verified_image_output_has_stable_skill_identity() -> None:

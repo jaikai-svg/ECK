@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,60 @@ REQUIRED_FILES = (
     "transformer/config.json",
     "vae/config.json",
 )
+
+
+def frame_quality_metrics(video_frames: list[Any]) -> dict[str, float]:
+    import numpy as np
+
+    frames = np.stack([np.asarray(frame).astype(np.float32) for frame in video_frames])
+    gray = frames.mean(axis=3)
+    edge_x = np.abs(np.diff(gray, axis=2)).mean()
+    edge_y = np.abs(np.diff(gray, axis=1)).mean()
+    temporal_delta = np.abs(np.diff(frames, axis=0)).mean()
+    return {
+        "edge_energy_mean": round(float((edge_x + edge_y) / 2), 4),
+        "temporal_delta_mean": round(float(temporal_delta), 4),
+    }
+
+
+def validate_frame_quality(metrics: dict[str, float]) -> None:
+    if metrics["edge_energy_mean"] < 0.35:
+        raise RuntimeError(
+            "Generated frames collapsed into a near-featureless image; artifact rejected."
+        )
+    if metrics["temporal_delta_mean"] < 0.2:
+        raise RuntimeError("Generated frames contain no meaningful motion; artifact rejected.")
+
+
+def export_faststart(video_frames: list[Any], output_path: Path, fps: int) -> bool:
+    import imageio_ffmpeg
+    from diffusers.utils import export_to_video
+
+    encoded_path = output_path.with_suffix(".encoded.mp4")
+    encoded_path.unlink(missing_ok=True)
+    output_path.unlink(missing_ok=True)
+    export_to_video(video_frames, str(encoded_path), fps=fps)
+    command = [
+        imageio_ffmpeg.get_ffmpeg_exe(),
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(encoded_path),
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except (OSError, subprocess.CalledProcessError):
+        encoded_path.replace(output_path)
+        return False
+    else:
+        encoded_path.unlink(missing_ok=True)
+        return True
 
 
 def runtime_status(model_dir: Path) -> dict[str, Any]:
@@ -50,7 +105,6 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     import psutil
     import torch
     from diffusers import CogVideoXPipeline
-    from diffusers.utils import export_to_video
 
     model_dir = Path(str(request["model_dir"])).resolve()
     status = runtime_status(model_dir)
@@ -68,6 +122,14 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     steps = max(1, int(request.get("steps", 25)))
     seed = int(request.get("seed", 31337))
     fps = max(1, int(request.get("fps", 8)))
+    width = int(request.get("width", 720))
+    height = int(request.get("height", 480))
+    if not (256 <= width <= 1024 and 256 <= height <= 1024):
+        raise ValueError("CogVideoX dimensions must be between 256 and 1024 pixels.")
+    if width % 8 or height % 8 or width * height > 600_000:
+        raise ValueError(
+            "CogVideoX dimensions must be divisible by 8 and stay within 600000 pixels."
+        )
     started = time.perf_counter()
     process = psutil.Process()
     memory_before_gb = process.memory_info().rss / 1024**3
@@ -87,16 +149,18 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     result = pipe(
         prompt=prompt,
         negative_prompt=str(request.get("negative_prompt", "")),
-        height=480,
-        width=720,
+        height=height,
+        width=width,
         num_frames=frames,
         num_inference_steps=steps,
         guidance_scale=float(request.get("guidance_scale", 6.0)),
         generator=generator,
     )
     video_frames = result.frames[0]
+    quality = frame_quality_metrics(video_frames)
+    validate_frame_quality(quality)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    export_to_video(video_frames, str(output_path), fps=fps)
+    container_faststart = export_faststart(video_frames, output_path, fps)
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RuntimeError("CogVideoX did not produce an MP4 artifact.")
     elapsed = time.perf_counter() - started
@@ -112,12 +176,16 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
             "seconds": round(duration, 3),
             "frames": frames,
             "fps": fps,
+            "width": width,
+            "height": height,
             "steps": steps,
             "seed": seed,
             "precision": "fp16",
             "offload": "sequential_cpu",
             "vae_slicing": True,
             "vae_tiling": True,
+            "container_faststart": container_faststart,
+            "frame_quality": quality,
             "elapsed_seconds": round(elapsed, 3),
             "peak_gpu_memory_gb": round(
                 torch.cuda.max_memory_reserved() / 1024**3,

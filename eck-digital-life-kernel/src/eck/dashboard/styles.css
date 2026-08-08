@@ -132,9 +132,10 @@ textarea { resize: vertical; }
 .chat-role { display: block; margin-bottom: .28rem; color: var(--subtle); font: 700 .53rem ui-monospace, monospace; letter-spacing: .08em; }
 .chat-content { white-space: pre-wrap; }
 .chat-artifact { width: min(100%, 512px); margin: .7rem 0 0; }
-.chat-artifact a { display: block; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: #030912; }
-.chat-artifact-image { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; }
+.chat-artifact > a:not(.artifact-download) { display: block; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: #030912; }
+.chat-artifact-image { display: block; width: 100%; height: auto; max-height: 52rem; object-fit: contain; }
 .chat-artifact-video { display: block; width: 100%; height: auto; max-height: 32rem; background: #000; }
+.artifact-download { display: inline-block; margin-top: .45rem; color: var(--accent); font: 700 .58rem ui-monospace, monospace; }
 .chat-artifact figcaption { margin-top: .4rem; color: var(--subtle); font: .55rem/1.55 ui-monospace, monospace; overflow-wrap: anywhere; }
 .chat-form { margin-top: .65rem; }
 .chat-form textarea { min-height: 96px; }

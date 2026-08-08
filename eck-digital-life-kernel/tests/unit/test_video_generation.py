@@ -166,6 +166,8 @@ async def test_cogvideo_translates_user_request_and_preserves_subject(
     assert result.success
     assert captured["prompt"].startswith("An adult woman walking")
     assert captured["frames"] == 41
+    assert captured["width"] == 720
+    assert captured["height"] == 480
     assert result.output["metadata"]["user_request"] == "生成美女在公園散步的影片"
 
 
@@ -192,3 +194,46 @@ def test_adult_video_negative_prompt_does_not_cancel_requested_anatomy() -> None
     assert "breasts" not in negative
     assert "genitals" not in negative
     assert "minor" in negative
+
+
+@pytest.mark.asyncio
+async def test_adult_video_request_bypasses_general_prompt_planner(application) -> None:
+    plan, response = await application.video_generation._plan_user_request(
+        "生成亞洲成年女性脫衣後全裸全身影片"
+    )
+
+    assert response.model == "deterministic-media-compiler.v1"
+    assert "East Asian appearance" in plan["prompt"]
+    assert "fully nude consenting adult" in plan["prompt"]
+    assert "removes clothing" in plan["prompt"]
+
+
+def test_video_prompt_rejects_instruction_echo_and_enforces_user_intent() -> None:
+    echoed = (
+        '{"prompt":"Convert the request into a concise English CogVideoX prompt. '
+        'Preserve the exact subject and return only JSON. Never introduce minors.",'
+        '"negative_prompt":""}'
+    )
+    with pytest.raises(RuntimeError, match="echoed its instructions"):
+        VideoGenerationCapability._parse_prompt_plan(echoed)
+
+    prompt = VideoGenerationCapability._enforce_request_constraints(
+        "A Korean adult woman in a studio",
+        "生成韓國成年女性脫衣後全裸全身影片",
+    )
+    assert "fully nude" in prompt
+    assert "head to toe" in prompt
+    assert "removes clothing" in prompt
+    assert not VideoGenerationCapability._plan_satisfies_request(
+        "An adult woman standing in a studio",
+        "生成成年女性脫衣後全裸全身影片",
+    )
+
+    negative = VideoGenerationCapability._negative_prompt(
+        "explicit sexual content, genitalia, watermark, sexual violence",
+        adult=True,
+        request="生成成年女性裸體影片",
+    )
+    assert "explicit sexual content" not in negative
+    assert "genitalia" not in negative
+    assert "sexual violence" in negative

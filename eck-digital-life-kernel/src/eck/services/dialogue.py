@@ -22,6 +22,7 @@ from eck.domain.models import (
 
 
 class DialogueService:
+    _media_command = re.compile(r"^\s*/(?P<kind>image|video)\b(?P<tail>.*)$", re.IGNORECASE)
     _image_subject = re.compile(
         r"(圖片|圖像|照片|插畫|圖畫|畫面|頭像|封面|海報|圖|image|picture|photo|illustration|poster)",
         re.IGNORECASE,
@@ -74,6 +75,12 @@ class DialogueService:
         message: str,
         history: list[dict[str, str]],
     ) -> dict[str, Any]:
+        media_command = self._parse_media_command(message)
+        if media_command:
+            normalized = self._normalize_media_command(media_command)
+            if media_command["kind"] == "video":
+                return await self._generate_video(normalized)
+            return await self._generate_image(normalized)
         if self.is_background_removal_request(message):
             return await self._remove_background()
         if self.is_video_request(message):
@@ -84,6 +91,9 @@ class DialogueService:
 
     @classmethod
     def is_image_request(cls, message: str) -> bool:
+        command = cls._parse_media_command(message)
+        if command:
+            return str(command["kind"]) == "image"
         if not cls._image_action.search(message):
             return False
         if cls._image_subject.search(message):
@@ -100,7 +110,55 @@ class DialogueService:
 
     @classmethod
     def is_video_request(cls, message: str) -> bool:
+        command = cls._parse_media_command(message)
+        if command:
+            return str(command["kind"]) == "video"
         return bool(cls._video_subject.search(message) and cls._video_action.search(message))
+
+    @classmethod
+    def _parse_media_command(cls, message: str) -> dict[str, Any] | None:
+        match = cls._media_command.match(message)
+        if not match:
+            return None
+        tokens = match.group("tail").strip().split()
+        nsfw = False
+        ratio: str | None = None
+        seconds: float | None = None
+        prompt_start = 0
+        for index, token in enumerate(tokens):
+            normalized = token.casefold()
+            if normalized == "nsfw":
+                nsfw = True
+            elif normalized in {"1:1", "9:16", "16:9", "2:3", "3:2"}:
+                ratio = normalized
+            elif match_seconds := re.fullmatch(r"(\d+(?:\.\d+)?)(?:s|sec|秒)", normalized):
+                seconds = float(match_seconds.group(1))
+            else:
+                prompt_start = index
+                break
+        else:
+            prompt_start = len(tokens)
+        prompt = " ".join(tokens[prompt_start:]).strip()
+        if not prompt:
+            raise ValueError(f"/{match.group('kind').lower()} 需要提供生成內容。")
+        return {
+            "kind": match.group("kind").lower(),
+            "nsfw": nsfw,
+            "ratio": ratio,
+            "seconds": seconds,
+            "prompt": prompt,
+        }
+
+    @staticmethod
+    def _normalize_media_command(command: dict[str, Any]) -> str:
+        parts = [str(command["prompt"])]
+        if command.get("nsfw"):
+            parts.insert(0, "legal adult NSFW content, all depicted people age 21 or older")
+        if command.get("ratio"):
+            parts.append(f"aspect ratio {command['ratio']}")
+        if command.get("kind") == "video" and command.get("seconds") is not None:
+            parts.append(f"{command['seconds']} seconds")
+        return ", ".join(parts)
 
     async def _general_response(
         self,
@@ -468,6 +526,7 @@ class DialogueService:
                 "context": self._memory_counts(),
             }
         seconds = self._video_seconds(message)
+        width, height = self._video_dimensions(message)
         create = TaskCreate(
             goal=f"Generate a verified local video for: {message[:500]}",
             success_contract=SuccessContract(
@@ -484,6 +543,18 @@ class DialogueService:
                         operator=ComparisonOperator.GTE,
                         expected=1.0,
                     ),
+                    VerificationCheck(
+                        name="Video width matches request",
+                        path="metadata.width",
+                        operator=ComparisonOperator.EQ,
+                        expected=width,
+                    ),
+                    VerificationCheck(
+                        name="Video height matches request",
+                        path="metadata.height",
+                        operator=ComparisonOperator.EQ,
+                        expected=height,
+                    ),
                 ),
                 required_evidence=(EvidenceSource.TOOL,),
                 require_reproducible=False,
@@ -492,7 +563,12 @@ class DialogueService:
             action=ActionProposal(
                 capability="video.generate",
                 operation="generate",
-                payload={"user_request": message, "seconds": seconds},
+                payload={
+                    "user_request": message,
+                    "seconds": seconds,
+                    "width": width,
+                    "height": height,
+                },
                 declared_risk=RiskLevel.MEDIUM,
                 reversible=True,
                 estimated_cost_units=600,
@@ -551,28 +627,54 @@ class DialogueService:
     @staticmethod
     def _image_dimensions(message: str) -> tuple[int, int]:
         compact = message.casefold().replace(" ", "")
+        custom = re.search(r"(?<!\d)(\d{3,4})[x×](\d{3,4})(?!\d)", compact)
+        if custom:
+            width = min(1536, max(256, int(custom.group(1))))
+            height = min(1536, max(256, int(custom.group(2))))
+            return width - width % 8, height - height % 8
+        if "1:1" in compact or "1：1" in compact:
+            return 512, 512
         if "9:16" in compact or "9：16" in compact:
-            return 512, 896
+            return 504, 896
         if "16:9" in compact or "16：9" in compact:
-            return 896, 512
+            return 896, 504
         if "2:3" in compact or "2：3" in compact:
             return 512, 768
         if "3:2" in compact or "3：2" in compact:
             return 768, 512
-        if re.search(r"直式|直幅|portrait|全身入鏡|全身照", message, re.IGNORECASE):
+        if re.search(r"直式|直幅|portrait|全身", message, re.IGNORECASE):
             return 512, 768
         if re.search(r"橫式|橫幅|landscape|寬景", message, re.IGNORECASE):
             return 768, 512
         return 512, 512
 
     def _video_seconds(self, message: str) -> float:
-        match = re.search(r"(\d+(?:\.\d+)?)\s*(?:秒|seconds?|sec)", message, re.IGNORECASE)
+        match = re.search(
+            r"(\d+(?:\.\d+)?)\s*(?:秒|seconds?|secs?|s)(?![A-Za-z])",
+            message,
+            re.IGNORECASE,
+        )
         requested = (
             float(match.group(1))
             if match
             else float(self.application.settings.video_default_seconds)
         )
         return min(6.0, max(1.0, requested))
+
+    @staticmethod
+    def _video_dimensions(message: str) -> tuple[int, int]:
+        compact = message.casefold().replace(" ", "")
+        if "1:1" in compact or "1：1" in compact:
+            return 512, 512
+        if "9:16" in compact or "9：16" in compact:
+            return 432, 768
+        if "16:9" in compact or "16：9" in compact:
+            return 768, 432
+        if re.search(r"直式|直幅|portrait|全身", message, re.IGNORECASE):
+            return 432, 768
+        if re.search(r"橫式|橫幅|landscape|寬景", message, re.IGNORECASE):
+            return 768, 432
+        return 720, 480
 
     def _memory_counts(self) -> dict[str, int]:
         return {

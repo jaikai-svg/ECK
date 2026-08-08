@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import httpx
 
+from eck.brain.base import BrainResponse
 from eck.capabilities.base import Capability, CapabilityDefinition
 from eck.capabilities.image_generation import ImageGenerationCapability
 from eck.config import Settings
@@ -33,7 +34,7 @@ class VideoGenerationCapability(Capability):
         deterministic=False,
     )
     _sexual_terms = re.compile(
-        r"\b(nude|naked|erotic|porn(?:ographic)?|sexual|sex scene|adult content)\b|"
+        r"\b(nsfw|nude|naked|erotic|porn(?:ographic)?|sexual|sex scene|adult content)\b|"
         r"裸體|裸露|全裸|情色|色情|性愛|成人內容|陰部|生殖器|乳房裸露",
         re.IGNORECASE,
     )
@@ -376,6 +377,8 @@ class VideoGenerationCapability(Capability):
                     "seconds": seconds,
                     "steps": self.settings.video_generation_steps,
                     "seed": seed,
+                    "width": int(action.payload.get("width", 720)),
+                    "height": int(action.payload.get("height", 480)),
                 }
                 if backend == "cogvideox":
                     frame_groups = max(1, min(6, round(seconds)))
@@ -418,6 +421,8 @@ class VideoGenerationCapability(Capability):
         metadata = report.get("metadata", {})
         if not isinstance(metadata, dict):
             return self._failure(action, started, f"{backend} returned invalid metadata.")
+        metadata.setdefault("width", request["width"])
+        metadata.setdefault("height", request["height"])
         metadata["generation_input"] = initial_metadata
         metadata["user_request"] = user_request or prompt
         metadata["planned_prompt"] = prompt
@@ -494,6 +499,18 @@ class VideoGenerationCapability(Capability):
 
     async def _plan_user_request(self, user_request: str) -> tuple[dict[str, Any], Any]:
         adult = bool(self._sexual_terms.search(user_request))
+        if adult:
+            plan = self._fallback_prompt_plan(user_request)
+            plan["negative_prompt"] = self._negative_prompt(
+                str(plan.get("negative_prompt", "")),
+                adult=True,
+                request=user_request,
+            )
+            return plan, BrainResponse(
+                content="deterministic adult media prompt",
+                model="deterministic-media-compiler.v1",
+                raw={},
+            )
         messages = [
             {
                 "role": "system",
@@ -531,6 +548,13 @@ class VideoGenerationCapability(Capability):
             last_response = response
             try:
                 plan = self._parse_prompt_plan(response.content)
+                if not self._plan_satisfies_request(plan["prompt"], user_request):
+                    raise RuntimeError(
+                        "The video prompt planner changed or omitted a required constraint."
+                    )
+                plan["prompt"] = self._enforce_request_constraints(
+                    plan["prompt"], user_request
+                )
                 plan["negative_prompt"] = self._negative_prompt(
                     str(plan.get("negative_prompt", "")),
                     adult=adult,
@@ -565,6 +589,10 @@ class VideoGenerationCapability(Capability):
         prompt = str(plan.get("prompt", "")).strip()
         if len(prompt) < 3 or not any(char.isascii() and char.isalpha() for char in prompt):
             raise RuntimeError("The video prompt planner returned no usable English prompt.")
+        if VideoGenerationCapability._looks_like_instruction_echo(prompt):
+            raise RuntimeError(
+                "The video prompt planner echoed its instructions instead of a prompt."
+            )
         return {
             "prompt": prompt[:1000],
             "negative_prompt": str(plan.get("negative_prompt", ""))[:500],
@@ -584,12 +612,26 @@ class VideoGenerationCapability(Capability):
         details = [subject]
         if re.search(r"韓國|south korean|korean", normalized):
             details.append("South Korean appearance")
+        elif re.search(r"亞洲|asian|east asian", normalized):
+            details.append("East Asian appearance")
+        if re.search(r"網紅|influencer|internet celebrity", normalized):
+            details.append("adult internet influencer")
         if cls._sexual_terms.search(user_request):
-            details.append("adult nudity")
+            details.extend(("fully nude consenting adult", "no clothing"))
         if re.search(r"陰部|生殖器|full frontal|explicit", normalized):
             details.append("full frontal adult nudity")
         if re.search(r"全身|full.body|head.to.toe", normalized):
-            details.append("full body visible from head to toe")
+            details.extend(
+                (
+                    "full body visible from head to toe",
+                    "feet visible",
+                    "uncropped long shot",
+                )
+            )
+        if re.search(r"脫衣|脱衣|undress|remov(?:e|ing) clothes", normalized):
+            details.append(
+                "the adult subject removes clothing in continuous motion and ends fully nude"
+            )
         if re.search(r"散步|走路|walking", normalized):
             details.extend(("walking naturally", "continuous leg and body motion"))
         if re.search(r"公園|park", normalized):
@@ -608,15 +650,25 @@ class VideoGenerationCapability(Capability):
     def _negative_prompt(value: str, *, adult: bool, request: str) -> str:
         if adult:
             adult_terms = re.compile(
-                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|explicit|"
-                r"genitals?|breasts?|nipples?|full frontal)\b|"
+                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|sexual content|"
+                r"explicit(?: sexual)? content|genital(?:ia|s)?|breasts?|nipples?|"
+                r"full frontal)\b|"
                 r"裸體|裸露|全裸|情色|色情|陰部|生殖器|乳房裸露",
                 re.IGNORECASE,
             )
             value = ", ".join(
                 part.strip()
                 for part in value.split(",")
-                if part.strip() and not adult_terms.search(part)
+                if part.strip()
+                and (
+                    re.search(
+                        r"child|minor|underage|non[- ]?consensual|violence|bestiality|"
+                        r"未成年|兒童|非自願|暴力|獸交",
+                        part,
+                        re.IGNORECASE,
+                    )
+                    or not adult_terms.search(part)
+                )
             )
         required = [
             "child",
@@ -636,7 +688,85 @@ class VideoGenerationCapability(Capability):
             re.IGNORECASE,
         ):
             required.extend(("aerial view", "drone shot", "city skyline"))
+        nude_request = re.search(
+            r"裸體|裸露|全裸|一絲不掛|nude|nudity|naked|no clothing",
+            request,
+            re.IGNORECASE,
+        )
+        undressing_request = re.search(
+            r"脫衣|脱衣|undress|remov(?:e|ing) clothes",
+            request,
+            re.IGNORECASE,
+        )
+        if nude_request and not undressing_request:
+            required.extend(("clothes", "clothing", "underwear", "covered body"))
         return ", ".join(part for part in (value.strip(), *required) if part)[:800]
+
+    @staticmethod
+    def _looks_like_instruction_echo(prompt: str) -> bool:
+        normalized = prompt.casefold()
+        markers = (
+            "convert the request",
+            "preserve the exact subject",
+            "return only json",
+            "never introduce minors",
+            "do not introduce aerial city footage",
+        )
+        return sum(marker in normalized for marker in markers) >= 2
+
+    @classmethod
+    def _plan_satisfies_request(cls, prompt: str, request: str) -> bool:
+        if cls._sexual_terms.search(request) and not re.search(
+            r"nude|nudity|naked|no clothing|uncovered|full frontal|adult anatomy",
+            prompt,
+            re.IGNORECASE,
+        ):
+            return False
+        if re.search(r"全身|full.body|head.to.toe", request, re.IGNORECASE) and not re.search(
+            r"full body|head.to.toe|feet visible|uncropped|long shot",
+            prompt,
+            re.IGNORECASE,
+        ):
+            return False
+        undressing_requested = re.search(
+            r"脫衣|脱衣|undress|remov(?:e|ing) clothes",
+            request,
+            re.IGNORECASE,
+        )
+        return not (
+            undressing_requested
+            and not re.search(
+                r"undress|remov(?:e|ing) clothes|takes? off clothing",
+                prompt,
+                re.IGNORECASE,
+            )
+        )
+
+    @classmethod
+    def _enforce_request_constraints(cls, prompt: str, request: str) -> str:
+        constraints: list[str] = []
+        if cls._sexual_terms.search(request):
+            constraints.extend(
+                (
+                    "fully nude consenting adult age 21 or older",
+                    "no clothing",
+                )
+            )
+        if re.search(r"陰部|生殖器|陰毛|full frontal|genitals?|pubic hair", request, re.IGNORECASE):
+            constraints.append("requested adult anatomy visible")
+        if re.search(r"全身|full.body|head.to.toe", request, re.IGNORECASE):
+            constraints.extend(
+                (
+                    "full body visible from head to toe",
+                    "feet visible",
+                    "uncropped long shot",
+                )
+            )
+        if re.search(r"脫衣|脱衣|undress|remov(?:e|ing) clothes", request, re.IGNORECASE):
+            constraints.append(
+                "the adult subject removes clothing in continuous motion and ends fully nude"
+            )
+        return ", ".join((prompt.strip(), *constraints))[:1200]
 
     async def _input_image(
         self,

@@ -68,14 +68,46 @@ def test_does_not_route_requested_text_output_to_image_engine() -> None:
 def test_dialogue_extracts_image_aspect_ratio_and_video_duration(application) -> None:
     dialogue = DialogueService(application)
 
-    assert dialogue._image_dimensions("生成 9:16 全身圖片") == (512, 896)
-    assert dialogue._image_dimensions("生成 16:9 圖片") == (896, 512)
+    assert dialogue._image_dimensions("生成 9:16 全身圖片") == (504, 896)
+    assert dialogue._image_dimensions("生成 16:9 圖片") == (896, 504)
     assert dialogue._image_dimensions("生成 2:3 圖片") == (512, 768)
     assert dialogue._image_dimensions("生成 3:2 圖片") == (768, 512)
     assert dialogue._image_dimensions("生成直式全身照") == (512, 768)
     assert dialogue._image_dimensions("生成橫式風景圖") == (768, 512)
     assert dialogue._video_seconds("生成 6 秒影片") == 6.0
     assert dialogue._video_seconds("生成 30 秒影片") == 6.0
+    assert dialogue._video_dimensions("生成 9:16 全身影片") == (432, 768)
+    assert dialogue._video_dimensions("生成 16:9 橫式影片") == (768, 432)
+
+
+def test_slash_media_commands_route_and_preserve_options() -> None:
+    image = DialogueService._parse_media_command(
+        "/image nsfw 9:16 一位成年女性全身入鏡"
+    )
+    video = DialogueService._parse_media_command("/video 16:9 5s 狗狗在公園玩球")
+
+    assert image == {
+        "kind": "image",
+        "nsfw": True,
+        "ratio": "9:16",
+        "seconds": None,
+        "prompt": "一位成年女性全身入鏡",
+    }
+    assert video == {
+        "kind": "video",
+        "nsfw": False,
+        "ratio": "16:9",
+        "seconds": 5.0,
+        "prompt": "狗狗在公園玩球",
+    }
+    assert DialogueService.is_image_request("/image 一隻狗")
+    assert DialogueService.is_video_request("/video 一隻狗玩球")
+    normalized = DialogueService._normalize_media_command(image)
+    assert "legal adult NSFW" in normalized
+    assert "aspect ratio 9:16" in normalized
+
+    with pytest.raises(ValueError, match="需要提供生成內容"):
+        DialogueService._parse_media_command("/image nsfw 9:16")
 
 
 @pytest.mark.parametrize(
@@ -238,6 +270,8 @@ async def test_dialogue_executes_and_returns_verified_video(application, monkeyp
                     "model": "zai-org/CogVideoX-2b",
                     "backend": "cogvideox",
                     "seconds": 5.0,
+                    "width": 720,
+                    "height": 480,
                 },
                 "metrics": {"seconds": 5.0, "completed": True},
                 "skill_fingerprint": "video.generate:cogvideox-2b:test",
@@ -265,6 +299,8 @@ async def test_dialogue_executes_and_returns_verified_video(application, monkeyp
     assert captured_payload == {
         "user_request": "生成 5 秒美女在公園散步的影片",
         "seconds": 5.0,
+        "width": 720,
+        "height": 480,
     }
     assert result["tool"] == "video.generate"
     assert result["artifacts"][0]["url"] == "/video-artifacts/walking.mp4"

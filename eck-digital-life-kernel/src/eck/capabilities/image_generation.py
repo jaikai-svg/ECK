@@ -34,7 +34,7 @@ class ImageGenerationCapability(Capability):
     )
 
     _sexual_terms = re.compile(
-        r"\b(nude|naked|erotic|porn(?:ographic)?|sexual|sex scene|adult content)\b|"
+        r"\b(nsfw|nude|naked|erotic|porn(?:ographic)?|sexual|sex scene|adult content)\b|"
         r"裸體|裸露|全裸|情色|色情|性愛|成人內容|陰部|生殖器|乳房裸露",
         re.IGNORECASE,
     )
@@ -198,16 +198,21 @@ class ImageGenerationCapability(Capability):
             if user_request:
                 requested_model_alias = self._requested_model_alias(user_request)
                 plan, plan_response = await self._plan_user_request(user_request)
-                planned_prompt = str(plan["prompt"])
+                planned_prompt = self._enforce_request_constraints(
+                    str(plan["prompt"]), user_request
+                )
                 if not requested_model_alias:
                     planned_prompt = self._strip_model_selection_artifacts(planned_prompt)
                 prompt = self._quality_prompt(planned_prompt, adult=adult_request)
                 negative_prompt = self._negative_prompt(
-                    str(plan.get("negative_prompt", "")), adult=adult_request
+                    str(plan.get("negative_prompt", "")),
+                    adult=adult_request,
+                    request=user_request,
                 )
                 model_alias = (
                     model_alias
                     or requested_model_alias
+                    or self._recommended_model_alias(user_request)
                     or str(plan.get("model", ""))
                 )
                 use_adetailer = bool(
@@ -229,6 +234,7 @@ class ImageGenerationCapability(Capability):
                 negative_prompt = self._negative_prompt(
                     str(action.payload.get("negative_prompt", "")),
                     adult=adult_request,
+                    request=prompt,
                 )
                 use_adetailer = bool(
                     action.payload.get(
@@ -371,13 +377,21 @@ class ImageGenerationCapability(Capability):
     async def _plan_user_request(
         self, user_request: str
     ) -> tuple[dict[str, Any], BrainResponse]:
+        if self._sexual_terms.search(user_request):
+            return self._fallback_prompt_plan(user_request), BrainResponse(
+                content="deterministic adult media prompt",
+                model="deterministic-media-compiler.v1",
+                raw={},
+            )
         messages = [
             {
                 "role": "system",
                 "content": (
                     "/no_think\nConvert the user's request into a concise English Stable "
                     "Diffusion 1.5 prompt. Preserve subject, setting, composition, and style. "
-                    "For people or animals, keep the complete face and head in frame. Legal "
+                    "For full-body requests, preserve a head-to-toe uncropped long shot instead "
+                    "of converting it into a portrait. Otherwise keep the complete face and head "
+                    "in frame. Legal "
                     "adult nudity or erotic requests may be translated, but every depicted "
                     "person must be an adult age 21 or older. Never introduce minors, coercion, "
                     "or sexual violence. Select realistic_vision for balanced realism, "
@@ -405,7 +419,12 @@ class ImageGenerationCapability(Capability):
             )
             last_response = response
             try:
-                return self._parse_plan(response.content), response
+                plan = self._parse_plan(response.content)
+                if not self._plan_satisfies_request(str(plan["prompt"]), user_request):
+                    raise RuntimeError(
+                        "The prompt planner changed or omitted a required user constraint."
+                    )
+                return plan, response
             except RuntimeError as exc:
                 raw_message = response.raw.get("message", {})
                 thinking = (
@@ -441,12 +460,28 @@ class ImageGenerationCapability(Capability):
             details.append("South Korean appearance")
         elif re.search(r"日本|japanese", normalized):
             details.append("Japanese appearance")
+        elif re.search(r"亞洲|asian|east asian", normalized):
+            details.append("East Asian appearance")
+        if re.search(r"網紅|influencer|internet celebrity", normalized):
+            details.append("adult internet influencer")
+        if re.search(r"白皙|pale skin|fair skin", normalized):
+            details.append("fair skin")
         if adult:
-            details.append("adult nudity")
-        if re.search(r"陰部|生殖器|full frontal|explicit", normalized):
+            details.extend(("fully nude adult", "no clothing", "uncovered body"))
+        if re.search(r"陰部|生殖器|陰毛|full frontal|genitals?|pubic hair|explicit", normalized):
             details.append("full frontal adult nudity")
         if re.search(r"全身|full.body|head.to.toe", normalized):
-            details.append("full body visible from head to toe")
+            details.extend(
+                (
+                    "full body visible from head to toe",
+                    "feet visible",
+                    "uncropped long shot",
+                )
+            )
+        if re.search(r"9[:：]16", normalized):
+            details.append("vertical 9:16 composition")
+        elif re.search(r"16[:：]9", normalized):
+            details.append("wide 16:9 composition")
         if re.search(r"散步|走路|walking", normalized):
             details.append("walking naturally")
         if re.search(r"公園|park", normalized):
@@ -457,7 +492,11 @@ class ImageGenerationCapability(Capability):
         return {
             "prompt": ", ".join(details),
             "negative_prompt": "low quality, blurry, distorted anatomy, text, watermark",
-            "model": "chilloutmix" if "韓國" in user_request else "realistic_vision",
+            "model": (
+                "chilloutmix"
+                if re.search(r"亞洲|韓國|日本|asian|korean|japanese", user_request, re.IGNORECASE)
+                else "realistic_vision"
+            ),
             "use_adetailer": "woman" in subject or "man" in subject,
         }
 
@@ -479,6 +518,8 @@ class ImageGenerationCapability(Capability):
         )
         if len(prompt) < 3 or not contains_english:
             raise RuntimeError("The prompt planner returned no usable English prompt.")
+        if ImageGenerationCapability._looks_like_instruction_echo(prompt):
+            raise RuntimeError("The prompt planner echoed its instructions instead of a prompt.")
         model = str(plan.get("model", "realistic_vision"))
         if model not in {"realistic_vision", "chilloutmix", "cyberrealistic"}:
             model = "realistic_vision"
@@ -496,18 +537,33 @@ class ImageGenerationCapability(Capability):
         )[:1200]
 
     @staticmethod
-    def _negative_prompt(value: str, *, adult: bool = False) -> str:
+    def _negative_prompt(
+        value: str,
+        *,
+        adult: bool = False,
+        request: str = "",
+    ) -> str:
         if adult:
             adult_suppression = re.compile(
-                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|explicit content|"
-                r"genitals?|breasts?|nipples?|full frontal)\b|"
+                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|sexual content|"
+                r"explicit(?: sexual)? content|genital(?:ia|s)?|breasts?|nipples?|"
+                r"full frontal)\b|"
                 r"裸體|裸露|全裸|情色|色情|成人內容|陰部|生殖器|乳房裸露",
                 re.IGNORECASE,
             )
             value = ", ".join(
                 part.strip()
                 for part in value.split(",")
-                if part.strip() and not adult_suppression.search(part)
+                if part.strip()
+                and (
+                    re.search(
+                        r"child|minor|underage|non[- ]?consensual|violence|bestiality|"
+                        r"未成年|兒童|非自願|暴力|獸交",
+                        part,
+                        re.IGNORECASE,
+                    )
+                    or not adult_suppression.search(part)
+                )
             )
         required = (
             "child, children, minor, underage, non-consensual, sexual violence, bestiality, "
@@ -515,7 +571,84 @@ class ImageGenerationCapability(Capability):
             "extra limbs, extra fingers, poorly drawn hands, poorly drawn face, text, letters, "
             "caption, signature, watermark, logo, typography"
         )
-        return f"{value.strip()}, {required}".strip(", ")[:1200]
+        framing = ""
+        if re.search(r"全身|full.body|head.to.toe", request, re.IGNORECASE):
+            framing = "cropped, close-up, medium shot, partial body, feet out of frame, "
+        clothing = ""
+        if re.search(
+            r"裸體|裸露|全裸|一絲不掛|nude|nudity|naked|no clothing",
+            request,
+            re.IGNORECASE,
+        ):
+            clothing = "clothes, clothing, dress, underwear, lingerie, bikini, covered body, "
+        return f"{value.strip()}, {framing}{clothing}{required}".strip(", ")[:1200]
+
+    @staticmethod
+    def _looks_like_instruction_echo(prompt: str) -> bool:
+        normalized = prompt.casefold()
+        markers = (
+            "convert the user's request",
+            "convert the user request",
+            "return only the requested json",
+            "return only json",
+            "select realistic_vision",
+            "never introduce minors",
+        )
+        return sum(marker in normalized for marker in markers) >= 2
+
+    @classmethod
+    def _plan_satisfies_request(cls, prompt: str, request: str) -> bool:
+        if cls._sexual_terms.search(request) and not re.search(
+            r"nude|nudity|naked|no clothing|uncovered|full frontal|adult anatomy",
+            prompt,
+            re.IGNORECASE,
+        ):
+            return False
+        if re.search(r"全身|full.body|head.to.toe", request, re.IGNORECASE) and not re.search(
+            r"full body|head.to.toe|feet visible|uncropped|long shot",
+            prompt,
+            re.IGNORECASE,
+        ):
+            return False
+        return not (
+            re.search(r"韓國|korean", request, re.IGNORECASE)
+            and not re.search(r"korean|east asian", prompt, re.IGNORECASE)
+        )
+
+    @staticmethod
+    def _recommended_model_alias(request: str) -> str:
+        if re.search(r"亞洲|韓國|日本|台灣|asian|korean|japanese", request, re.IGNORECASE):
+            return "chilloutmix"
+        if re.search(r"戶外|材質|配件|outdoor|material|accessor", request, re.IGNORECASE):
+            return "cyberrealistic"
+        return ""
+
+    @classmethod
+    def _enforce_request_constraints(cls, prompt: str, request: str) -> str:
+        constraints: list[str] = []
+        if cls._sexual_terms.search(request):
+            constraints.extend(
+                (
+                    "fully nude consenting adult age 21 or older",
+                    "no clothing",
+                    "uncovered adult body",
+                )
+            )
+        if re.search(r"陰部|生殖器|陰毛|full frontal|genitals?|pubic hair", request, re.IGNORECASE):
+            constraints.append("requested adult anatomy clearly visible")
+        if re.search(r"全身|full.body|head.to.toe", request, re.IGNORECASE):
+            constraints.extend(
+                (
+                    "full body visible from head to toe",
+                    "feet visible",
+                    "uncropped long shot",
+                )
+            )
+        if re.search(r"9[:：]16", request):
+            constraints.append("vertical 9:16 composition")
+        elif re.search(r"16[:：]9", request):
+            constraints.append("wide 16:9 composition")
+        return ", ".join((prompt.strip(), *constraints))[:1100]
 
     @staticmethod
     def _requested_model_alias(request: str) -> str:

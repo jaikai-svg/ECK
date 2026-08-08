@@ -31,6 +31,7 @@
 18. [ECK-focused Community Learning](18-eck-focused-community-learning.md)
 19. [Self-Evolution & Portable Skill Graph](19-self-evolution-and-skill-graph.md)
 20. [Continuous Learning, Media Prompts & Themes](20-continuous-learning-media-and-themes.md)
+21. [Media Commands & Artifact Quality](21-media-commands-and-artifact-quality.md)
 
 ## v0.2 開發規格下載
 
