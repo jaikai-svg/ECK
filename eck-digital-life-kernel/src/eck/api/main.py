@@ -476,6 +476,10 @@ def create_api(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @api.get("/v1/chat/commands")
+    async def chat_commands() -> dict[str, Any]:
+        return {"items": DialogueService.command_catalog()}
+
     @api.post("/v1/chat")
     async def chat(request: ChatRequest, app: AppDependency) -> dict[str, Any]:
         try:

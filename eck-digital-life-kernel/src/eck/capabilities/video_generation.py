@@ -355,6 +355,10 @@ class VideoGenerationCapability(Capability):
                         ),
                     ),
                 )
+                output_width = int(action.payload.get("width", 720))
+                output_height = int(action.payload.get("height", 480))
+                if backend == "cogvideox":
+                    prompt = self._framing_prompt(prompt, output_width, output_height)
                 initial_metadata: dict[str, Any]
                 input_path: Path | None
                 if backend == "framepack":
@@ -380,8 +384,8 @@ class VideoGenerationCapability(Capability):
                         "seconds": seconds,
                         "steps": self.settings.video_generation_steps,
                         "seed": seed,
-                        "width": int(action.payload.get("width", 720)),
-                        "height": int(action.payload.get("height", 480)),
+                        "width": output_width,
+                        "height": output_height,
                     }
                     if backend == "cogvideox":
                         frame_groups = max(1, min(6, round(seconds)))
@@ -503,6 +507,19 @@ class VideoGenerationCapability(Capability):
                 )
         except httpx.HTTPError:
             return
+
+    @staticmethod
+    def _framing_prompt(prompt: str, width: int, height: int) -> str:
+        if height > width:
+            framing = (
+                "center the complete subject inside a narrow portrait-safe center area, "
+                "keep all requested body parts visible for a vertical crop"
+            )
+        elif width == height:
+            framing = "center the complete subject inside a square-safe center area"
+        else:
+            framing = "keep the primary subject centered with safe margins"
+        return f"{prompt.rstrip(', ')}, {framing}"[:1200]
 
     async def _plan_user_request(self, user_request: str) -> tuple[dict[str, Any], Any]:
         adult = bool(self._sexual_terms.search(user_request))

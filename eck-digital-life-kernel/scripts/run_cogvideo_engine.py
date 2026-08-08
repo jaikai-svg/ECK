@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 MODEL_ID = "zai-org/CogVideoX-2b"
+MODEL_WIDTH = 720
+MODEL_HEIGHT = 480
 REQUIRED_FILES = (
     "model_index.json",
     "scheduler/scheduler_config.json",
@@ -27,9 +29,16 @@ def frame_quality_metrics(video_frames: list[Any]) -> dict[str, float]:
     edge_x = np.abs(np.diff(gray, axis=2)).mean()
     edge_y = np.abs(np.diff(gray, axis=1)).mean()
     temporal_delta = np.abs(np.diff(frames, axis=0)).mean()
+    channel_means = frames.mean(axis=(0, 1, 2))
+    channel_stds = frames.std(axis=(0, 1, 2))
     return {
         "edge_energy_mean": round(float((edge_x + edge_y) / 2), 4),
         "temporal_delta_mean": round(float(temporal_delta), 4),
+        "channel_mean_min": round(float(channel_means.min()), 4),
+        "channel_mean_max": round(float(channel_means.max()), 4),
+        "channel_mean_spread": round(float(channel_means.max() - channel_means.min()), 4),
+        "channel_std_min": round(float(channel_stds.min()), 4),
+        "channel_std_max": round(float(channel_stds.max()), 4),
     }
 
 
@@ -40,6 +49,63 @@ def validate_frame_quality(metrics: dict[str, float]) -> None:
         )
     if metrics["temporal_delta_mean"] < 0.2:
         raise RuntimeError("Generated frames contain no meaningful motion; artifact rejected.")
+    if metrics["channel_mean_spread"] > 160 and metrics["channel_std_min"] < 4:
+        raise RuntimeError(
+            "Generated frames collapsed into a color-channel artifact; artifact rejected."
+        )
+
+
+def output_crop_box(
+    source_width: int,
+    source_height: int,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int]:
+    if min(source_width, source_height, width, height) < 1:
+        raise ValueError("Video frame dimensions must be positive.")
+    source_ratio = source_width / source_height
+    target_ratio = width / height
+    if source_ratio > target_ratio:
+        crop_width = max(1, round(source_height * target_ratio))
+        left = max(0, (source_width - crop_width) // 2)
+        return left, 0, left + crop_width, source_height
+    crop_height = max(1, round(source_width / target_ratio))
+    top = max(0, (source_height - crop_height) // 2)
+    return 0, top, source_width, top + crop_height
+
+
+def fit_frames_to_output(
+    video_frames: list[Any],
+    width: int,
+    height: int,
+) -> tuple[list[Any], dict[str, Any]]:
+    from PIL import Image
+
+    if not video_frames:
+        raise ValueError("CogVideoX returned no frames.")
+    source_width, source_height = video_frames[0].size
+    if (source_width, source_height) == (width, height):
+        return video_frames, {
+            "mode": "none",
+            "source_width": source_width,
+            "source_height": source_height,
+        }
+
+    crop_box = output_crop_box(source_width, source_height, width, height)
+    transformed = [
+        frame.convert("RGB")
+        .crop(crop_box)
+        .resize((width, height), Image.Resampling.LANCZOS)
+        for frame in video_frames
+    ]
+    return transformed, {
+        "mode": "center_crop_resize",
+        "source_width": source_width,
+        "source_height": source_height,
+        "crop_box": list(crop_box),
+        "output_width": width,
+        "output_height": height,
+    }
 
 
 def export_faststart(video_frames: list[Any], output_path: Path, fps: int) -> bool:
@@ -122,13 +188,13 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     steps = max(1, int(request.get("steps", 25)))
     seed = int(request.get("seed", 31337))
     fps = max(1, int(request.get("fps", 8)))
-    width = int(request.get("width", 720))
-    height = int(request.get("height", 480))
-    if not (256 <= width <= 1024 and 256 <= height <= 1024):
-        raise ValueError("CogVideoX dimensions must be between 256 and 1024 pixels.")
-    if width % 8 or height % 8 or width * height > 600_000:
+    output_width = int(request.get("width", MODEL_WIDTH))
+    output_height = int(request.get("height", MODEL_HEIGHT))
+    if not (256 <= output_width <= 1536 and 256 <= output_height <= 1536):
+        raise ValueError("Video output dimensions must be between 256 and 1536 pixels.")
+    if output_width % 8 or output_height % 8 or output_width * output_height > 900_000:
         raise ValueError(
-            "CogVideoX dimensions must be divisible by 8 and stay within 600000 pixels."
+            "Video output dimensions must be divisible by 8 and stay within 900000 pixels."
         )
     started = time.perf_counter()
     process = psutil.Process()
@@ -149,16 +215,22 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     result = pipe(
         prompt=prompt,
         negative_prompt=str(request.get("negative_prompt", "")),
-        height=height,
-        width=width,
+        height=MODEL_HEIGHT,
+        width=MODEL_WIDTH,
         num_frames=frames,
         num_inference_steps=steps,
         guidance_scale=float(request.get("guidance_scale", 6.0)),
         generator=generator,
     )
     video_frames = result.frames[0]
-    quality = frame_quality_metrics(video_frames)
-    validate_frame_quality(quality)
+    source_quality = frame_quality_metrics(video_frames)
+    validate_frame_quality(source_quality)
+    video_frames, output_transform = fit_frames_to_output(
+        video_frames,
+        output_width,
+        output_height,
+    )
+    output_quality = frame_quality_metrics(video_frames)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     container_faststart = export_faststart(video_frames, output_path, fps)
     if not output_path.is_file() or output_path.stat().st_size == 0:
@@ -176,8 +248,10 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
             "seconds": round(duration, 3),
             "frames": frames,
             "fps": fps,
-            "width": width,
-            "height": height,
+            "width": output_width,
+            "height": output_height,
+            "model_width": MODEL_WIDTH,
+            "model_height": MODEL_HEIGHT,
             "steps": steps,
             "seed": seed,
             "precision": "fp16",
@@ -185,7 +259,9 @@ def generate(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
             "vae_slicing": True,
             "vae_tiling": True,
             "container_faststart": container_faststart,
-            "frame_quality": quality,
+            "frame_quality": output_quality,
+            "source_frame_quality": source_quality,
+            "output_transform": output_transform,
             "elapsed_seconds": round(elapsed, 3),
             "peak_gpu_memory_gb": round(
                 torch.cuda.max_memory_reserved() / 1024**3,

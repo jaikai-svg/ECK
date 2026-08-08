@@ -80,13 +80,26 @@ class ContractVerifier:
         )
         if success:
             status = VerificationStatus.VERIFIED_SUCCESS
-            reason = "All contract checks passed with external, reproducible evidence."
+            reason = (
+                "All contract checks passed with external, reproducible evidence."
+                if contract.require_reproducible
+                else "All contract checks passed with required external evidence."
+            )
         elif contract.require_reproducible and repeated_result is None:
             status = VerificationStatus.UNVERIFIABLE
             reason = "The contract requires reproduction, but no repeated result was supplied."
         else:
             status = VerificationStatus.VERIFIED_FAILURE
-            reason = "One or more contract checks failed, or the outcome was not reproducible."
+            if failed:
+                reason = f"Contract checks failed: {', '.join(failed)}."
+            elif not result.success:
+                reason = str(
+                    result.output.get("error")
+                    or result.output.get("detail")
+                    or "The capability reported failure."
+                )
+            else:
+                reason = "The outcome was not reproducible."
 
         return VerificationReport(
             status=status,

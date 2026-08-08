@@ -80,6 +80,29 @@ def test_dialogue_extracts_image_aspect_ratio_and_video_duration(application) ->
     assert dialogue._video_dimensions("生成 16:9 橫式影片") == (768, 432)
 
 
+def test_command_catalog_exposes_builtin_shortcuts() -> None:
+    commands = {item["command"]: item for item in DialogueService.command_catalog()}
+
+    assert commands["/image 9:16"]["insert"] == "/image 9:16 "
+    assert commands["/video 9:16"]["requires_prompt"] is True
+    assert commands["/status"]["requires_prompt"] is False
+    assert commands["/help"]["category"] == "系統"
+
+
+@pytest.mark.asyncio
+async def test_builtin_status_and_help_commands_do_not_call_brain(application) -> None:
+    dialogue = DialogueService(application)
+
+    status = await dialogue.respond("/status", [])
+    help_response = await dialogue.respond("/help", [])
+
+    assert status["tool"] == "system.status"
+    assert status["model"] == "eck-command-router.v1"
+    assert status["context"]["verified_experiences"] == 0
+    assert help_response["tool"] == "system.help"
+    assert "/image" in help_response["answer"]
+
+
 def test_slash_media_commands_route_and_preserve_options() -> None:
     image = DialogueService._parse_media_command(
         "/image nsfw 9:16 一位成年女性全身入鏡"

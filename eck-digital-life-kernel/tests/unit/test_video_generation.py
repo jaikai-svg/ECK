@@ -168,7 +168,19 @@ async def test_cogvideo_translates_user_request_and_preserves_subject(
     assert captured["frames"] == 41
     assert captured["width"] == 720
     assert captured["height"] == 480
+    assert "safe margins" in captured["prompt"]
     assert result.output["metadata"]["user_request"] == "生成美女在公園散步的影片"
+
+
+def test_cogvideo_portrait_prompt_protects_center_crop() -> None:
+    prompt = VideoGenerationCapability._framing_prompt(
+        "An adult woman walking through a park",
+        432,
+        768,
+    )
+
+    assert "portrait-safe center area" in prompt
+    assert "vertical crop" in prompt
 
 
 def test_video_fallback_blocks_unrequested_aerial_city_scene() -> None:

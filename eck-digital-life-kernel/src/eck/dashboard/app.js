@@ -5,6 +5,9 @@ let kernelStartedAt = null;
 let skillTreeLastLoaded = 0;
 let skillTreeRevision = "";
 let refreshInFlight = false;
+let slashCommands = [];
+let slashMatches = [];
+let slashSelection = 0;
 
 const escapeHtml = (value) => String(value ?? "")
   .replaceAll("&", "&amp;")
@@ -884,6 +887,23 @@ function artifactFromTask(task) {
   };
 }
 
+function taskFailureText(task) {
+  const output = task?.result?.output || {};
+  const metadata = output.metadata || {};
+  const failedChecks = task?.verification?.failed_checks || [];
+  if (failedChecks.some((name) => /width|height|尺寸/i.test(name))) {
+    const expected = Object.fromEntries(
+      (task?.success_contract?.checks || [])
+        .filter((check) => /width|height/i.test(check.name))
+        .map((check) => [check.name.toLowerCase().includes("width") ? "width" : "height", check.expected])
+    );
+    return `尺寸驗證失敗：要求 ${expected.width || "?"}×${expected.height || "?"}，實際 ${metadata.width || "?"}×${metadata.height || "?"}。`;
+  }
+  if (output.error || output.detail) return output.error || output.detail;
+  if (failedChecks.length) return `驗證未通過：${failedChecks.join("、")}`;
+  return task?.verification?.reason || task?.last_error || task?.status || "未知錯誤";
+}
+
 async function watchPendingTask(taskId) {
   if (!taskId || watchedTasks.has(taskId)) return;
   watchedTasks.add(taskId);
@@ -903,8 +923,7 @@ async function watchPendingTask(taskId) {
         message.content = artifact?.type === "video" ? "本機影片已完成並通過檔案驗證。" : "本機圖片已完成並通過檔案驗證。";
         message.artifacts = artifact ? [artifact] : [];
       } else {
-        const output = task?.result?.output || {};
-        message.content = `生成失敗：${output.error || output.detail || task.verification?.reason || task.status}`;
+        message.content = `生成失敗：${taskFailureText(task)}`;
       }
       saveChatHistory();
       renderChat();
@@ -924,12 +943,99 @@ async function watchPendingTask(taskId) {
   }
 }
 
+async function loadSlashCommands() {
+  try {
+    const data = await request("/v1/chat/commands");
+    slashCommands = Array.isArray(data.items) ? data.items : [];
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function closeSlashMenu() {
+  slashMatches = [];
+  slashSelection = 0;
+  $("#slash-command-menu").hidden = true;
+  $("#chat-input").setAttribute("aria-expanded", "false");
+}
+
+function renderSlashMenu() {
+  const menu = $("#slash-command-menu");
+  menu.innerHTML = slashMatches.map((item, index) => `
+    <button type="button" class="slash-command-item ${index === slashSelection ? "selected" : ""}" role="option" aria-selected="${index === slashSelection}" data-slash-index="${index}">
+      <code>${escapeHtml(item.command)}</code>
+      <span class="slash-command-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.description)}</small></span>
+      <small>${escapeHtml(item.category)}</small>
+    </button>
+  `).join("");
+  menu.hidden = slashMatches.length === 0;
+  $("#chat-input").setAttribute("aria-expanded", slashMatches.length ? "true" : "false");
+  menu.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
+}
+
+function updateSlashMenu() {
+  const value = $("#chat-input").value;
+  if (!value.startsWith("/") || value.includes("\n")) {
+    closeSlashMenu();
+    return;
+  }
+  const query = value.toLowerCase();
+  slashMatches = slashCommands.filter((item) => {
+    const command = String(item.command || "").toLowerCase();
+    const insert = String(item.insert || "").toLowerCase();
+    return command.startsWith(query) || insert.startsWith(query);
+  }).slice(0, 10);
+  slashSelection = Math.min(slashSelection, Math.max(0, slashMatches.length - 1));
+  renderSlashMenu();
+}
+
+function chooseSlashCommand(index) {
+  const item = slashMatches[index];
+  if (!item) return;
+  const input = $("#chat-input");
+  input.value = item.insert || item.command;
+  closeSlashMenu();
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  if (!item.requires_prompt) $("#chat-form").requestSubmit();
+}
+
+$("#chat-input").addEventListener("input", updateSlashMenu);
+$("#chat-input").addEventListener("keydown", (event) => {
+  if (!slashMatches.length || $("#slash-command-menu").hidden) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    slashSelection = (slashSelection + direction + slashMatches.length) % slashMatches.length;
+    renderSlashMenu();
+  } else if (event.key === "Enter" || event.key === "Tab") {
+    event.preventDefault();
+    chooseSlashCommand(slashSelection);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeSlashMenu();
+  }
+});
+
+$("#slash-command-menu").addEventListener("mousedown", (event) => {
+  event.preventDefault();
+  const target = event.target instanceof Element ? event.target : null;
+  const button = target?.closest("[data-slash-index]");
+  if (button) chooseSlashCommand(Number(button.dataset.slashIndex));
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target?.closest(".chat-composer")) closeSlashMenu();
+});
+
 $("#chat-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.currentTarget.querySelector("button");
   const input = $("#chat-input");
   const message = input.value.trim();
   if (!message) return;
+  closeSlashMenu();
   const priorHistory = chatHistory.slice(-10);
   chatHistory.push({ role: "user", content: message });
   saveChatHistory();
@@ -1192,6 +1298,7 @@ $$('[data-action]').forEach((button) => {
 
 window.addEventListener("hashchange", showView);
 renderChat();
+loadSlashCommands();
 chatHistory.filter((item) => item.pending && item.task_id).forEach((item) => watchPendingTask(item.task_id));
 showView();
 refresh();

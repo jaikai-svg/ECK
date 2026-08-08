@@ -322,6 +322,11 @@ class ImageGenerationCapability(Capability):
         metadata = report.get("metadata", {})
         if not isinstance(metadata, dict):
             return self._failure(action, started, "The image engine returned invalid metadata.")
+        actual_dimensions = self._png_dimensions(output_path)
+        if actual_dimensions is not None:
+            metadata["requested_width"] = width
+            metadata["requested_height"] = height
+            metadata["width"], metadata["height"] = actual_dimensions
         metadata["prompt_planner_model"] = planner_model
         metadata["prompt_planner_inference"] = planner_inference
         relative_path = output_path.relative_to(self.settings.workspace_dir.resolve()).as_posix()
@@ -1150,5 +1155,15 @@ class ImageGenerationCapability(Capability):
 
     @staticmethod
     def _dimension(value: object) -> int:
-        dimension = min(768, max(256, int(str(value))))
+        dimension = min(1536, max(256, int(str(value))))
         return dimension - dimension % 8
+
+    @staticmethod
+    def _png_dimensions(path: Path) -> tuple[int, int] | None:
+        with path.open("rb") as image_file:
+            header = image_file.read(24)
+        if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        return int.from_bytes(header[16:20], "big"), int.from_bytes(
+            header[20:24], "big"
+        )

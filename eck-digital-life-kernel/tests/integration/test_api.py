@@ -28,6 +28,11 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert chat.status_code == 200
         assert chat.json()["model"] == "mock-deterministic"
 
+        commands = client.get("/v1/chat/commands")
+        assert commands.status_code == 200
+        command_names = {item["command"] for item in commands.json()["items"]}
+        assert {"/image", "/video", "/status", "/help"} <= command_names
+
         assert client.get("/v1/kernel/status").status_code == 200
         supervisor = client.get("/v1/supervisor/status")
         assert supervisor.status_code == 200

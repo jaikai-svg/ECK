@@ -5,9 +5,17 @@ import asyncio
 import pytest
 
 from eck.brain.arbiter import InferenceArbiter
-from eck.domain.enums import ComparisonOperator, EvidenceSource, RiskLevel, TaskStatus
+from eck.core.time import utc_now
+from eck.domain.enums import (
+    ComparisonOperator,
+    EvidenceSource,
+    RiskLevel,
+    TaskStatus,
+    VerificationStatus,
+)
 from eck.domain.models import (
     ActionProposal,
+    CapabilityResult,
     SuccessContract,
     TaskCreate,
     VerificationCheck,
@@ -80,6 +88,32 @@ async def test_timeout_exhaustion_enters_dead_letter_state(application) -> None:
     assert "TaskDeadLettered" in {
         event.event_type for event in application.store.list_events(limit=20)
     }
+
+
+@pytest.mark.asyncio
+async def test_video_quality_rejection_is_retryable(application) -> None:
+    task = await application.tasks.submit(_task_create(max_attempts=3))
+    task = application.store.update_task(task.task_id, attempts=1)
+    now = utc_now()
+    result = CapabilityResult(
+        action_id=task.action.action_id,
+        capability="video.generate",
+        success=False,
+        output={
+            "error": (
+                "Generated frames collapsed into a near-featureless image; "
+                "artifact rejected."
+            )
+        },
+        started_at=now,
+        finished_at=now,
+    )
+
+    assert application.tasks._should_retry(
+        task,
+        result,
+        VerificationStatus.VERIFIED_FAILURE,
+    )
 
 
 @pytest.mark.asyncio

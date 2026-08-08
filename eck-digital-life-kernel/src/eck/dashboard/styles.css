@@ -138,7 +138,17 @@ textarea { resize: vertical; }
 .artifact-download { display: inline-block; margin-top: .45rem; color: var(--accent); font: 700 .58rem ui-monospace, monospace; }
 .chat-artifact figcaption { margin-top: .4rem; color: var(--subtle); font: .55rem/1.55 ui-monospace, monospace; overflow-wrap: anywhere; }
 .chat-form { margin-top: .65rem; }
+.chat-composer { position: relative; }
 .chat-form textarea { min-height: 96px; }
+.slash-command-menu { position: absolute; z-index: 15; right: 0; bottom: calc(100% + .45rem); left: 0; overflow-y: auto; max-height: 310px; padding: .38rem; border: 1px solid var(--line-strong); border-radius: 14px; background: rgba(6, 16, 29, .98); box-shadow: var(--shadow); }
+.slash-command-item { display: grid; width: 100%; grid-template-columns: minmax(110px, .35fr) minmax(0, 1fr) auto; gap: .7rem; align-items: center; padding: .62rem .7rem; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; text-align: left; }
+.slash-command-item:hover, .slash-command-item.selected { border-color: var(--line); color: var(--text); background: rgba(98, 242, 197, .06); }
+.slash-command-item code { color: var(--accent); font: 720 .62rem ui-monospace, monospace; }
+.slash-command-copy { min-width: 0; }
+.slash-command-copy b, .slash-command-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash-command-copy b { font-size: .66rem; }
+.slash-command-copy small { margin-top: .18rem; color: var(--subtle); font-size: .54rem; }
+.slash-command-item > small { color: var(--subtle); font: 650 .5rem ui-monospace, monospace; }
 .chat-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .5rem; }
 .chat-actions span { color: var(--subtle); font-size: .57rem; }
 .chat-actions button { min-width: 96px; }
@@ -376,6 +386,8 @@ footer { display: flex; justify-content: space-between; padding: 1.4rem .15rem 0
   .result-strip, .learning-summary, .challenge-progress { grid-template-columns: repeat(2, 1fr); }
   .chat-messages { min-height: 300px; }
   .chat-message { max-width: 94%; }
+  .slash-command-item { grid-template-columns: minmax(100px, .45fr) minmax(0, 1fr); }
+  .slash-command-item > small { display: none; }
   .research-form, .learning-theme-form, .control-actions, .skill-tree-search { grid-template-columns: 1fr; }
   .event-list { grid-template-columns: 1fr; }
   .form-footer, footer { align-items: stretch; flex-direction: column; }

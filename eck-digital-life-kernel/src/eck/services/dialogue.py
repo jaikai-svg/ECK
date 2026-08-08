@@ -70,11 +70,103 @@ class DialogueService:
     def __init__(self, application: Application) -> None:
         self.application = application
 
+    @staticmethod
+    def command_catalog() -> list[dict[str, Any]]:
+        return [
+            {
+                "command": "/image",
+                "insert": "/image ",
+                "title": "生成圖片",
+                "description": "使用本機 Forge 生成圖片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/image 9:16",
+                "insert": "/image 9:16 ",
+                "title": "直式圖片",
+                "description": "生成 9:16 直式圖片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/image 16:9",
+                "insert": "/image 16:9 ",
+                "title": "橫式圖片",
+                "description": "生成 16:9 橫式圖片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/image nsfw 9:16",
+                "insert": "/image nsfw 9:16 ",
+                "title": "成人直式圖片",
+                "description": "生成合法成年人的 9:16 圖片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/video",
+                "insert": "/video 16:9 5s ",
+                "title": "生成影片",
+                "description": "使用本機 CogVideoX 生成 5 秒影片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/video 9:16",
+                "insert": "/video 9:16 5s ",
+                "title": "直式影片",
+                "description": "生成並裁切為 9:16 的本機影片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/video nsfw 9:16",
+                "insert": "/video nsfw 9:16 5s ",
+                "title": "成人直式影片",
+                "description": "生成合法成年人的 9:16 本機影片",
+                "category": "媒體",
+                "requires_prompt": True,
+            },
+            {
+                "command": "/remove-bg",
+                "insert": "/remove-bg",
+                "title": "移除圖片背景",
+                "description": "移除最近生成圖片的背景",
+                "category": "工具",
+                "requires_prompt": False,
+            },
+            {
+                "command": "/status",
+                "insert": "/status",
+                "title": "核心狀態",
+                "description": "查看生命週期、任務與學習計數",
+                "category": "系統",
+                "requires_prompt": False,
+            },
+            {
+                "command": "/help",
+                "insert": "/help",
+                "title": "命令說明",
+                "description": "列出目前可用的快速命令",
+                "category": "系統",
+                "requires_prompt": False,
+            },
+        ]
+
     async def respond(
         self,
         message: str,
         history: list[dict[str, str]],
     ) -> dict[str, Any]:
+        normalized_command = message.strip().casefold()
+        if normalized_command in {"/help", "/commands"}:
+            return self._command_help()
+        if normalized_command == "/status":
+            return self._kernel_status()
+        if normalized_command in {"/remove-bg", "/remove_background"}:
+            return await self._remove_background()
         media_command = self._parse_media_command(message)
         if media_command:
             normalized = self._normalize_media_command(media_command)
@@ -88,6 +180,39 @@ class DialogueService:
         if self.is_image_request(message):
             return await self._generate_image(message)
         return await self._general_response(message, history)
+
+    def _command_help(self) -> dict[str, Any]:
+        lines = [
+            f"{item['command']} — {item['description']}"
+            for item in self.command_catalog()
+        ]
+        return {
+            "answer": "目前可用快速命令：\n" + "\n".join(lines),
+            "model": "eck-command-router.v1",
+            "tool": "system.help",
+            "artifacts": [],
+            "inference": {},
+            "context": self._memory_counts(),
+        }
+
+    def _kernel_status(self) -> dict[str, Any]:
+        status = self.application.kernel.status()
+        memory = self._memory_counts()
+        answer = (
+            f"核心 {status.phase.value.upper()}，啟動 {status.boot_count} 次，"
+            f"待處理任務 {status.pending_tasks}，待核准 {status.pending_approvals}。"
+            f"目前有 {memory['verified_experiences']} 筆已驗證經驗、"
+            f"{memory['active_skills']} 個活躍學習技能與 "
+            f"{memory['runtime_skills']} 個熱技能。"
+        )
+        return {
+            "answer": answer,
+            "model": "eck-command-router.v1",
+            "tool": "system.status",
+            "artifacts": [],
+            "inference": {},
+            "context": memory,
+        }
 
     @classmethod
     def is_image_request(cls, message: str) -> bool:

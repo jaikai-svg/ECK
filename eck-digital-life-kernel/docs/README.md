@@ -33,6 +33,7 @@
 20. [Continuous Learning, Media Prompts & Themes](20-continuous-learning-media-and-themes.md)
 21. [Media Commands & Artifact Quality](21-media-commands-and-artifact-quality.md)
 22. [P0 Reliability Hardening](22-p0-reliability-hardening.md)
+23. [P1 Command and Media Reliability](23-p1-command-and-media-reliability.md)
 
 ## v0.2 開發規格下載
 

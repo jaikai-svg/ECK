@@ -94,3 +94,25 @@ def test_forbidden_condition_wins_over_success() -> None:
     report = ContractVerifier().verify(guarded, item, repeated_result=item)
     assert report.status is VerificationStatus.CONSTRAINT_VIOLATION
 
+
+def test_nonreproducible_contract_reports_failed_check_precisely() -> None:
+    media_contract = SuccessContract(
+        goal="Generate an image with the requested dimensions",
+        checks=(
+            VerificationCheck(
+                name="height matches request",
+                path="metadata.height",
+                operator=ComparisonOperator.EQ,
+                expected=896,
+            ),
+        ),
+        required_evidence=(EvidenceSource.UNIT_TEST,),
+        require_reproducible=False,
+    )
+    item = result(output={"metadata": {"height": 768}}, source=EvidenceSource.UNIT_TEST)
+
+    report = ContractVerifier().verify(media_contract, item)
+
+    assert report.status is VerificationStatus.VERIFIED_FAILURE
+    assert report.reason == "Contract checks failed: height matches request."
+    assert report.reproducible is True

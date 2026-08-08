@@ -1,6 +1,8 @@
 param(
-    [int]$Steps = 2,
-    [int]$Seed = 31337
+    [int]$Steps = 25,
+    [int]$Seed = 31337,
+    [int]$Width = 720,
+    [int]$Height = 480
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +11,8 @@ $python = Join-Path $repoRoot "workspace\cogvideo\.conda\python.exe"
 $worker = Join-Path $repoRoot "scripts\run_cogvideo_engine.py"
 $requestPath = Join-Path $repoRoot "workspace\cogvideo\smoke-request.json"
 $reportPath = Join-Path $repoRoot "workspace\cogvideo\verified-runtime.json"
-$outputPath = Join-Path $repoRoot "workspace\generated_videos\cogvideox-2b-smoke-1s.mp4"
+$outputFile = "cogvideox-2b-smoke-1s-${Width}x${Height}.mp4"
+$outputPath = Join-Path $repoRoot "workspace\generated_videos\$outputFile"
 
 if (-not (Test-Path $python)) {
     throw "CogVideo environment is missing. Run scripts/setup-cogvideo.ps1 first."
@@ -24,6 +27,8 @@ $request = @{
     steps = [Math]::Max(1, $Steps)
     guidance_scale = 6.0
     seed = $Seed
+    width = $Width
+    height = $Height
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText(
@@ -60,10 +65,17 @@ $report = @{
     frames = $result.metadata.frames
     fps = $result.metadata.fps
     nominal_seconds = $result.metadata.seconds
+    width = $result.metadata.width
+    height = $result.metadata.height
+    model_width = $result.metadata.model_width
+    model_height = $result.metadata.model_height
+    output_transform = $result.metadata.output_transform
+    source_frame_quality = $result.metadata.source_frame_quality
+    frame_quality = $result.metadata.frame_quality
     steps = $result.metadata.steps
     peak_gpu_memory_gb = $result.metadata.peak_gpu_memory_gb
     elapsed_seconds = $result.metadata.elapsed_seconds
-    artifact = "workspace/generated_videos/cogvideox-2b-smoke-1s.mp4"
+    artifact = "workspace/generated_videos/$outputFile"
     artifact_sha256 = $result.sha256
 }
 [System.IO.File]::WriteAllText(

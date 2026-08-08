@@ -64,9 +64,12 @@
             </div>
             <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
             <form class="chat-form" id="chat-form">
-              <textarea id="chat-input" maxlength="4000" rows="4" placeholder="傳訊息，或使用 /image、/image nsfw 9:16、/video 16:9 5s…" required></textarea>
+              <div class="chat-composer">
+                <textarea id="chat-input" maxlength="4000" rows="4" placeholder="輸入 / 開啟快速命令，或直接交付任務…" autocomplete="off" aria-autocomplete="list" aria-controls="slash-command-menu" aria-expanded="false" required></textarea>
+                <div class="slash-command-menu" id="slash-command-menu" role="listbox" aria-label="ECK 快速命令" hidden></div>
+              </div>
               <div class="chat-actions">
-                <span id="chat-context">使用本機已驗證記憶</span>
+                <span id="chat-context">輸入 / 可選擇系統功能</span>
                 <button type="submit">傳送</button>
               </div>
             </form>

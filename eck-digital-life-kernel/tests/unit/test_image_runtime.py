@@ -96,6 +96,20 @@ def configure_diffusers(settings):
     return configured
 
 
+def test_image_dimensions_preserve_portrait_requests(tmp_path: Path) -> None:
+    png_path = tmp_path / "portrait.png"
+    png_path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\rIHDR"
+        + (504).to_bytes(4, "big")
+        + (896).to_bytes(4, "big")
+    )
+
+    assert ImageGenerationCapability._dimension(896) == 896
+    assert ImageGenerationCapability._dimension(1540) == 1536
+    assert ImageGenerationCapability._png_dimensions(png_path) == (504, 896)
+
+
 @pytest.mark.asyncio
 async def test_diffusers_image_generation_success_and_failure_paths(
     settings,
