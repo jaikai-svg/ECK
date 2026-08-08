@@ -298,12 +298,18 @@ def test_forge_status_catalog_payload_and_model_selection(settings, monkeypatch)
         def json(self) -> dict[str, str]:
             return {"sd_model_checkpoint": "Realistic Vision V6"}
 
-    monkeypatch.setattr(
-        "eck.capabilities.image_generation.httpx.get",
-        lambda *args, **kwargs: Response(),
-    )
+    requests = 0
+
+    def forge_status(*args, **kwargs):
+        nonlocal requests
+        del args, kwargs
+        requests += 1
+        return Response()
+
+    monkeypatch.setattr("eck.capabilities.image_generation.httpx.get", forge_status)
     capability = ImageGenerationCapability(configured, MockBrainProvider())
     status = capability.status()
+    cached_status = capability.status()
     selected = capability._select_model("missing")
     payload = capability._forge_payload(
         {
@@ -319,6 +325,7 @@ def test_forge_status_catalog_payload_and_model_selection(settings, monkeypatch)
     )
 
     assert status["available"] and status["worker_warm"]
+    assert cached_status["worker_warm"] and requests == 1
     assert status["extensions"] == {"adetailer": True, "controlnet": True}
     assert selected["alias"] == "realistic_vision"
     assert payload["seed"] == -1 and "ADetailer" in payload["alwayson_scripts"]

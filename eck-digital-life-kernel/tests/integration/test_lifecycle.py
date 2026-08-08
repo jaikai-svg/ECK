@@ -87,7 +87,9 @@ async def test_kernel_requeues_interrupted_reversible_task(settings) -> None:
     recovered = second.store.get_task(task.task_id)
 
     assert recovered.status is TaskStatus.QUEUED
-    assert recovered.attempts == 0
+    assert recovered.attempts == 1
+    assert recovered.next_attempt_at is not None
+    assert recovered.last_error == "kernel_restart"
     assert "TaskInterruptedRecovered" in {
         event.event_type for event in second.store.list_events(limit=100)
     }

@@ -209,6 +209,7 @@ class SkillForgeService:
                         "你是 ECK 的隔離技能工程師。輸出 JSON，包含 code 與 tests。"
                         "程式會在無主機權限的 Docker 容器執行。entrypoint 必須提供 "
                         "execute(operation, payload, context)，tests 使用 pytest。"
+                        "tests 必須從 skill 匯入 execute，不得假設函式已存在於全域命名空間。"
                         "不可存取 Docker socket、主機路徑、憑證或規避平台規則。"
                     ),
                 },
@@ -316,6 +317,7 @@ class SkillForgeService:
                     "content": (
                         "你是 ECK 的隔離技能修復工程師。根據失敗測試報告修正 code 與 tests，"
                         "輸出 JSON。不得刪除有效測試來偽造通過，不得增加權限、主機存取、"
+                        "tests 必須從 skill 匯入 execute。"
                         "Docker socket、憑證存取或平台規則規避。"
                     ),
                 },

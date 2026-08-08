@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from eck.brain.arbiter import InferenceArbiter
 from eck.brain.base import BrainProvider
 from eck.brain.mock import MockBrainProvider
 from eck.brain.ollama import OllamaBrainProvider
@@ -92,15 +93,22 @@ def build_application(settings: Settings | None = None) -> Application:
         brain: BrainProvider = MockBrainProvider()
         supervisor_brain: BrainProvider = MockBrainProvider()
     else:
+        inference_arbiter = InferenceArbiter()
         brain = OllamaBrainProvider(
             settings.ollama_base_url,
             settings.ollama_model,
             settings.ollama_timeout_seconds,
+            arbiter=inference_arbiter,
+            default_priority=20,
+            health_cache_seconds=settings.brain_health_cache_seconds,
         )
         supervisor_brain = OllamaBrainProvider(
             settings.ollama_base_url,
             settings.supervisor_model or settings.ollama_model,
             settings.ollama_timeout_seconds,
+            arbiter=inference_arbiter,
+            default_priority=100,
+            health_cache_seconds=settings.brain_health_cache_seconds,
         )
 
     versions = VersionService(store, events)
@@ -157,6 +165,7 @@ def build_application(settings: Settings | None = None) -> Application:
         )
 
     task_service = TaskService(
+        settings=settings,
         store=store,
         events=events,
         registry=registry,

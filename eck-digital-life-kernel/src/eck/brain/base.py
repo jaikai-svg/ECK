@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -23,7 +25,16 @@ class BrainResponse(BaseModel):
     raw: dict[str, Any]
 
 
+@asynccontextmanager
+async def _unrestricted_resource_slot() -> AsyncIterator[None]:
+    yield
+
+
 class BrainProvider(ABC):
+    def resource_slot(self, priority: int) -> AbstractAsyncContextManager[None]:
+        del priority
+        return _unrestricted_resource_slot()
+
     @abstractmethod
     async def health(self) -> BrainHealth:
         raise NotImplementedError

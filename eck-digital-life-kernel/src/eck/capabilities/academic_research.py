@@ -233,7 +233,12 @@ class AcademicResearchCapability(Capability):
                         {"role": "user", "content": topic},
                     ],
                     format_schema=schema,
-                    options={"num_predict": 128, "num_ctx": 2048, "think": False},
+                    options={
+                        "_priority": 40,
+                        "num_predict": 128,
+                        "num_ctx": 2048,
+                        "think": False,
+                    },
                 ),
                 timeout=max(5.0, min(20.0, self.timeout_seconds)),
             )
@@ -390,6 +395,7 @@ class AcademicResearchCapability(Capability):
                 },
             ],
             format_schema=schema,
+            options={"_priority": 40},
         )
         return self._json_object(response.content)
 

@@ -248,6 +248,19 @@ class CriticalResearchCapability(Capability):
                 ),
             )
             success = True
+        except asyncio.CancelledError:
+            if run_id is not None:
+                self.store.fail_research_run(
+                    run_id,
+                    conclusion="Critical research was cancelled before completion.",
+                    metrics={
+                        "research_completed": False,
+                        "discovery_attempted": bool(queries),
+                        "sources_fetched": len(fetched_sources),
+                        "error_type": "CancelledError",
+                    },
+                )
+            raise
         except (
             TimeoutError,
             httpx.HTTPError,
@@ -334,7 +347,12 @@ class CriticalResearchCapability(Capability):
                         {"role": "user", "content": topic},
                     ],
                     format_schema=schema,
-                    options={"num_predict": 192, "num_ctx": 2048, "think": False},
+                    options={
+                        "_priority": 40,
+                        "num_predict": 192,
+                        "num_ctx": 2048,
+                        "think": False,
+                    },
                 ),
                 timeout=self.settings.critical_research_timeout_seconds,
             )
@@ -505,7 +523,12 @@ class CriticalResearchCapability(Capability):
                         },
                     ],
                     format_schema=schema,
-                    options={"num_predict": 700, "num_ctx": 8192, "think": False},
+                    options={
+                        "_priority": 40,
+                        "num_predict": 700,
+                        "num_ctx": 8192,
+                        "think": False,
+                    },
                 ),
                 timeout=self.settings.critical_research_timeout_seconds,
             )
@@ -574,7 +597,12 @@ class CriticalResearchCapability(Capability):
                         },
                     ],
                     format_schema=schema,
-                    options={"num_predict": 1500, "num_ctx": 12288, "think": False},
+                    options={
+                        "_priority": 40,
+                        "num_predict": 1500,
+                        "num_ctx": 12288,
+                        "think": False,
+                    },
                 ),
                 timeout=max(20.0, self.settings.critical_research_timeout_seconds * 2),
             )

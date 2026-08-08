@@ -123,10 +123,9 @@ def create_api(
     @api.get("/health")
     async def health(app: AppDependency) -> dict[str, object]:
         brain = await app.brain.health()
-        chain_valid, failed_sequence = app.store.verify_event_chain()
+        chain_valid, failed_sequence = app.store.verify_event_chain_incremental()
         status = app.kernel.status()
-        admitted = [item for item in app.store.list_experiences(limit=1000) if item.admitted]
-        latest_admitted = admitted[0] if admitted else None
+        latest_admitted = app.store.latest_experience(admitted=True)
         learning_origin = latest_admitted.created_at if latest_admitted else status.started_at
         minutes_since_learning = (
             max(0.0, (utc_now() - learning_origin).total_seconds() / 60)
@@ -182,9 +181,9 @@ def create_api(
             "memory": {
                 "experiences": app.store.count_experiences(),
                 "admitted_experiences": app.store.count_experiences(admitted=True),
-                "knowledge": len(app.store.list_knowledge(limit=10000)),
-                "reflections": len(app.store.list_reflections(limit=10000)),
-                "skills": len(app.store.list_skills(limit=10000)),
+                "knowledge": app.store.count_knowledge(),
+                "reflections": app.store.count_reflections(),
+                "skills": app.store.count_skills(),
             },
             "critical_research": app.store.research_quality_metrics(
                 window=app.settings.critical_research_quality_window,
@@ -210,9 +209,9 @@ def create_api(
                 "detail": learning_detail,
             },
             "goals": {
-                "challenges": len(app.store.list_challenges(limit=10000)),
-                "missions": len(app.store.list_missions(limit=10000)),
-                "benchmark_runs": len(app.store.list_benchmark_runs(limit=10000)),
+                "challenges": app.store.count_challenges(),
+                "missions": app.store.count_missions(),
+                "benchmark_runs": app.store.count_benchmark_runs(),
             },
             "supervisor": app.supervisor.status(),
             "autonomous_learning": app.autonomous_learning.status(),
@@ -289,7 +288,7 @@ def create_api(
                 "local_image_stack": app.image_generation.status(),
                 "background_removal": app.image_background_removal.status(),
                 "local_video_stack": app.video_generation.status(),
-                "event_chain_valid": app.store.verify_event_chain()[0],
+                "event_chain_valid": app.store.verify_event_chain_incremental()[0],
             },
             "targets": [
                 {

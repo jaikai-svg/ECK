@@ -47,6 +47,10 @@ class LifeKernel:
         if self.phase not in {KernelPhase.STOPPED, KernelPhase.FAULTED}:
             return
         self.phase = KernelPhase.STARTING
+        chain_valid, failed_sequence = self.store.verify_event_chain()
+        if not chain_valid:
+            self.phase = KernelPhase.FAULTED
+            raise RuntimeError(f"Event chain verification failed at sequence {failed_sequence}.")
         self._boot_count, recovered = self.store.begin_boot(self.settings.identity)
         state = self.store.get_kernel_state(self.settings.identity)
         self._started_at = (
@@ -59,6 +63,15 @@ class LifeKernel:
             {"boot_count": self._boot_count, "recovered_unclean_shutdown": recovered},
         )
         await self.tasks.recover_interrupted()
+        reconciled_runs = self.store.fail_running_research_runs(
+            conclusion="Interrupted research run reconciled during kernel startup."
+        )
+        if reconciled_runs:
+            await self.events.publish(
+                "ResearchRunsReconciled",
+                self.settings.identity,
+                {"count": reconciled_runs},
+            )
         self.phase = KernelPhase.RUNNING
         self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
         self._stop.clear()
@@ -156,6 +169,7 @@ class LifeKernel:
         next_heartbeat_event = loop.time()
         next_sleep = loop.time() + self.settings.sleep_cycle_seconds
         next_supervision = loop.time() + self.settings.supervisor_initial_delay_seconds
+        next_curriculum = loop.time()
         try:
             while not self._stop.is_set():
                 if self._execution_task and self._execution_task.done():
@@ -180,12 +194,21 @@ class LifeKernel:
                         {"reason": "urgent_human_task"},
                     )
                 if self._supervision_task and self._supervision_task.done():
-                    await self._supervision_task
+                    try:
+                        await self._supervision_task
+                    except Exception as exc:
+                        await self._background_failure("supervisor", exc)
                     self._supervision_task = None
                     next_supervision = loop.time() + self.settings.supervisor_review_seconds
                 if self._curriculum_task and self._curriculum_task.done():
-                    await self._curriculum_task
+                    try:
+                        await self._curriculum_task
+                    except Exception as exc:
+                        await self._background_failure("autonomous_curriculum", exc)
                     self._curriculum_task = None
+                    next_curriculum = (
+                        loop.time() + self.settings.autonomous_curriculum_interval_seconds
+                    )
                 if self.phase is KernelPhase.RUNNING:
                     if (
                         self._execution_task is None
@@ -199,7 +222,7 @@ class LifeKernel:
                         if queued:
                             self._schedule_cursor = (self._schedule_cursor + 1) % 100
                             self._execution_task = asyncio.create_task(
-                                self.tasks.execute(queued.task_id),
+                                self._execute_bounded(queued),
                                 name=f"eck-task-{queued.task_id}",
                             )
                         elif self.settings.supervisor_enabled and loop.time() >= next_supervision:
@@ -207,7 +230,10 @@ class LifeKernel:
                                 self.supervisor.review_if_idle(),
                                 name="eck-supervisor-review",
                             )
-                        elif self.settings.autonomous_curriculum_enabled:
+                        elif (
+                            self.settings.autonomous_curriculum_enabled
+                            and loop.time() >= next_curriculum
+                        ):
                             self._curriculum_task = asyncio.create_task(
                                 self.autonomous_learning.enqueue_if_idle(),
                                 name="eck-autonomous-curriculum",
@@ -234,6 +260,24 @@ class LifeKernel:
                 self.settings.identity,
                 {"type": type(exc).__name__, "detail": str(exc)},
             )
+
+    async def _execute_bounded(self, task: TaskRecord) -> TaskRecord:
+        timeout = self.tasks.execution_timeout(task)
+        try:
+            return await asyncio.wait_for(self.tasks.execute(task.task_id), timeout=timeout)
+        except TimeoutError:
+            return await self.tasks.handle_execution_timeout(task.task_id, timeout)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return await self.tasks.handle_orchestrator_failure(task.task_id, exc)
+
+    async def _background_failure(self, worker: str, exc: Exception) -> None:
+        await self.events.publish(
+            "BackgroundWorkerFailed",
+            self.settings.identity,
+            {"worker": worker, "type": type(exc).__name__, "detail": str(exc)},
+        )
 
     async def _heartbeat(self, *, publish_event: bool = True) -> None:
         self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
@@ -265,10 +309,10 @@ class LifeKernel:
             {
                 "event_chain_valid": valid,
                 "failed_sequence": failed_sequence,
-                "experience_count": len(self.store.list_experiences(limit=10000)),
-                "knowledge_count": len(self.store.list_knowledge(limit=10000)),
-                "reflection_count": len(self.store.list_reflections(limit=10000)),
-                "skill_count": len(self.store.list_skills(limit=10000)),
+                "experience_count": self.store.count_experiences(),
+                "knowledge_count": self.store.count_knowledge(),
+                "reflection_count": self.store.count_reflections(),
+                "skill_count": self.store.count_skills(),
             },
         )
         await self.events.publish("SleepFinished", self.settings.identity, {})

@@ -113,6 +113,7 @@ class TaskCreate(FrozenModel):
     success_contract: SuccessContract
     action: ActionProposal
     labels: tuple[str, ...] = ()
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class TaskRecord(FrozenModel):
@@ -123,7 +124,10 @@ class TaskRecord(FrozenModel):
     success_contract: SuccessContract
     action: ActionProposal
     labels: tuple[str, ...] = ()
+    idempotency_key: str | None = None
     attempts: int = 0
+    next_attempt_at: datetime | None = None
+    last_error: str | None = None
     result: CapabilityResult | None = None
     verification: VerificationReport | None = None
     created_at: datetime

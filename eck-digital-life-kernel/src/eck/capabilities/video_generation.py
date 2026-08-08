@@ -362,49 +362,56 @@ class VideoGenerationCapability(Capability):
                 else:
                     input_path = None
                     initial_metadata = {"source": "text-to-video"}
-                self._set_stage("releasing_gpu_workers")
-                await self.image_generation.stop_forge()
-                await self._release_ollama_gpu()
-                self._set_stage("generating_video")
-                video_id = new_id("video")
-                output_path = (self.settings.video_output_dir / f"{video_id}.mp4").resolve()
-                seed_value = action.payload.get("seed")
-                seed = secrets.randbelow(2**31) if seed_value is None else int(seed_value)
-                request: dict[str, Any] = {
-                    "backend": backend,
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "seconds": seconds,
-                    "steps": self.settings.video_generation_steps,
-                    "seed": seed,
-                    "width": int(action.payload.get("width", 720)),
-                    "height": int(action.payload.get("height", 480)),
-                }
-                if backend == "cogvideox":
-                    frame_groups = max(1, min(6, round(seconds)))
-                    request.update(
-                        {
-                            "model_dir": str(self.settings.cogvideo_model_dir.resolve()),
-                            "frames": frame_groups * 8 + 1,
-                            "fps": 8,
-                            "guidance_scale": float(
-                                action.payload.get("guidance_scale", 6.0)
-                            ),
-                        }
-                    )
-                else:
-                    assert input_path is not None
-                    request.update(
-                        {
-                        "source_dir": str(self.settings.framepack_source_dir.resolve()),
-                        "input_image": str(input_path),
-                        "gpu_memory_preservation": 6.0,
-                        "use_teacache": self.settings.video_teacache_enabled,
-                        "mp4_crf": 16,
-                        }
-                    )
-                report = await self._run_worker(request, output_path)
-                self._set_stage("verifying_artifact")
+                async with self.image_generation.brain.resource_slot(5):
+                    self._set_stage("releasing_gpu_workers")
+                    await self.image_generation.stop_forge()
+                    await self._release_ollama_gpu()
+                    self._set_stage("generating_video")
+                    video_id = new_id("video")
+                    output_path = (
+                        self.settings.video_output_dir / f"{video_id}.mp4"
+                    ).resolve()
+                    seed_value = action.payload.get("seed")
+                    seed = secrets.randbelow(2**31) if seed_value is None else int(seed_value)
+                    request: dict[str, Any] = {
+                        "backend": backend,
+                        "prompt": prompt,
+                        "negative_prompt": negative_prompt,
+                        "seconds": seconds,
+                        "steps": self.settings.video_generation_steps,
+                        "seed": seed,
+                        "width": int(action.payload.get("width", 720)),
+                        "height": int(action.payload.get("height", 480)),
+                    }
+                    if backend == "cogvideox":
+                        frame_groups = max(1, min(6, round(seconds)))
+                        request.update(
+                            {
+                                "model_dir": str(
+                                    self.settings.cogvideo_model_dir.resolve()
+                                ),
+                                "frames": frame_groups * 8 + 1,
+                                "fps": 8,
+                                "guidance_scale": float(
+                                    action.payload.get("guidance_scale", 6.0)
+                                ),
+                            }
+                        )
+                    else:
+                        assert input_path is not None
+                        request.update(
+                            {
+                                "source_dir": str(
+                                    self.settings.framepack_source_dir.resolve()
+                                ),
+                                "input_image": str(input_path),
+                                "gpu_memory_preservation": 6.0,
+                                "use_teacache": self.settings.video_teacache_enabled,
+                                "mp4_crf": 16,
+                            }
+                        )
+                    report = await self._run_worker(request, output_path)
+                    self._set_stage("verifying_artifact")
             except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
                 return self._failure(action, started, str(exc))
             finally:

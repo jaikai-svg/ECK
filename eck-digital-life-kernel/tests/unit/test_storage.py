@@ -18,6 +18,16 @@ def test_event_chain_detects_tampering(application) -> None:
     assert failed_sequence == 1
 
 
+def test_incremental_event_chain_verification_only_advances(application) -> None:
+    store = application.store
+    store.append_event("A", "kernel", {"value": 1})
+    assert store.verify_event_chain() == (True, None)
+
+    store.append_event("B", "kernel", {"value": 2})
+    assert store.verify_event_chain_incremental() == (True, None)
+    assert store._verified_sequence == 2
+
+
 def test_unclean_state_is_detected_on_next_boot(application) -> None:
     store = application.store
     boot, recovered = store.begin_boot("identity")

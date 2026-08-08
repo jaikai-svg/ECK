@@ -35,6 +35,7 @@ class _FakeResponse:
 
 class _FakeClient:
     last_json = None
+    get_count = 0
 
     def __init__(self, *, timeout) -> None:
         self.timeout = timeout
@@ -46,6 +47,7 @@ class _FakeClient:
         return None
 
     async def get(self, url):
+        type(self).get_count += 1
         return _FakeResponse({"models": [{"name": "qwen:test"}]})
 
     async def post(self, url, json):
@@ -58,9 +60,12 @@ class _FakeClient:
 @pytest.mark.asyncio
 async def test_ollama_health_and_chat(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    _FakeClient.get_count = 0
     brain = OllamaBrainProvider("http://ollama", "qwen:test", 10)
     health = await brain.health()
     assert health.available
+    assert (await brain.health()).available
+    assert _FakeClient.get_count == 1
     response = await brain.chat(
         [{"role": "user", "content": "hello"}],
         options={"num_predict": 128, "num_ctx": 2048, "num_gpu": 0, "think": False},

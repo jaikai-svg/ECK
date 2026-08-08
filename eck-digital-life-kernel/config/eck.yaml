@@ -25,6 +25,10 @@ network_enabled: true
 system_file_mutation_enabled: false
 require_approval_for_medium_risk: false
 max_task_attempts: 5
+task_execution_timeout_seconds: 1800
+task_retry_backoff_seconds: 15
+task_retry_backoff_max_seconds: 900
+brain_health_cache_seconds: 15
 max_events_page_size: 500
 
 academic_research_timeout_seconds: 30

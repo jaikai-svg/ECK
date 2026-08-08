@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from eck.app import build_application
@@ -72,3 +74,28 @@ def test_learning_theme_can_pause_resume_reuse_and_delete(application) -> None:
     store.delete_learning_theme(theme.theme_id)
     with pytest.raises(KeyError, match="Unknown learning theme"):
         store.get_learning_theme(theme.theme_id)
+
+
+@pytest.mark.asyncio
+async def test_kernel_does_not_spin_curriculum_checks(settings, monkeypatch) -> None:
+    configured = settings.model_copy(
+        update={
+            "autonomous_curriculum_enabled": True,
+            "autonomous_curriculum_interval_seconds": 30,
+            "task_poll_seconds": 0.01,
+        }
+    )
+    application = build_application(configured)
+    calls = 0
+
+    async def enqueue_once():
+        nonlocal calls
+        calls += 1
+        return None
+
+    monkeypatch.setattr(application.autonomous_learning, "enqueue_if_idle", enqueue_once)
+    await application.kernel.start()
+    await asyncio.sleep(0.15)
+    await application.kernel.stop()
+
+    assert calls == 1

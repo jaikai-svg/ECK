@@ -142,6 +142,10 @@ class Settings(BaseSettings):
     system_file_mutation_enabled: bool = False
     require_approval_for_medium_risk: bool = False
     max_task_attempts: int = Field(default=5, ge=1, le=100)
+    task_execution_timeout_seconds: float = Field(default=1800, ge=30, le=86400)
+    task_retry_backoff_seconds: float = Field(default=15, ge=0.1, le=3600)
+    task_retry_backoff_max_seconds: float = Field(default=900, ge=1, le=86400)
+    brain_health_cache_seconds: float = Field(default=15, ge=1, le=300)
     max_events_page_size: int = Field(default=500, ge=10, le=5000)
 
     @classmethod

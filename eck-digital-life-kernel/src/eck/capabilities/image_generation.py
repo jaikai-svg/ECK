@@ -60,6 +60,8 @@ class ImageGenerationCapability(Capability):
         self._engine_lock = asyncio.Lock()
         self._forge_lock = asyncio.Lock()
         self._forge_api_ready = False
+        self._forge_runtime_checked_at = 0.0
+        self._forge_runtime_cached = (False, settings.forge_checkpoint)
         self._activity_stage = "idle"
         self._activity_started_at: str | None = None
 
@@ -129,6 +131,12 @@ class ImageGenerationCapability(Capability):
         }
 
     def _forge_runtime_status(self) -> tuple[bool, str]:
+        now = time.monotonic()
+        if (
+            now - self._forge_runtime_checked_at
+            < self.settings.brain_health_cache_seconds
+        ):
+            return self._forge_runtime_cached
         try:
             response = httpx.get(
                 f"{self.settings.forge_base_url.rstrip('/')}/sdapi/v1/options",
@@ -136,9 +144,13 @@ class ImageGenerationCapability(Capability):
             )
             response.raise_for_status()
             checkpoint = str(response.json().get("sd_model_checkpoint", "")).strip()
-            return True, checkpoint or self.settings.forge_checkpoint
+            self._forge_api_ready = True
+            result = (True, checkpoint or self.settings.forge_checkpoint)
         except (httpx.HTTPError, ValueError):
-            return self._forge_api_ready, self.settings.forge_checkpoint
+            result = (self._forge_api_ready, self.settings.forge_checkpoint)
+        self._forge_runtime_checked_at = now
+        self._forge_runtime_cached = result
+        return result
 
     def _diffusers_status(self) -> dict[str, Any]:
         manifest_path = self.settings.image_model_dir / "eck-model.json"
@@ -286,14 +298,15 @@ class ImageGenerationCapability(Capability):
             "adult_request": adult_request,
         }
         try:
-            self._set_activity("releasing_brain_vram")
-            await asyncio.wait_for(self._release_ollama_vram(), timeout=45)
-            self._set_activity("generating_image")
-            if self.settings.image_backend == "forge":
-                report = await self._run_forge(request, output_path)
-            else:
-                report = await self._run_diffusers(request, output_path)
-            self._set_activity("verifying_artifact")
+            async with self.brain.resource_slot(5):
+                self._set_activity("releasing_brain_vram")
+                await asyncio.wait_for(self._release_ollama_vram(), timeout=45)
+                self._set_activity("generating_image")
+                if self.settings.image_backend == "forge":
+                    report = await self._run_forge(request, output_path)
+                else:
+                    report = await self._run_diffusers(request, output_path)
+                self._set_activity("verifying_artifact")
         except TimeoutError:
             return self._failure(action, started, "The local image pipeline timed out.")
         except (OSError, RuntimeError, ValueError, httpx.HTTPError) as exc:
@@ -898,6 +911,7 @@ class ImageGenerationCapability(Capability):
     async def _ensure_forge_api(self) -> None:
         if await self._forge_health():
             self._forge_api_ready = True
+            self._forge_runtime_checked_at = 0.0
             return
         if not self.settings.forge_auto_start:
             raise RuntimeError("Forge is offline and automatic startup is disabled.")
@@ -942,6 +956,7 @@ class ImageGenerationCapability(Capability):
         while loop.time() < deadline:
             if await self._forge_health():
                 self._forge_api_ready = True
+                self._forge_runtime_checked_at = 0.0
                 return
             await asyncio.sleep(2)
         raise RuntimeError("Forge API did not become ready before its startup deadline.")
@@ -1050,6 +1065,8 @@ class ImageGenerationCapability(Capability):
             ).strip()
             raise RuntimeError(f"Forge shutdown failed: {detail[-1000:]}")
         self._forge_api_ready = False
+        self._forge_runtime_checked_at = time.monotonic()
+        self._forge_runtime_cached = (False, self.settings.forge_checkpoint)
 
     def _set_activity(self, stage: str) -> None:
         if stage != self._activity_stage:

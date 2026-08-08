@@ -30,11 +30,23 @@ def install_dependencies(manifest: dict[str, Any]) -> None:
                 raise ValueError(f"Unsupported PyPI dependency specification: {value}")
             python_packages.append(value)
     if python_packages:
+        python_dir = Path("/tmp/python")
+        python_dir.mkdir()
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--no-input", *python_packages],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--no-input",
+                "--target",
+                str(python_dir),
+                *python_packages,
+            ],
             check=True,
             timeout=180,
         )
+        sys.path.insert(0, str(python_dir))
     if npm_packages:
         npm_dir = Path("/tmp/npm")
         npm_dir.mkdir()
@@ -94,6 +106,17 @@ def main() -> int:
         test_file = Path("/skill/test_skill.py")
         if not test_file.is_file():
             emit({"success": False, "detail": "test_skill.py is required."})
+            return 1
+        module = load_skill(str(manifest.get("entrypoint", "skill.py")))
+        if not callable(getattr(module, "execute", None)):
+            emit(
+                {
+                    "success": False,
+                    "detail": (
+                        "Skill entrypoint must define execute(operation, payload, context)."
+                    ),
+                }
+            )
             return 1
         result = subprocess.run(
             [

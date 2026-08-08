@@ -238,10 +238,9 @@ class AutonomousLearningService:
         return merged
 
     def _autonomous_tasks(self) -> list[TaskRecord]:
-        return [
-            item
-            for item in self.store.list_tasks(limit=10000)
-            if "autonomous-curriculum" in item.labels
-            and item.status in self._terminal_statuses
-            | {TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.WAITING_APPROVAL}
-        ]
+        since = utc_now() - timedelta(days=1)
+        return self.store.list_tasks_with_label(
+            "autonomous-curriculum",
+            since=since,
+            limit=1000,
+        )

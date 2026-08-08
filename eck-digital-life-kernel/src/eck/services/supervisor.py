@@ -187,7 +187,7 @@ class SupervisorService:
             }
             for item in self.store.list_reflections(limit=6)
         ]
-        prior_reviews = self.store.list_supervisor_reviews(limit=10000)
+        prior_reviews = self.store.list_supervisor_reviews(limit=1000)
         prior_topics = [item.challenge_topic for item in prior_reviews if item.challenge_topic]
         prior_research_topics = [
             str(item.get("topic", ""))
@@ -464,6 +464,17 @@ class SupervisorService:
         skill_objective = self._clean(str(parsed.get("skill_objective", "")), 1000)
         if len(skill_objective) < 10:
             skill_objective = f"建立可驗證且可重複使用的「{topic}」隔離技能。"
+        if duplicate_topic:
+            mood = "curious"
+            assessment = "模型提出的主題與既有紀錄重複，已切換到下一個未使用主題。"
+            recommendations = [
+                "先完成未使用主題的來源查證，再比較與既有知識的新增差異。",
+                "不得把重複執行計為新技能或新知識。",
+            ]
+            action_kind = "research"
+            digest = hashlib.sha256(topic.encode("utf-8")).hexdigest()[:10]
+            required_capability = f"generated.capability-{digest}"
+            skill_objective = f"建立可驗證且可重複使用的「{topic}」隔離技能。"
         return {
             "mood": mood,
             "activity_text": activity,
@@ -479,10 +490,7 @@ class SupervisorService:
 
     def _reviews_last_24h(self) -> int:
         cutoff = utc_now() - timedelta(days=1)
-        return sum(
-            item.created_at >= cutoff
-            for item in self.store.list_supervisor_reviews(limit=10000)
-        )
+        return self.store.count_observations("supervisor_review", since=cutoff)
 
     @classmethod
     def _next_fallback_topic(cls, used_topics: list[str]) -> str:

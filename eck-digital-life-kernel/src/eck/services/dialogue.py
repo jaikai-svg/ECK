@@ -232,6 +232,7 @@ class DialogueService:
                 "required": ["answer"],
             },
             options={
+                "_priority": 0,
                 "temperature": 0.2,
                 "num_predict": 768,
                 "num_ctx": 8192,

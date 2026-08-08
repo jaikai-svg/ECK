@@ -3,6 +3,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const CHAT_STORAGE_KEY = "eck-chat-history-v2";
 let kernelStartedAt = null;
 let skillTreeLastLoaded = 0;
+let skillTreeRevision = "";
 let refreshInFlight = false;
 
 const escapeHtml = (value) => String(value ?? "")
@@ -686,12 +687,14 @@ function renderSkillTree(data) {
     || '<div class="empty">尚無技能或研究資料。</div>';
 }
 
-async function loadSkillTree(force = false) {
-  if (!force && Date.now() - skillTreeLastLoaded < 60000) return;
+async function loadSkillTree(force = false, revision = "") {
+  if (!force && revision && revision === skillTreeRevision) return;
+  if (!force && !revision && Date.now() - skillTreeLastLoaded < 300000) return;
   try {
     const data = await request("/v1/learning/skill-tree");
     renderSkillTree(data);
     skillTreeLastLoaded = Date.now();
+    skillTreeRevision = revision || JSON.stringify(data.stats || {});
   } catch (error) {
     $("#skill-tree-grid").innerHTML = `<div class="empty">技能圖讀取失敗：${escapeHtml(error.message)}</div>`;
   }
@@ -700,6 +703,7 @@ async function loadSkillTree(force = false) {
 async function searchSkillTree(query) {
   if (!query) {
     skillTreeLastLoaded = 0;
+    skillTreeRevision = "";
     await loadSkillTree(true);
     return;
   }
@@ -778,7 +782,19 @@ async function refresh() {
     $("#capability-tags").innerHTML = capabilities.items.map((item) =>
       `<span class="tag good" title="${escapeHtml(item.description)}">${escapeHtml(item.name)}</span>`
     ).join("");
-    if ((window.location.hash || "#home") === "#skill-tree") loadSkillTree();
+    if ((window.location.hash || "#home") === "#skill-tree") {
+      const runtimeSkills = runtime.skill_runtime || {};
+      const revision = [
+        memory.admitted_experiences,
+        memory.knowledge,
+        memory.skills,
+        runtimeSkills.active,
+        runtimeSkills.testing,
+        runtimeSkills.draft,
+        runtimeSkills.failed,
+      ].join(":");
+      loadSkillTree(false, revision);
+    }
   } catch (error) {
     setConnection(false);
     $("#phase").textContent = "OFFLINE";

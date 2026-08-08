@@ -32,6 +32,7 @@
 19. [Self-Evolution & Portable Skill Graph](19-self-evolution-and-skill-graph.md)
 20. [Continuous Learning, Media Prompts & Themes](20-continuous-learning-media-and-themes.md)
 21. [Media Commands & Artifact Quality](21-media-commands-and-artifact-quality.md)
+22. [P0 Reliability Hardening](22-p0-reliability-hardening.md)
 
 ## v0.2 開發規格下載
 

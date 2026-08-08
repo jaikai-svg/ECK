@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -77,10 +78,17 @@ class SQLiteStore:
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._chain_lock = threading.Lock()
+        self._verified_sequence = 0
+        self._verified_hash = GENESIS_HASH
+        self._chain_valid = True
+        self._chain_failed_sequence: int | None = None
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=FULL")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS events (
@@ -419,6 +427,23 @@ class SQLiteStore:
                 );
                 """
             )
+            self._ensure_column(conn, "tasks", "idempotency_key", "TEXT")
+            self._ensure_column(conn, "tasks", "next_attempt_at", "TEXT")
+            self._ensure_column(conn, "tasks", "last_error", "TEXT")
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_active_idempotency
+                ON tasks(idempotency_key)
+                WHERE idempotency_key IS NOT NULL
+                  AND status IN ('queued', 'waiting_approval', 'running')
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_tasks_ready
+                ON tasks(status, next_attempt_at, created_at)
+                """
+            )
             conn.execute(
                 """
                 INSERT OR IGNORE INTO runtime_version_state (
@@ -429,14 +454,23 @@ class SQLiteStore:
                 ("kernel", "Initial v0.1.0 state", iso_now()),
             )
 
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection,
+        table: str,
+        column: str,
+        definition: str,
+    ) -> None:
+        columns = {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=FULL")
         try:
             yield conn
         finally:
@@ -562,6 +596,7 @@ class SQLiteStore:
             rows = conn.execute("SELECT * FROM events ORDER BY sequence ASC").fetchall()
         for row in rows:
             if row["previous_hash"] != previous_hash:
+                self._set_chain_cache(False, int(row["sequence"]), previous_hash)
                 return False, int(row["sequence"])
             material = "|".join(
                 [
@@ -576,9 +611,63 @@ class SQLiteStore:
             )
             expected = hashlib.sha256(material.encode("utf-8")).hexdigest()
             if expected != row["event_hash"]:
+                self._set_chain_cache(False, int(row["sequence"]), previous_hash)
                 return False, int(row["sequence"])
             previous_hash = row["event_hash"]
+        sequence = int(rows[-1]["sequence"]) if rows else 0
+        self._set_chain_cache(True, sequence, previous_hash)
         return True, None
+
+    def verify_event_chain_incremental(self) -> tuple[bool, int | None]:
+        with self._chain_lock:
+            if not self._chain_valid:
+                return False, self._chain_failed_sequence
+            sequence = self._verified_sequence
+            previous_hash = self._verified_hash
+        if sequence == 0:
+            return self.verify_event_chain()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM events WHERE sequence > ? ORDER BY sequence ASC",
+                (sequence,),
+            ).fetchall()
+        for row in rows:
+            if row["previous_hash"] != previous_hash:
+                failed = int(row["sequence"])
+                self._set_chain_cache(False, failed, previous_hash)
+                return False, failed
+            material = "|".join(
+                [
+                    previous_hash,
+                    row["event_id"],
+                    row["event_type"],
+                    row["aggregate_id"],
+                    row["correlation_id"] or "",
+                    row["payload_json"],
+                    row["created_at"],
+                ]
+            )
+            expected = hashlib.sha256(material.encode("utf-8")).hexdigest()
+            if expected != row["event_hash"]:
+                failed = int(row["sequence"])
+                self._set_chain_cache(False, failed, previous_hash)
+                return False, failed
+            sequence = int(row["sequence"])
+            previous_hash = row["event_hash"]
+        self._set_chain_cache(True, sequence, previous_hash)
+        return True, None
+
+    def _set_chain_cache(
+        self,
+        valid: bool,
+        sequence: int,
+        event_hash: str,
+    ) -> None:
+        with self._chain_lock:
+            self._chain_valid = valid
+            self._chain_failed_sequence = None if valid else sequence
+            self._verified_sequence = sequence if valid else max(0, sequence - 1)
+            self._verified_hash = event_hash
 
     def begin_boot(self, identity: str) -> tuple[int, bool]:
         now = iso_now()
@@ -647,28 +736,42 @@ class SQLiteStore:
             ).fetchone()
         return dict(row) if row else None
 
-    def create_task(self, task_id: str, create: TaskCreate, risk: RiskLevel) -> TaskRecord:
+    def create_task(
+        self,
+        task_id: str,
+        create: TaskCreate,
+        risk: RiskLevel,
+        *,
+        idempotency_key: str | None = None,
+    ) -> TaskRecord:
         now = iso_now()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO tasks (
-                    task_id, goal, status, risk_level, contract_json, action_json,
-                    labels_json, attempts, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-                """,
-                (
-                    task_id,
-                    create.goal,
-                    TaskStatus.QUEUED.value,
-                    risk.value,
-                    _json(create.success_contract),
-                    _json(create.action),
-                    _json(create.labels),
-                    now,
-                    now,
-                ),
-            )
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO tasks (
+                        task_id, goal, status, risk_level, contract_json, action_json,
+                        labels_json, idempotency_key, attempts, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        create.goal,
+                        TaskStatus.QUEUED.value,
+                        risk.value,
+                        _json(create.success_contract),
+                        _json(create.action),
+                        _json(create.labels),
+                        idempotency_key,
+                        now,
+                        now,
+                    ),
+                )
+        except sqlite3.IntegrityError:
+            existing = self.find_active_task_by_idempotency_key(idempotency_key)
+            if existing is None:
+                raise
+            return existing
         return self.get_task(task_id)
 
     def update_task(
@@ -685,6 +788,8 @@ class SQLiteStore:
         if status is not None:
             assignments.append("status = ?")
             values.append(status.value)
+            if status is not TaskStatus.QUEUED:
+                assignments.append("next_attempt_at = NULL")
         if attempts is not None:
             assignments.append("attempts = ?")
             values.append(attempts)
@@ -699,6 +804,59 @@ class SQLiteStore:
             conn.execute(
                 f"UPDATE tasks SET {', '.join(assignments)} WHERE task_id = ?",
                 values,
+            )
+        return self.get_task(task_id)
+
+    def find_active_task_by_idempotency_key(
+        self,
+        idempotency_key: str | None,
+    ) -> TaskRecord | None:
+        if not idempotency_key:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE idempotency_key = ?
+                  AND status IN ('queued', 'waiting_approval', 'running')
+                ORDER BY created_at ASC LIMIT 1
+                """,
+                (idempotency_key,),
+            ).fetchone()
+        return self._task_from_row(row) if row else None
+
+    def schedule_task_retry(
+        self,
+        task_id: str,
+        *,
+        next_attempt_at: datetime,
+        last_error: str,
+    ) -> TaskRecord:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE tasks SET status = ?, next_attempt_at = ?, last_error = ?,
+                    result_json = NULL, verification_json = NULL, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (
+                    TaskStatus.QUEUED.value,
+                    next_attempt_at.isoformat(),
+                    last_error[:2000],
+                    iso_now(),
+                    task_id,
+                ),
+            )
+        return self.get_task(task_id)
+
+    def dead_letter_task(self, task_id: str, *, last_error: str) -> TaskRecord:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE tasks SET status = ?, next_attempt_at = NULL, last_error = ?,
+                    updated_at = ? WHERE task_id = ?
+                """,
+                (TaskStatus.BLOCKED.value, last_error[:2000], iso_now(), task_id),
             )
         return self.get_task(task_id)
 
@@ -725,6 +883,44 @@ class SQLiteStore:
         with self._connect() as conn:
             rows = conn.execute(
                 f"SELECT * FROM tasks {where} ORDER BY created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._task_from_row(row) for row in rows]
+
+    def list_ready_tasks(self, *, limit: int = 500) -> list[TaskRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE status = ?
+                  AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                ORDER BY created_at ASC LIMIT ?
+                """,
+                (TaskStatus.QUEUED.value, iso_now(), limit),
+            ).fetchall()
+        return [self._task_from_row(row) for row in rows]
+
+    def list_tasks_with_label(
+        self,
+        label: str,
+        *,
+        since: datetime | None = None,
+        limit: int = 1000,
+    ) -> list[TaskRecord]:
+        clauses = [
+            "EXISTS (SELECT 1 FROM json_each(tasks.labels_json) WHERE value = ?)"
+        ]
+        params: list[Any] = [label]
+        if since is not None:
+            clauses.append("created_at >= ?")
+            params.append(since.isoformat())
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM tasks WHERE {' AND '.join(clauses)}
+                ORDER BY created_at DESC LIMIT ?
+                """,
                 params,
             ).fetchall()
         return [self._task_from_row(row) for row in rows]
@@ -894,6 +1090,26 @@ class SQLiteStore:
             ).fetchone()
         return int(row["count"])
 
+    def latest_experience(self, *, admitted: bool = False) -> ExperienceRecord | None:
+        where = "WHERE admitted = 1" if admitted else ""
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT * FROM experiences {where} ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return ExperienceRecord(
+            experience_id=row["experience_id"],
+            task_id=row["task_id"],
+            capability=row["capability"],
+            outcome=VerificationStatus(row["outcome"]),
+            summary=row["summary"],
+            evidence_ids=tuple(_load(row["evidence_ids_json"], [])),
+            admitted=bool(row["admitted"]),
+            admission_reason=row["admission_reason"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
     def revoke_task_learning(self, task_id: str, reason: str) -> bool:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -989,6 +1205,9 @@ class SQLiteStore:
             for row in rows
         ]
 
+    def count_knowledge(self) -> int:
+        return self._count_table("knowledge_items")
+
     def add_reflection(
         self,
         *,
@@ -1064,6 +1283,9 @@ class SQLiteStore:
             for row in rows
         ]
 
+    def count_reflections(self) -> int:
+        return self._count_table("reflections")
+
     def upsert_skill_success(
         self,
         *,
@@ -1138,6 +1360,9 @@ class SQLiteStore:
                 "SELECT * FROM skills ORDER BY updated_at DESC LIMIT ?", (limit,)
             ).fetchall()
         return [self._skill_from_row(row) for row in rows]
+
+    def count_skills(self) -> int:
+        return self._count_table("skills")
 
     def revoke_skill_success(self, fingerprint: str) -> SkillRecord | None:
         now = iso_now()
@@ -1267,6 +1492,9 @@ class SQLiteStore:
             ).fetchall()
         return [self._challenge_from_row(row) for row in rows]
 
+    def count_challenges(self) -> int:
+        return self._count_table("challenges")
+
     def add_social_post_observation(
         self,
         challenge_id: str,
@@ -1369,6 +1597,9 @@ class SQLiteStore:
                 "SELECT * FROM benchmark_runs ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
         return [self._benchmark_run_from_row(row) for row in rows]
+
+    def count_benchmark_runs(self) -> int:
+        return self._count_table("benchmark_runs")
 
     def add_challenge_draft(self, create: ChallengeDraftCreate) -> ChallengeDraftRecord:
         draft_id = new_id("challenge-draft")
@@ -1603,6 +1834,9 @@ class SQLiteStore:
             ).fetchall()
         return [self._mission_from_row(row) for row in rows]
 
+    def count_missions(self) -> int:
+        return self._count_table("missions")
+
     def add_runtime_skill(
         self,
         manifest: RuntimeSkillManifest,
@@ -1821,6 +2055,19 @@ class SQLiteStore:
                 )
             )
         return records
+
+    def count_observations(self, kind: str, *, since: datetime | None = None) -> int:
+        where = "kind = ?"
+        params: list[Any] = [kind]
+        if since is not None:
+            where += " AND created_at >= ?"
+            params.append(since.isoformat())
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS count FROM observations WHERE {where}",
+                params,
+            ).fetchone()
+        return int(row["count"])
 
     def add_research_snapshot(
         self,
@@ -2098,6 +2345,29 @@ class SQLiteStore:
                 (conclusion, _json(metrics), iso_now(), run_id),
             )
 
+    def fail_running_research_runs(self, *, conclusion: str) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE research_runs SET status = 'failed',
+                    conclusion_status = 'unverified', conclusion = ?,
+                    metrics_json = ?, finished_at = ?
+                WHERE status = 'running'
+                """,
+                (
+                    conclusion,
+                    _json(
+                        {
+                            "research_completed": False,
+                            "error_type": "InterruptedResearchRun",
+                            "reconciled": True,
+                        }
+                    ),
+                    iso_now(),
+                ),
+            )
+        return max(0, cursor.rowcount)
+
     def get_research_run(self, run_id: str) -> dict[str, Any]:
         with self._connect() as conn:
             row = conn.execute(
@@ -2252,6 +2522,21 @@ class SQLiteStore:
             )
         return max(0, cursor.rowcount)
 
+    def _count_table(self, table: str) -> int:
+        allowed = {
+            "benchmark_runs",
+            "challenges",
+            "knowledge_items",
+            "missions",
+            "reflections",
+            "skills",
+        }
+        if table not in allowed:
+            raise ValueError(f"Unsupported count table: {table}")
+        with self._connect() as conn:
+            row = conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
+        return int(row["count"])
+
     @staticmethod
     def _event_from_row(row: sqlite3.Row) -> EventRecord:
         return EventRecord(
@@ -2335,7 +2620,14 @@ class SQLiteStore:
             success_contract=SuccessContract.model_validate(_load(row["contract_json"])),
             action=ActionProposal.model_validate(_load(row["action_json"])),
             labels=tuple(_load(row["labels_json"], [])),
+            idempotency_key=row["idempotency_key"],
             attempts=row["attempts"],
+            next_attempt_at=(
+                datetime.fromisoformat(row["next_attempt_at"])
+                if row["next_attempt_at"]
+                else None
+            ),
+            last_error=row["last_error"],
             result=(
                 CapabilityResult.model_validate(_load(row["result_json"]))
                 if row["result_json"]
