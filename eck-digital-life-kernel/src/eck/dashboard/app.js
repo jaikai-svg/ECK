@@ -3,6 +3,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const CHAT_STORAGE_KEY = "eck-chat-history-v2";
 let kernelStartedAt = null;
 let skillTreeLastLoaded = 0;
+let refreshInFlight = false;
 
 const escapeHtml = (value) => String(value ?? "")
   .replaceAll("&", "&amp;")
@@ -26,7 +27,9 @@ async function request(path, options = {}) {
   if (!response.ok) {
     throw new Error(`${response.status}: ${await response.text()}`);
   }
-  return response.json();
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 function formatTime(value, includeDate = false) {
@@ -148,6 +151,9 @@ function eventLabel(value) {
     RuntimeSkillTested: "技能測試已完成",
     RuntimeSkillActivated: "技能已熱啟用",
     RuntimeVersionChanged: "核心版本已更新",
+    LearningThemeCreated: "長期學習主題已建立",
+    LearningThemeUpdated: "長期學習主題已更新",
+    LearningThemeDeleted: "長期學習主題已移除",
     DialogueImageGenerated: "本機圖片已生成",
     DialogueBackgroundRemoved: "圖片背景已移除",
     MissionCreated: "課題已建立",
@@ -213,7 +219,9 @@ function setPresence(mood, activity, supervisor) {
   $("#supervisor-label").textContent = supervisor.reviewing
     ? "監督者正在評估近期學習"
     : supervisor.enabled
-      ? `每 ${Math.round(supervisor.review_interval_seconds / 60)} 分鐘 · 今日 ${supervisor.reviews_last_24h}/${supervisor.max_reviews_per_day}`
+      ? supervisor.max_reviews_per_day > 0
+        ? `每 ${Math.round(supervisor.review_interval_seconds / 60)} 分鐘 · 今日 ${supervisor.reviews_last_24h}/${supervisor.max_reviews_per_day}`
+        : `每 ${Math.round(supervisor.review_interval_seconds / 60)} 分鐘 · 近 24 小時 ${supervisor.reviews_last_24h} · 無每日上限`
       : "監督者未啟用";
 }
 
@@ -267,14 +275,18 @@ function renderActivity(kernel, tasks, missions, supervisor, autonomousLearning)
       supervisor,
     );
   } else {
-    setPresence(supervisor.mood, supervisor.activity_text, supervisor);
+    setPresence(
+      "curious",
+      autonomousLearning?.activity_text || "自主課程器正在準備下一個可驗證主題。",
+      supervisor,
+    );
   }
 
-  $("#current-activity").textContent = kernel.phase === "running" ? "整理學習結果" : `核心狀態：${kernel.phase}`;
+  $("#current-activity").textContent = kernel.phase === "running" ? "自主學習排程持續運作" : `核心狀態：${kernel.phase}`;
   $("#activity-detail").textContent = kernel.phase === "running"
     ? (autonomousLearning?.activity_text || "自主課程器正在準備下一個可驗證主題。")
     : "核心目前不接受新的執行工作。";
-  state.textContent = kernel.phase === "running" ? "學習間隔" : kernel.phase;
+  state.textContent = kernel.phase === "running" ? "持續學習" : kernel.phase;
   state.className = "pill";
   indicator.className = "activity-indicator idle";
 }
@@ -377,8 +389,8 @@ function renderMissions(missions) {
   $("#review-mission-count").textContent = formatCount(review.length);
   $("#completed-mission-count").textContent = formatCount(completed.length);
 
-  $("#active-missions").innerHTML = active.map((mission) => `
-    <details class="challenge-card mission-card">
+  const activeMissionHtml = active.map((mission) => `
+    <details class="challenge-card mission-card" data-mission-card-id="${escapeHtml(mission.mission_id)}">
       <summary><span><b>${escapeHtml(mission.title)}</b><small>${escapeHtml(mission.source === "human" ? "你建立" : "監督者建立")} · ${escapeHtml(mission.schedule === "monthly" ? "每月課題" : "一般課題")}</small></span><span class="pill ${mission.status === "blocked" ? "danger" : ""}">${escapeHtml(missionStatusLabel(mission.status))}</span></summary>
       <div class="mission-body">
         <p class="objective">${escapeHtml(mission.objective)}</p>
@@ -399,6 +411,10 @@ function renderMissions(missions) {
       </div>
     </details>
   `).join("") || '<div class="empty">目前沒有進行中課題，自主學習仍會持續。</div>';
+  const activeMissionEditorOpen = $("#active-missions details[open] .mission-edit-form");
+  if (!activeMissionEditorOpen) {
+    $("#active-missions").innerHTML = activeMissionHtml;
+  }
 
   $("#review-missions").innerHTML = review.map((mission) => `
     <article class="challenge-card mission-card review-card">
@@ -498,6 +514,18 @@ function renderResearch(tasks, experiences) {
       </article>
     `;
   }).join("") || '<div class="empty">尚未建立研究課程。</div>';
+}
+
+function renderLearningThemes(data) {
+  const themes = data.items || [];
+  $("#learning-theme-ratio").textContent = `${formatCount(data.eck_focus_percent)}% 核心 · ${formatCount(data.theme_focus_percent)}% 主題`;
+  $("#learning-theme-list").innerHTML = themes.map((item) => `
+    <div class="learning-theme-item ${item.active ? "" : "paused"}">
+      <b>${escapeHtml(item.title)}</b>
+      <button type="button" class="ghost" data-theme-action="toggle" data-theme-id="${escapeHtml(item.theme_id)}" data-theme-active="${item.active ? "true" : "false"}">${item.active ? "暫停" : "啟用"}</button>
+      <button type="button" class="ghost" data-theme-action="delete" data-theme-id="${escapeHtml(item.theme_id)}">移除</button>
+    </div>
+  `).join("") || '<div class="empty">尚未指定長期主題；ECK 仍會依核心成長與一般知識矩陣自主學習。</div>';
 }
 
 function renderBenchmarks(data) {
@@ -690,8 +718,10 @@ function updateSafety(health) {
 }
 
 async function refresh() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   try {
-    const [health, events, tasks, experiences, reflections, skills, capabilities, missions, evaluations, supervisor, runtime, roadmap] = await Promise.all([
+    const [health, events, tasks, experiences, reflections, skills, capabilities, missions, evaluations, supervisor, runtime, roadmap, themes] = await Promise.all([
       request("/health"),
       request("/v1/events?latest=true&limit=50"),
       request("/v1/tasks?limit=50"),
@@ -704,6 +734,7 @@ async function refresh() {
       request("/v1/supervisor/status"),
       request("/v1/runtime/status"),
       request("/v1/roadmap"),
+      request("/v1/learning/themes"),
     ]);
 
     const { kernel, brain, memory } = health;
@@ -738,6 +769,7 @@ async function refresh() {
     renderSkills(skills.items);
     renderRuntime(runtime);
     renderResearch(tasks.items, experiences.items);
+    renderLearningThemes(themes);
     renderBenchmarks(evaluations);
     renderRoadmap(roadmap);
     renderImageStack(health);
@@ -751,6 +783,8 @@ async function refresh() {
     setConnection(false);
     $("#phase").textContent = "OFFLINE";
     console.error(error);
+  } finally {
+    refreshInFlight = false;
   }
 }
 
@@ -969,6 +1003,7 @@ document.addEventListener("submit", async (event) => {
         }),
       });
       toast("課題內容已更新");
+      form.closest("details")?.removeAttribute("open");
       await refresh();
     } catch (error) {
       toast(`課題修改失敗：${error.message}`);
@@ -984,6 +1019,7 @@ document.addEventListener("submit", async (event) => {
         body: JSON.stringify({ result_summary: data.get("result_summary"), evidence }),
       });
       toast("成果已送交，等待你勾選驗收");
+      form.closest("details")?.removeAttribute("open");
       await refresh();
     } catch (error) {
       toast(`成果提交失敗：${error.message}`);
@@ -1017,6 +1053,7 @@ document.addEventListener("click", async (event) => {
     try {
       await request(`/v1/missions/${button.dataset.missionId}`, { method: "DELETE" });
       toast("課題已取消，不再佔用排程");
+      button.closest("details")?.removeAttribute("open");
       await refresh();
     } catch (error) {
       toast(`取消失敗：${error.message}`);
@@ -1056,6 +1093,51 @@ $("#research-form").addEventListener("submit", async (event) => {
     await refresh();
   } catch (error) {
     toast(`研究建立失敗：${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#learning-theme-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button");
+  const title = $("#learning-theme-title").value.trim();
+  if (!title) return;
+  button.disabled = true;
+  try {
+    await request("/v1/learning/themes", {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    });
+    $("#learning-theme-title").value = "";
+    toast(`已加入長期學習主題「${title}」`);
+    await refresh();
+  } catch (error) {
+    toast(`主題建立失敗：${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#learning-theme-list").addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-theme-action]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    if (button.dataset.themeAction === "delete") {
+      await request(`/v1/learning/themes/${button.dataset.themeId}`, { method: "DELETE" });
+      toast("長期學習主題已移除");
+    } else {
+      const active = button.dataset.themeActive !== "true";
+      await request(`/v1/learning/themes/${button.dataset.themeId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active }),
+      });
+      toast(active ? "主題已重新啟用" : "主題已暫停");
+    }
+    await refresh();
+  } catch (error) {
+    toast(`主題更新失敗：${error.message}`);
   } finally {
     button.disabled = false;
   }

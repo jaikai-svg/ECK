@@ -264,6 +264,13 @@ textarea { resize: vertical; }
 .learning-summary b { display: block; margin-top: .2rem; font: 720 1.2rem ui-monospace, monospace; }
 .learning-grid, .system-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: .8rem; }
 .runtime-skills-panel { margin-top: .8rem; }
+.learning-theme-panel { margin-top: .8rem; }
+.learning-theme-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; margin-top: .75rem; }
+.learning-theme-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .7rem; }
+.learning-theme-item { display: inline-flex; align-items: center; gap: .35rem; padding: .38rem .45rem .38rem .62rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(98, 242, 197, .035); }
+.learning-theme-item.paused { opacity: .58; background: rgba(255, 255, 255, .02); }
+.learning-theme-item b { font-size: .58rem; }
+.learning-theme-item button { min-height: 0; padding: .22rem .42rem; border-radius: 999px; font-size: .48rem; }
 .runtime-skill-list { grid-template-columns: repeat(3, 1fr); }
 .runtime-skill-list small { color: var(--subtle); font: .52rem ui-monospace, monospace; }
 .skill-improvement { margin-top: .48rem; color: var(--accent); font-size: .54rem; line-height: 1.45; }
@@ -368,7 +375,7 @@ footer { display: flex; justify-content: space-between; padding: 1.4rem .15rem 0
   .result-strip, .learning-summary, .challenge-progress { grid-template-columns: repeat(2, 1fr); }
   .chat-messages { min-height: 300px; }
   .chat-message { max-width: 94%; }
-  .research-form, .control-actions, .skill-tree-search { grid-template-columns: 1fr; }
+  .research-form, .learning-theme-form, .control-actions, .skill-tree-search { grid-template-columns: 1fr; }
   .event-list { grid-template-columns: 1fr; }
   .form-footer, footer { align-items: stretch; flex-direction: column; }
 }

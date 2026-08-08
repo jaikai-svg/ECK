@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from eck.brain.base import BrainResponse
+from eck.capabilities.video_generation import VideoGenerationCapability
 from eck.domain.enums import RiskLevel
 from eck.domain.models import ActionProposal
 
@@ -103,3 +105,90 @@ async def test_video_generation_rejects_unknown_operation_and_missing_runtime(
 
     assert not unsupported.success
     assert not unavailable.success
+
+
+@pytest.mark.asyncio
+async def test_cogvideo_translates_user_request_and_preserves_subject(
+    application, monkeypatch
+) -> None:
+    capability = application.video_generation
+    captured = {}
+    monkeypatch.setattr(
+        capability,
+        "status",
+        lambda: {"available": True, "backend": "cogvideox"},
+    )
+
+    async def plan(_request):
+        return (
+            {
+                "prompt": "An adult woman walking in a green park, ground-level tracking shot",
+                "negative_prompt": "aerial view, city skyline",
+            },
+            BrainResponse(content="{}", model="planner", raw={"eval_count": 12}),
+        )
+
+    async def stop_forge() -> None:
+        return None
+
+    async def release_ollama() -> None:
+        return None
+
+    async def run_worker(request, output_path):
+        captured.update(request)
+        output_path.write_bytes(b"verified-cogvideo")
+        return {
+            "success": True,
+            "metadata": {
+                "model": "zai-org/CogVideoX-2b",
+                "seconds": request["seconds"],
+                "steps": request["steps"],
+                "offload": "sequential_cpu",
+            },
+        }
+
+    monkeypatch.setattr(capability, "_plan_user_request", plan)
+    monkeypatch.setattr(capability.image_generation, "stop_forge", stop_forge)
+    monkeypatch.setattr(capability, "_release_ollama_gpu", release_ollama)
+    monkeypatch.setattr(capability, "_run_worker", run_worker)
+
+    result = await capability.execute(
+        ActionProposal(
+            capability="video.generate",
+            operation="generate",
+            payload={"user_request": "生成美女在公園散步的影片", "seconds": 5},
+            declared_risk=RiskLevel.MEDIUM,
+            reversible=True,
+            estimated_cost_units=10,
+        )
+    )
+
+    assert result.success
+    assert captured["prompt"].startswith("An adult woman walking")
+    assert captured["frames"] == 41
+    assert result.output["metadata"]["user_request"] == "生成美女在公園散步的影片"
+
+
+def test_video_fallback_blocks_unrequested_aerial_city_scene() -> None:
+    plan = VideoGenerationCapability._fallback_prompt_plan("生成韓國美女在公園散步的影片")
+    negative = VideoGenerationCapability._negative_prompt(
+        plan["negative_prompt"], adult=False, request="生成韓國美女在公園散步的影片"
+    )
+
+    assert "walking naturally" in plan["prompt"]
+    assert "ground-level" in plan["prompt"]
+    assert "aerial view" in negative
+    assert "city skyline" in negative
+
+
+def test_adult_video_negative_prompt_does_not_cancel_requested_anatomy() -> None:
+    negative = VideoGenerationCapability._negative_prompt(
+        "blurry, nudity, breasts, genitals, watermark",
+        adult=True,
+        request="生成一位成年女性裸體影片",
+    )
+
+    assert "nudity" not in negative
+    assert "breasts" not in negative
+    assert "genitals" not in negative
+    assert "minor" in negative

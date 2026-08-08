@@ -387,6 +387,17 @@ class ChallengeDraftRecord(ChallengeDraftCreate):
     created_at: datetime
 
 
+class LearningThemeCreate(FrozenModel):
+    title: str = Field(min_length=2, max_length=200)
+
+
+class LearningThemeRecord(LearningThemeCreate):
+    theme_id: str
+    active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
 class SupervisorReviewRecord(FrozenModel):
     review_id: str
     model: str

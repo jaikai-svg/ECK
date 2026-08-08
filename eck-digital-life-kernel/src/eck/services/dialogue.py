@@ -23,7 +23,7 @@ from eck.domain.models import (
 
 class DialogueService:
     _image_subject = re.compile(
-        r"(圖片|圖像|照片|插畫|圖畫|畫面|頭像|封面|海報|image|picture|photo|illustration|poster)",
+        r"(圖片|圖像|照片|插畫|圖畫|畫面|頭像|封面|海報|圖|image|picture|photo|illustration|poster)",
         re.IGNORECASE,
     )
     _image_action = re.compile(
@@ -41,6 +41,17 @@ class DialogueService:
     )
     _video_action = re.compile(
         r"(生成|產生|製作|創作|做|建立|generate|create|make|produce)",
+        re.IGNORECASE,
+    )
+    _implicit_visual_subject = re.compile(
+        r"(裸體|裸露|全裸|人體藝術|情色|色情|美女|女性|女人|男人|男性|人物|人像|"
+        r"狗狗|小狗|貓咪|小貓|風景|場景|城市|建築|角色|肖像|"
+        r"nude|naked|erotic|woman|man|person|portrait|dog|cat|landscape|city)",
+        re.IGNORECASE,
+    )
+    _non_visual_output = re.compile(
+        r"(文字|文案|文章|故事|程式|代碼|清單|表格|報告|翻譯|"
+        r"text|copywriting|article|story|code|list|table|report|translate)",
         re.IGNORECASE,
     )
     _research_intent = re.compile(
@@ -73,7 +84,15 @@ class DialogueService:
 
     @classmethod
     def is_image_request(cls, message: str) -> bool:
-        return bool(cls._image_subject.search(message) and cls._image_action.search(message))
+        if not cls._image_action.search(message):
+            return False
+        if cls._image_subject.search(message):
+            return True
+        return bool(
+            cls._implicit_visual_subject.search(message)
+            and not cls._non_visual_output.search(message)
+            and not cls._video_subject.search(message)
+        )
 
     @classmethod
     def is_background_removal_request(cls, message: str) -> bool:
@@ -112,6 +131,7 @@ class DialogueService:
                 item["name"] for item in self.application.registry.list()
             ],
             "image_generation": self.application.image_generation.status(),
+            "video_generation": self.application.video_generation.status(),
             "background_removal": self.application.image_background_removal.status(),
             "runtime_version": self.application.versions.status().model_dump(mode="json"),
             "research_results": research_results,
@@ -131,6 +151,10 @@ class DialogueService:
                     "不要求它同時出現在 runtime_skills。image_generation.available=true 代表"
                     " image.generate 已安裝且對話可直接使用，不得稱為未啟用。"
                     "background_removal.available=true 代表可將最近生成圖片轉成透明背景 PNG。"
+                    "當 image_generation.content_policy.legal_adult_content=true 或"
+                    " video_generation.content_policy.legal_adult_content=true 時，不得錯誤宣稱"
+                    "合法成年裸體或成人情色內容被停用；只有未成年、非自願、獸交或違法請求"
+                    "會被能力層永久拒絕。"
                     "若使用者詢問技能增強，只能依 runtime_skills 回答。"
                     "related_skill_memory 是依本次問題檢索的可攜技能、程序與來源；"
                     "執行任務時應優先重用其中已取得且 gold=true 的技能，但仍須通過現行驗證。"
@@ -188,8 +212,7 @@ class DialogueService:
         engine_status = self.application.image_generation.status()
         if not engine_status["available"]:
             raise RuntimeError("本機圖像引擎尚未就緒，請檢查模型、引擎與獨立 Python 環境。")
-        width = 512
-        height = 512
+        width, height = self._image_dimensions(message)
         create = TaskCreate(
             goal=f"Generate a verified local image for: {message[:500]}",
             success_contract=SuccessContract(
@@ -444,7 +467,7 @@ class DialogueService:
                 "capability_status": engine_status,
                 "context": self._memory_counts(),
             }
-        seconds = self.application.settings.video_default_seconds
+        seconds = self._video_seconds(message)
         create = TaskCreate(
             goal=f"Generate a verified local video for: {message[:500]}",
             success_contract=SuccessContract(
@@ -524,6 +547,32 @@ class DialogueService:
                 return task
             await asyncio.sleep(0.25)
         return self.application.store.get_task(task_id)
+
+    @staticmethod
+    def _image_dimensions(message: str) -> tuple[int, int]:
+        compact = message.casefold().replace(" ", "")
+        if "9:16" in compact or "9：16" in compact:
+            return 512, 896
+        if "16:9" in compact or "16：9" in compact:
+            return 896, 512
+        if "2:3" in compact or "2：3" in compact:
+            return 512, 768
+        if "3:2" in compact or "3：2" in compact:
+            return 768, 512
+        if re.search(r"直式|直幅|portrait|全身入鏡|全身照", message, re.IGNORECASE):
+            return 512, 768
+        if re.search(r"橫式|橫幅|landscape|寬景", message, re.IGNORECASE):
+            return 768, 512
+        return 512, 512
+
+    def _video_seconds(self, message: str) -> float:
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(?:秒|seconds?|sec)", message, re.IGNORECASE)
+        requested = (
+            float(match.group(1))
+            if match
+            else float(self.application.settings.video_default_seconds)
+        )
+        return min(6.0, max(1.0, requested))
 
     def _memory_counts(self) -> dict[str, int]:
         return {

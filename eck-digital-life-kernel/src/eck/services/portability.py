@@ -175,6 +175,7 @@ class CognitiveBundleService:
                 "reflections": len(self.store.list_reflections(limit=10000)),
                 "skills": len(self.store.list_skills(limit=10000)),
                 "runtime_skills": len(self.store.list_runtime_skills(limit=10000)),
+                "learning_themes": len(self.store.list_learning_themes(limit=10000)),
                 "skill_graph_rebuildable": True,
             },
             "event_chain": {

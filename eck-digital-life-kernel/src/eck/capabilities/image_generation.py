@@ -35,7 +35,7 @@ class ImageGenerationCapability(Capability):
 
     _sexual_terms = re.compile(
         r"\b(nude|naked|erotic|porn(?:ographic)?|sexual|sex scene|adult content)\b|"
-        r"裸體|裸露|全裸|情色|色情|性愛|成人內容",
+        r"裸體|裸露|全裸|情色|色情|性愛|成人內容|陰部|生殖器|乳房裸露",
         re.IGNORECASE,
     )
     _minor_terms = re.compile(
@@ -391,6 +391,7 @@ class ImageGenerationCapability(Capability):
             {"role": "user", "content": user_request},
         ]
         last_detail = "no response"
+        last_response: BrainResponse | None = None
         for attempt in range(2):
             response = await self.brain.chat(
                 messages,
@@ -402,6 +403,7 @@ class ImageGenerationCapability(Capability):
                     "think": False,
                 },
             )
+            last_response = response
             try:
                 return self._parse_plan(response.content), response
             except RuntimeError as exc:
@@ -418,7 +420,46 @@ class ImageGenerationCapability(Capability):
                 )
                 if attempt == 0:
                     await asyncio.sleep(0.75)
-        raise RuntimeError(last_detail)
+        if last_response is None:
+            raise RuntimeError(last_detail)
+        return self._fallback_prompt_plan(user_request), last_response
+
+    @classmethod
+    def _fallback_prompt_plan(cls, user_request: str) -> dict[str, Any]:
+        normalized = user_request.casefold()
+        adult = bool(cls._sexual_terms.search(user_request))
+        if re.search(r"男性|男人|男模|\bman\b|\bmale\b", normalized):
+            subject = "a consenting adult man age 25 or older"
+        elif re.search(r"狗|dog", normalized):
+            subject = "a dog"
+        elif re.search(r"貓|cat", normalized):
+            subject = "a cat"
+        else:
+            subject = "a consenting adult woman age 25 or older"
+        details: list[str] = [subject]
+        if re.search(r"韓國|south korean|korean", normalized):
+            details.append("South Korean appearance")
+        elif re.search(r"日本|japanese", normalized):
+            details.append("Japanese appearance")
+        if adult:
+            details.append("adult nudity")
+        if re.search(r"陰部|生殖器|full frontal|explicit", normalized):
+            details.append("full frontal adult nudity")
+        if re.search(r"全身|full.body|head.to.toe", normalized):
+            details.append("full body visible from head to toe")
+        if re.search(r"散步|走路|walking", normalized):
+            details.append("walking naturally")
+        if re.search(r"公園|park", normalized):
+            details.append("in a public park")
+        if re.search(r"室內|studio|攝影棚", normalized):
+            details.append("in a professional photography studio")
+        details.extend(("realistic photography", "natural anatomy", "coherent composition"))
+        return {
+            "prompt": ", ".join(details),
+            "negative_prompt": "low quality, blurry, distorted anatomy, text, watermark",
+            "model": "chilloutmix" if "韓國" in user_request else "realistic_vision",
+            "use_adetailer": "woman" in subject or "man" in subject,
+        }
 
     @staticmethod
     def _parse_plan(content: str) -> dict[str, Any]:
@@ -458,8 +499,9 @@ class ImageGenerationCapability(Capability):
     def _negative_prompt(value: str, *, adult: bool = False) -> str:
         if adult:
             adult_suppression = re.compile(
-                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|explicit content)\b|"
-                r"裸體|裸露|全裸|情色|色情|成人內容",
+                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|explicit content|"
+                r"genitals?|breasts?|nipples?|full frontal)\b|"
+                r"裸體|裸露|全裸|情色|色情|成人內容|陰部|生殖器|乳房裸露",
                 re.IGNORECASE,
             )
             value = ", ".join(

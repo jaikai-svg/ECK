@@ -36,6 +36,8 @@ from eck.domain.models import (
     EventRecord,
     ExperienceRecord,
     KnowledgeRecord,
+    LearningThemeCreate,
+    LearningThemeRecord,
     MissionCreate,
     MissionRecord,
     MissionUpdate,
@@ -224,6 +226,16 @@ class SQLiteStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_challenges_status ON challenges(status);
                 CREATE INDEX IF NOT EXISTS idx_challenges_kind ON challenges(kind);
+
+                CREATE TABLE IF NOT EXISTS learning_themes (
+                    theme_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_learning_themes_active
+                    ON learning_themes(active, updated_at);
 
                 CREATE TABLE IF NOT EXISTS social_post_observations (
                     observation_id TEXT PRIMARY KEY,
@@ -1404,6 +1416,81 @@ class SQLiteStore:
             )
         return records
 
+    def add_learning_theme(self, create: LearningThemeCreate) -> LearningThemeRecord:
+        title = " ".join(create.title.split())
+        now = iso_now()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT theme_id FROM learning_themes WHERE title = ? COLLATE NOCASE",
+                (title,),
+            ).fetchone()
+            if existing:
+                theme_id = str(existing["theme_id"])
+                conn.execute(
+                    "UPDATE learning_themes SET active = 1, updated_at = ? WHERE theme_id = ?",
+                    (now, theme_id),
+                )
+            else:
+                theme_id = new_id("learning-theme")
+                conn.execute(
+                    """
+                    INSERT INTO learning_themes (
+                        theme_id, title, active, created_at, updated_at
+                    ) VALUES (?, ?, 1, ?, ?)
+                    """,
+                    (theme_id, title, now, now),
+                )
+        return self.get_learning_theme(theme_id)
+
+    def get_learning_theme(self, theme_id: str) -> LearningThemeRecord:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM learning_themes WHERE theme_id = ?", (theme_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown learning theme: {theme_id}")
+        return self._learning_theme_from_row(row)
+
+    def list_learning_themes(
+        self,
+        *,
+        active_only: bool = False,
+        limit: int = 100,
+    ) -> list[LearningThemeRecord]:
+        where = "WHERE active = 1" if active_only else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM learning_themes {where}
+                ORDER BY active DESC, updated_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._learning_theme_from_row(row) for row in rows]
+
+    def set_learning_theme_active(
+        self,
+        theme_id: str,
+        *,
+        active: bool,
+    ) -> LearningThemeRecord:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE learning_themes SET active = ?, updated_at = ? WHERE theme_id = ?",
+                (int(active), iso_now(), theme_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(f"Unknown learning theme: {theme_id}")
+        return self.get_learning_theme(theme_id)
+
+    def delete_learning_theme(self, theme_id: str) -> None:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM learning_themes WHERE theme_id = ?", (theme_id,)
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(f"Unknown learning theme: {theme_id}")
+
     def create_mission(self, create: MissionCreate) -> MissionRecord:
         mission_id = new_id("mission")
         now = iso_now()
@@ -2287,6 +2374,16 @@ class SQLiteStore:
             approved_at=(
                 datetime.fromisoformat(row["approved_at"]) if row["approved_at"] else None
             ),
+        )
+
+    @staticmethod
+    def _learning_theme_from_row(row: sqlite3.Row) -> LearningThemeRecord:
+        return LearningThemeRecord(
+            theme_id=row["theme_id"],
+            title=row["title"],
+            active=bool(row["active"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
     @staticmethod

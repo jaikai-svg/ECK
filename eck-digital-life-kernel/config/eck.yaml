@@ -80,7 +80,7 @@ cogvideo_script: scripts/run_cogvideo_engine.py
 cogvideo_model_dir: workspace/cogvideo/model
 cogvideo_smoke_report: workspace/cogvideo/verified-runtime.json
 video_generation_timeout_seconds: 14400
-video_default_seconds: 3
+video_default_seconds: 5
 video_generation_steps: 25
 video_teacache_enabled: false
 video_adult_content_enabled: true
@@ -94,14 +94,14 @@ supervisor_model:
 supervisor_initial_delay_seconds: 30
 supervisor_review_seconds: 600
 supervisor_auto_assign: true
-supervisor_max_reviews_per_day: 48
+supervisor_max_reviews_per_day: 0
 supervisor_max_output_tokens: 512
 supervisor_context_window: 4096
 supervisor_num_gpu_layers: 12
 learning_stall_minutes: 30
 autonomous_curriculum_enabled: true
 autonomous_curriculum_interval_seconds: 300
-autonomous_curriculum_max_runs_per_day: 144
+autonomous_curriculum_max_runs_per_day: 0
 autonomous_eck_focus_percent: 70
 community_source_catalog_path: config/community-sources.json
 

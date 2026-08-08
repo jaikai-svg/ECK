@@ -113,3 +113,30 @@ async def test_supervisor_daily_limit_skips_model_inference(settings) -> None:
 
     assert review is None
     assert "24 小時檢查上限" in application.supervisor.status()["activity_text"]
+
+
+@pytest.mark.asyncio
+async def test_zero_supervisor_limit_means_unlimited(settings) -> None:
+    unlimited = settings.model_copy(
+        update={
+            "supervisor_enabled": True,
+            "supervisor_auto_assign": False,
+            "supervisor_max_reviews_per_day": 0,
+        }
+    )
+    application = build_application(unlimited)
+    application.store.add_supervisor_review(
+        model="test",
+        mood="waiting",
+        activity_text="先前檢查",
+        assessment="既有紀錄",
+        recommendations=("繼續",),
+        challenge_topic="既有主題",
+        challenge_goal="既有目標",
+        task_id=None,
+    )
+
+    review = await application.supervisor.review_if_idle()
+
+    assert review is not None
+    assert application.supervisor.status()["max_reviews_per_day"] == 0

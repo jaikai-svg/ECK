@@ -20,6 +20,7 @@ from eck.domain.models import (
     AutonomousActionContext,
     BenchmarkRunCreate,
     ChallengeDraftCreate,
+    LearningThemeCreate,
     MissionCompletionCreate,
     MissionCreate,
     MissionReviewDecision,
@@ -63,6 +64,10 @@ class CriticalResearchRequest(BaseModel):
 
 class CognitiveBundleRequest(BaseModel):
     include_artifacts: bool = False
+
+
+class LearningThemeStateRequest(BaseModel):
+    active: bool
 
 
 def create_api(
@@ -340,6 +345,52 @@ def create_api(
     @api.get("/v1/learning/community-sources")
     async def community_learning_sources(app: AppDependency) -> dict[str, Any]:
         return app.community_sources.status()
+
+    @api.get("/v1/learning/themes")
+    async def list_learning_themes(app: AppDependency) -> dict[str, Any]:
+        return {
+            "items": app.store.list_learning_themes(limit=100),
+            "eck_focus_percent": app.settings.autonomous_eck_focus_percent,
+            "theme_focus_percent": 100 - app.settings.autonomous_eck_focus_percent,
+        }
+
+    @api.post("/v1/learning/themes", status_code=201)
+    async def create_learning_theme(
+        request: LearningThemeCreate,
+        app: AppDependency,
+    ) -> Any:
+        theme = app.store.add_learning_theme(request)
+        await app.events.publish(
+            "LearningThemeCreated",
+            theme.theme_id,
+            {"title": theme.title, "active": theme.active},
+        )
+        return theme
+
+    @api.patch("/v1/learning/themes/{theme_id}")
+    async def update_learning_theme(
+        theme_id: str,
+        request: LearningThemeStateRequest,
+        app: AppDependency,
+    ) -> Any:
+        try:
+            theme = app.store.set_learning_theme_active(theme_id, active=request.active)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await app.events.publish(
+            "LearningThemeUpdated",
+            theme.theme_id,
+            {"title": theme.title, "active": theme.active},
+        )
+        return theme
+
+    @api.delete("/v1/learning/themes/{theme_id}", status_code=204)
+    async def delete_learning_theme(theme_id: str, app: AppDependency) -> None:
+        try:
+            app.store.delete_learning_theme(theme_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await app.events.publish("LearningThemeDeleted", theme_id, {})
 
     @api.get("/v1/learning/skill-tree")
     async def learning_skill_tree(app: AppDependency) -> dict[str, Any]:

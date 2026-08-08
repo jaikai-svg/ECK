@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07111f">
   <title>ECK 數位生命核心</title>
-  <link rel="stylesheet" href="/static/styles.css?v=16">
+  <link rel="stylesheet" href="/static/styles.css?v=18">
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -181,6 +181,19 @@
           <article><span>反思紀錄</span><b id="memory-reflections">—</b></article>
         </section>
 
+        <article class="panel learning-theme-panel">
+          <div class="panel-head compact">
+            <div><p class="eyebrow">GUIDED AUTONOMOUS LEARNING</p><h2>主題式自主學習</h2></div>
+            <span class="pill" id="learning-theme-ratio">70% 核心 · 30% 主題</span>
+          </div>
+          <p class="subtle-copy">主題會被拆成基礎機制、分析方法、經濟政策、社會倫理、地緣風險、實務技能、反例與最新問題；不會取代 ECK 自主尋找核心能力缺口。</p>
+          <form class="learning-theme-form" id="learning-theme-form">
+            <input id="learning-theme-title" maxlength="200" placeholder="例如：股票、遊戲製作、行銷、自動化" required>
+            <button type="submit">加入長期主題</button>
+          </form>
+          <div class="learning-theme-list" id="learning-theme-list"></div>
+        </article>
+
         <div class="learning-grid">
           <article class="panel">
             <div class="panel-head compact"><div><p class="eyebrow">EXPERIENCE</p><h2>最近驗證結果</h2></div><span class="count-label" id="experience-label">0</span></div>
@@ -347,6 +360,6 @@
   </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=16"></script>
+  <script src="/static/app.js?v=18"></script>
 </body>
 </html>

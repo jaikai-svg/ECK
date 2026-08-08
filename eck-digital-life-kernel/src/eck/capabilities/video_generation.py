@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -25,15 +26,15 @@ class VideoGenerationCapability(Capability):
     definition = CapabilityDefinition(
         name="video.generate",
         description=(
-            "Generate a local first frame and animate it with the official FramePack "
-            "image-to-video runtime, preserving artifact hashes and execution evidence."
+            "Generate local text-to-video with CogVideoX or animate a verified first frame "
+            "with FramePack, preserving prompts, artifact hashes, and execution evidence."
         ),
         default_risk=RiskLevel.MEDIUM,
         deterministic=False,
     )
     _sexual_terms = re.compile(
         r"\b(nude|naked|erotic|porn(?:ographic)?|sexual|sex scene|adult content)\b|"
-        r"裸體|全裸|情色|色情|性愛|成人內容",
+        r"裸體|裸露|全裸|情色|色情|性愛|成人內容|陰部|生殖器|乳房裸露",
         re.IGNORECASE,
     )
     _minor_terms = re.compile(
@@ -318,13 +319,26 @@ class VideoGenerationCapability(Capability):
                 status,
             )
         backend = str(status.get("backend", "framepack"))
-        prompt = str(action.payload.get("user_request") or action.payload.get("prompt", "")).strip()
+        user_request = str(action.payload.get("user_request", "")).strip()
+        prompt = user_request or str(action.payload.get("prompt", "")).strip()
         try:
             self._validate_request_policy(prompt)
         except ValueError as exc:
             return self._failure(action, started, str(exc))
         if len(prompt) < 3:
             return self._failure(action, started, "A descriptive video prompt is required.")
+        planner_model: str | None = None
+        planner_inference: dict[str, Any] = {}
+        negative_prompt = str(action.payload.get("negative_prompt", ""))
+        if user_request:
+            try:
+                plan, response = await self._plan_user_request(user_request)
+            except (RuntimeError, httpx.HTTPError) as exc:
+                return self._failure(action, started, f"Video prompt planning failed: {exc}")
+            prompt = str(plan["prompt"])
+            negative_prompt = str(plan.get("negative_prompt", ""))
+            planner_model = response.model
+            planner_inference = self.image_generation._inference_metrics(response.raw)
 
         async with self._lock:
             try:
@@ -353,13 +367,15 @@ class VideoGenerationCapability(Capability):
                 self._set_stage("generating_video")
                 video_id = new_id("video")
                 output_path = (self.settings.video_output_dir / f"{video_id}.mp4").resolve()
+                seed_value = action.payload.get("seed")
+                seed = secrets.randbelow(2**31) if seed_value is None else int(seed_value)
                 request: dict[str, Any] = {
                     "backend": backend,
                     "prompt": prompt,
-                    "negative_prompt": str(action.payload.get("negative_prompt", "")),
+                    "negative_prompt": negative_prompt,
                     "seconds": seconds,
                     "steps": self.settings.video_generation_steps,
-                    "seed": int(action.payload.get("seed", 31337)),
+                    "seed": seed,
                 }
                 if backend == "cogvideox":
                     frame_groups = max(1, min(6, round(seconds)))
@@ -403,6 +419,10 @@ class VideoGenerationCapability(Capability):
         if not isinstance(metadata, dict):
             return self._failure(action, started, f"{backend} returned invalid metadata.")
         metadata["generation_input"] = initial_metadata
+        metadata["user_request"] = user_request or prompt
+        metadata["planned_prompt"] = prompt
+        metadata["prompt_planner_model"] = planner_model
+        metadata["prompt_planner_inference"] = planner_inference
         relative = output_path.relative_to(self.settings.workspace_dir.resolve()).as_posix()
         finished = utc_now()
         elapsed = round((finished - started).total_seconds(), 3)
@@ -433,6 +453,7 @@ class VideoGenerationCapability(Capability):
                 "model": metadata.get("model"),
                 "steps": metadata.get("steps"),
                 "offload": metadata.get("offload"),
+                "prompt_language": "english",
             },
         }
         return CapabilityResult(
@@ -470,6 +491,152 @@ class VideoGenerationCapability(Capability):
                 )
         except httpx.HTTPError:
             return
+
+    async def _plan_user_request(self, user_request: str) -> tuple[dict[str, Any], Any]:
+        adult = bool(self._sexual_terms.search(user_request))
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "/no_think\nConvert the request into a concise English CogVideoX prompt. "
+                    "Preserve the exact subject, appearance, action, setting, shot type, camera "
+                    "movement, and temporal motion. Do not introduce aerial city footage, drone "
+                    "shots, skylines, or unrelated scenery unless requested. Legal adult nudity "
+                    "or erotic content may be translated, but all depicted people must be "
+                    "consenting adults age 21 or older. Never introduce minors, coercion, sexual "
+                    "violence, or animals in sexual contexts. Return only JSON."
+                ),
+            },
+            {"role": "user", "content": user_request},
+        ]
+        last_response: Any = None
+        for attempt in range(2):
+            response = await self.image_generation.brain.chat(
+                messages,
+                format_schema={
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "negative_prompt": {"type": "string"},
+                    },
+                    "required": ["prompt", "negative_prompt"],
+                },
+                options={
+                    "temperature": 0.15,
+                    "num_predict": 384,
+                    "num_ctx": 2048,
+                    "think": False,
+                },
+            )
+            last_response = response
+            try:
+                plan = self._parse_prompt_plan(response.content)
+                plan["negative_prompt"] = self._negative_prompt(
+                    str(plan.get("negative_prompt", "")),
+                    adult=adult,
+                    request=user_request,
+                )
+                return plan, response
+            except RuntimeError:
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+        if last_response is None:
+            raise RuntimeError("The video prompt planner returned no response.")
+        plan = self._fallback_prompt_plan(user_request)
+        plan["negative_prompt"] = self._negative_prompt(
+            str(plan.get("negative_prompt", "")),
+            adult=adult,
+            request=user_request,
+        )
+        return plan, last_response
+
+    @staticmethod
+    def _parse_prompt_plan(content: str) -> dict[str, str]:
+        try:
+            plan = json.loads(content)
+        except ValueError:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start < 0 or end <= start:
+                raise RuntimeError("The video prompt planner returned no JSON object.") from None
+            plan = json.loads(content[start : end + 1])
+        if not isinstance(plan, dict):
+            raise RuntimeError("The video prompt planner returned invalid JSON.")
+        prompt = str(plan.get("prompt", "")).strip()
+        if len(prompt) < 3 or not any(char.isascii() and char.isalpha() for char in prompt):
+            raise RuntimeError("The video prompt planner returned no usable English prompt.")
+        return {
+            "prompt": prompt[:1000],
+            "negative_prompt": str(plan.get("negative_prompt", ""))[:500],
+        }
+
+    @classmethod
+    def _fallback_prompt_plan(cls, user_request: str) -> dict[str, str]:
+        normalized = user_request.casefold()
+        if re.search(r"男性|男人|男模|\bman\b|\bmale\b", normalized):
+            subject = "a consenting adult man age 25 or older"
+        elif re.search(r"狗|dog", normalized):
+            subject = "a dog"
+        elif re.search(r"貓|cat", normalized):
+            subject = "a cat"
+        else:
+            subject = "a consenting adult woman age 25 or older"
+        details = [subject]
+        if re.search(r"韓國|south korean|korean", normalized):
+            details.append("South Korean appearance")
+        if cls._sexual_terms.search(user_request):
+            details.append("adult nudity")
+        if re.search(r"陰部|生殖器|full frontal|explicit", normalized):
+            details.append("full frontal adult nudity")
+        if re.search(r"全身|full.body|head.to.toe", normalized):
+            details.append("full body visible from head to toe")
+        if re.search(r"散步|走路|walking", normalized):
+            details.extend(("walking naturally", "continuous leg and body motion"))
+        if re.search(r"公園|park", normalized):
+            details.append("in a green public park")
+        details.extend(
+            (
+                "ground-level eye-level tracking shot",
+                "the camera follows the subject",
+                "realistic coherent motion",
+                "cinematic natural light",
+            )
+        )
+        return {"prompt": ", ".join(details), "negative_prompt": ""}
+
+    @staticmethod
+    def _negative_prompt(value: str, *, adult: bool, request: str) -> str:
+        if adult:
+            adult_terms = re.compile(
+                r"\b(nsfw|nude|nudity|naked|erotic|porn(?:ographic)?|explicit|"
+                r"genitals?|breasts?|nipples?|full frontal)\b|"
+                r"裸體|裸露|全裸|情色|色情|陰部|生殖器|乳房裸露",
+                re.IGNORECASE,
+            )
+            value = ", ".join(
+                part.strip()
+                for part in value.split(",")
+                if part.strip() and not adult_terms.search(part)
+            )
+        required = [
+            "child",
+            "minor",
+            "underage",
+            "non-consensual",
+            "sexual violence",
+            "bestiality",
+            "text",
+            "watermark",
+            "distorted anatomy",
+            "scene mismatch",
+        ]
+        if not re.search(
+            r"空拍|航拍|城市|天際線|aerial|drone|city|skyline",
+            request,
+            re.IGNORECASE,
+        ):
+            required.extend(("aerial view", "drone shot", "city skyline"))
+        return ", ".join(part for part in (value.strip(), *required) if part)[:800]
 
     async def _input_image(
         self,

@@ -47,10 +47,35 @@ def test_detects_image_generation_requests(message: str) -> None:
 
 @pytest.mark.parametrize(
     "message",
+    ["生成一個裸體的成年女性", "生成美女在公園散步", "create a nude adult woman"],
+)
+def test_detects_implicit_visual_generation_requests(message: str) -> None:
+    assert DialogueService.is_image_request(message)
+
+
+@pytest.mark.parametrize(
+    "message",
     ["請介紹你自己", "研究狗的行為", "這張圖片的來源是什麼？"],
 )
 def test_does_not_route_non_generation_requests_to_image_engine(message: str) -> None:
     assert not DialogueService.is_image_request(message)
+
+
+def test_does_not_route_requested_text_output_to_image_engine() -> None:
+    assert not DialogueService.is_image_request("生成一篇美女角色介紹文章")
+
+
+def test_dialogue_extracts_image_aspect_ratio_and_video_duration(application) -> None:
+    dialogue = DialogueService(application)
+
+    assert dialogue._image_dimensions("生成 9:16 全身圖片") == (512, 896)
+    assert dialogue._image_dimensions("生成 16:9 圖片") == (896, 512)
+    assert dialogue._image_dimensions("生成 2:3 圖片") == (512, 768)
+    assert dialogue._image_dimensions("生成 3:2 圖片") == (768, 512)
+    assert dialogue._image_dimensions("生成直式全身照") == (512, 768)
+    assert dialogue._image_dimensions("生成橫式風景圖") == (768, 512)
+    assert dialogue._video_seconds("生成 6 秒影片") == 6.0
+    assert dialogue._video_seconds("生成 30 秒影片") == 6.0
 
 
 @pytest.mark.parametrize(
@@ -150,6 +175,18 @@ async def test_dialogue_executes_and_returns_verified_image(application, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_dialogue_reports_unavailable_image_engine(application, monkeypatch) -> None:
+    monkeypatch.setattr(
+        application.image_generation,
+        "status",
+        lambda: {"available": False},
+    )
+
+    with pytest.raises(RuntimeError, match="本機圖像引擎尚未就緒"):
+        await DialogueService(application).respond("生成一張狗狗圖片", [])
+
+
+@pytest.mark.asyncio
 async def test_dialogue_returns_video_resource_block_without_http_failure(
     application, monkeypatch
 ) -> None:
@@ -170,3 +207,114 @@ async def test_dialogue_returns_video_resource_block_without_http_failure(
     assert result["pending"] is False
     assert result["artifacts"] == []
     assert "不會建立虛假成果" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_dialogue_executes_and_returns_verified_video(application, monkeypatch) -> None:
+    capability = application.video_generation
+    captured_payload: dict[str, Any] = {}
+    monkeypatch.setattr(
+        capability,
+        "status",
+        lambda: {
+            "available": True,
+            "backend": "cogvideox",
+            "model": "zai-org/CogVideoX-2b",
+        },
+    )
+
+    async def generate(action) -> CapabilityResult:
+        captured_payload.update(action.payload)
+        started = utc_now()
+        return CapabilityResult(
+            action_id=action.action_id,
+            capability="video.generate",
+            success=True,
+            output={
+                "artifact": "walking.mp4",
+                "artifact_url": "/video-artifacts/walking.mp4",
+                "artifact_path": "generated_videos/walking.mp4",
+                "metadata": {
+                    "model": "zai-org/CogVideoX-2b",
+                    "backend": "cogvideox",
+                    "seconds": 5.0,
+                },
+                "metrics": {"seconds": 5.0, "completed": True},
+                "skill_fingerprint": "video.generate:cogvideox-2b:test",
+                "skill_name": "Verified CogVideoX test",
+            },
+            evidence=(
+                Evidence(
+                    source=EvidenceSource.TOOL,
+                    claim="A local MP4 was generated and verified.",
+                    payload={"artifact": "walking.mp4"},
+                ),
+            ),
+            reversible=True,
+            cost_units=60,
+            started_at=started,
+            finished_at=utc_now(),
+        )
+
+    monkeypatch.setattr(capability, "execute", generate)
+
+    result = await DialogueService(application).respond(
+        "生成 5 秒美女在公園散步的影片", []
+    )
+
+    assert captured_payload == {
+        "user_request": "生成 5 秒美女在公園散步的影片",
+        "seconds": 5.0,
+    }
+    assert result["tool"] == "video.generate"
+    assert result["artifacts"][0]["url"] == "/video-artifacts/walking.mp4"
+    assert result["artifacts"][0]["metadata"]["seconds"] == 5.0
+    assert "已生成並通過 MP4 檔案驗證" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_dialogue_executes_and_returns_background_removed_image(
+    application, monkeypatch
+) -> None:
+    capability = application.image_background_removal
+    monkeypatch.setattr(capability, "status", lambda: {"available": True})
+
+    async def remove(action) -> CapabilityResult:
+        started = utc_now()
+        return CapabilityResult(
+            action_id=action.action_id,
+            capability="image.remove_background",
+            success=True,
+            output={
+                "artifact": "dog-transparent.png",
+                "artifact_url": "/artifacts/dog-transparent.png",
+                "artifact_path": "generated_images/dog-transparent.png",
+                "metadata": {
+                    "model": "birefnet-general",
+                    "transparent_background": True,
+                },
+                "metrics": {"completed": True},
+                "skill_fingerprint": "image.remove_background:birefnet:test",
+                "skill_name": "Verified background removal test",
+            },
+            evidence=(
+                Evidence(
+                    source=EvidenceSource.TOOL,
+                    claim="A transparent local PNG was generated and verified.",
+                    payload={"artifact": "dog-transparent.png"},
+                ),
+            ),
+            reversible=True,
+            cost_units=10,
+            started_at=started,
+            finished_at=utc_now(),
+        )
+
+    monkeypatch.setattr(capability, "execute", remove)
+
+    result = await DialogueService(application).respond("移除上一張圖片背景", [])
+
+    assert result["tool"] == "image.remove_background"
+    assert result["artifacts"][0]["url"] == "/artifacts/dog-transparent.png"
+    assert result["artifacts"][0]["metadata"]["transparent_background"] is True
+    assert "移除最近生成圖片的背景" in result["answer"]

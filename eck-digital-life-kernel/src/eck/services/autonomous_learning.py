@@ -75,6 +75,16 @@ class AutonomousLearningService:
         "cross-domain applications and limits",
         "recent changes and open questions",
     )
+    _theme_lenses = (
+        "fundamentals mechanisms and terminology",
+        "data measurement and analytical methods",
+        "economic policy and institutional effects",
+        "social behavioral and ethical effects",
+        "geopolitical risk and external shocks",
+        "practical tools workflows and reusable skills",
+        "counterexamples limitations and failure cases",
+        "recent evidence changes and open questions",
+    )
     _terminal_statuses = {
         TaskStatus.VERIFIED_SUCCESS,
         TaskStatus.VERIFIED_FAILURE,
@@ -109,6 +119,7 @@ class AutonomousLearningService:
             if item.status in {TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.WAITING_APPROVAL}
         ]
         verified = [item for item in recent if item.status is TaskStatus.VERIFIED_SUCCESS]
+        themes = self.store.list_learning_themes(limit=100)
         return {
             "enabled": self.settings.autonomous_curriculum_enabled,
             "activity_text": self._activity_text,
@@ -120,6 +131,9 @@ class AutonomousLearningService:
             "verified_last_24h": len(verified),
             "active_tasks": len(active),
             "last_task_id": self._last_task_id,
+            "learning_themes": [item.model_dump(mode="json") for item in themes],
+            "active_theme_count": sum(item.active for item in themes),
+            "theme_focus_percent": 100 - self.settings.autonomous_eck_focus_percent,
         }
 
     async def enqueue_if_idle(self) -> TaskRecord | None:
@@ -138,7 +152,10 @@ class AutonomousLearningService:
         now = utc_now()
         tasks = self._autonomous_tasks()
         recent = [item for item in tasks if item.created_at >= now - timedelta(days=1)]
-        if len(recent) >= self.settings.autonomous_curriculum_max_runs_per_day:
+        if (
+            self.settings.autonomous_curriculum_max_runs_per_day > 0
+            and len(recent) >= self.settings.autonomous_curriculum_max_runs_per_day
+        ):
             self._activity_text = "自主課程已達 24 小時資源上限，等待滾動視窗釋放。"
             return None
         if tasks:
@@ -200,18 +217,24 @@ class AutonomousLearningService:
             for lens in self._lenses
             for domain in self._general_domains
         ]
+        themes = [
+            f"{theme.title}: {lens} ({day})"
+            for lens in self._theme_lenses
+            for theme in self.store.list_learning_themes(active_only=True, limit=100)
+        ]
+        guided = themes + general
         focus_slots = max(1, round(self.settings.autonomous_eck_focus_percent / 10))
         general_slots = max(0, 10 - focus_slots)
         merged: list[str] = []
-        while focus or general:
+        while focus or guided:
             merged.extend(focus[:focus_slots])
             del focus[:focus_slots]
             if general_slots:
-                merged.extend(general[:general_slots])
-                del general[:general_slots]
+                merged.extend(guided[:general_slots])
+                del guided[:general_slots]
             elif not focus:
-                merged.extend(general)
-                general.clear()
+                merged.extend(guided)
+                guided.clear()
         return merged
 
     def _autonomous_tasks(self) -> list[TaskRecord]:

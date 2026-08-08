@@ -44,6 +44,17 @@ def test_health_dashboard_and_acceptance(application) -> None:
         community_sources = client.get("/v1/learning/community-sources")
         assert community_sources.status_code == 200
         assert community_sources.json()["source_count"] == 11
+        theme = client.post("/v1/learning/themes", json={"title": "股票"})
+        assert theme.status_code == 201
+        theme_id = theme.json()["theme_id"]
+        themes = client.get("/v1/learning/themes")
+        assert themes.json()["items"][0]["title"] == "股票"
+        assert themes.json()["theme_focus_percent"] == 30
+        paused = client.patch(
+            f"/v1/learning/themes/{theme_id}", json={"active": False}
+        )
+        assert paused.json()["active"] is False
+        assert client.delete(f"/v1/learning/themes/{theme_id}").status_code == 204
         skill_tree = client.get("/v1/learning/skill-tree")
         assert skill_tree.status_code == 200
         assert skill_tree.json()["schema_version"] == "eck-skill-knowledge-graph.v1"

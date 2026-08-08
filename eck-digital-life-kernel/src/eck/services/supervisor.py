@@ -104,7 +104,10 @@ class SupervisorService:
         )
         if active:
             return None
-        if self._reviews_last_24h() >= self.settings.supervisor_max_reviews_per_day:
+        if (
+            self.settings.supervisor_max_reviews_per_day > 0
+            and self._reviews_last_24h() >= self.settings.supervisor_max_reviews_per_day
+        ):
             self._mood = "waiting"
             self._activity_text = "監督者已達 24 小時檢查上限，暫停推理以降低資源負載。"
             return None

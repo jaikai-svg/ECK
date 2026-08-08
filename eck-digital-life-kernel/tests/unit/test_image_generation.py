@@ -38,10 +38,12 @@ def test_explicit_model_name_takes_priority_and_adult_negative_is_preserved() ->
         == "chilloutmix"
     )
     negative = ImageGenerationCapability._negative_prompt(
-        "blurry, explicit content, nudity, watermark", adult=True
+        "blurry, explicit content, nudity, breasts, genitals, watermark", adult=True
     )
     assert "explicit content" not in negative
     assert "nudity" not in negative
+    assert "breasts" not in negative
+    assert "genitals" not in negative
     assert "minor" in negative
 
 
@@ -68,6 +70,17 @@ def test_legal_adult_content_is_enabled_but_abusive_content_is_blocked(
         capability._validate_request_policy("non-consensual sexual scene")
     with pytest.raises(ValueError, match="animals"):
         capability._validate_request_policy("bestiality image")
+
+
+def test_adult_prompt_planner_has_deterministic_fallback() -> None:
+    plan = ImageGenerationCapability._fallback_prompt_plan(
+        "生成一張 9:16 韓國成年女性全裸全身照片"
+    )
+
+    assert "adult nudity" in plan["prompt"]
+    assert "South Korean" in plan["prompt"]
+    assert "head to toe" in plan["prompt"]
+    assert plan["model"] == "chilloutmix"
 
 
 def test_verified_image_output_has_stable_skill_identity() -> None:

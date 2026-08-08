@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     cogvideo_model_dir: Path = Path("workspace/cogvideo/model")
     cogvideo_smoke_report: Path = Path("workspace/cogvideo/verified-runtime.json")
     video_generation_timeout_seconds: float = Field(default=14400.0, ge=300, le=86400)
-    video_default_seconds: float = Field(default=3.0, ge=1, le=10)
+    video_default_seconds: float = Field(default=5.0, ge=1, le=6)
     video_generation_steps: int = Field(default=25, ge=10, le=50)
     video_teacache_enabled: bool = False
     video_adult_content_enabled: bool = True
@@ -117,14 +117,14 @@ class Settings(BaseSettings):
     supervisor_initial_delay_seconds: float = Field(default=30.0, ge=1, le=3600)
     supervisor_review_seconds: float = Field(default=600.0, ge=10, le=86400)
     supervisor_auto_assign: bool = True
-    supervisor_max_reviews_per_day: int = Field(default=48, ge=1, le=1000)
+    supervisor_max_reviews_per_day: int = Field(default=0, ge=0, le=1000)
     supervisor_max_output_tokens: int = Field(default=512, ge=64, le=4096)
     supervisor_context_window: int = Field(default=4096, ge=1024, le=131072)
     supervisor_num_gpu_layers: int | None = Field(default=12, ge=0, le=256)
     learning_stall_minutes: int = Field(default=30, ge=5, le=1440)
     autonomous_curriculum_enabled: bool = True
     autonomous_curriculum_interval_seconds: float = Field(default=300.0, ge=30, le=86400)
-    autonomous_curriculum_max_runs_per_day: int = Field(default=144, ge=1, le=1000)
+    autonomous_curriculum_max_runs_per_day: int = Field(default=0, ge=0, le=1000)
     autonomous_eck_focus_percent: int = Field(default=70, ge=10, le=100)
     community_source_catalog_path: Path = Path("config/community-sources.json")
 
