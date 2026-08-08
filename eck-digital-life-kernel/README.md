@@ -116,13 +116,39 @@ exact, contained, and highly similar topics are replaced or skipped before assig
 The deterministic acceptance tests use `MockBrainProvider`; they do not require
 Ollama or a GPU.
 
+## v0.2 current-information development
+
+The first implemented v0.2 priority is `web.critical_research`. It discovers recent
+public sources through the free GDELT DOC 2.0 index, fetches pages through the read-only
+SSRF/robots/size-gated worker, preserves source hashes and metadata, extracts checkable
+claims, looks for supporting and contradicting evidence, and reports uncertainty instead
+of forcing a conclusion.
+
+Raw HTTP bodies stay in memory only. Cleaned text is compressed in SQLite for 30 days by
+default; provenance, hashes, claims, and exact evidence excerpts remain traceable. Exact
+and near-duplicate pages are retained as source records but count as one independent
+content group. If more than half of the latest ten completed runs are inconclusive, the
+research quality endpoint reports `degraded` so the supervisor improves the method rather
+than endlessly adding similar topics.
+
+```text
+POST /v1/research/critical
+GET  /v1/research/runs
+GET  /v1/research/runs/{run_id}
+GET  /v1/research/quality
+```
+
+This milestone improves ECK's research procedure and evidence memory; it does not train
+the Qwen weights or prove AGI. See `docs/16-current-information-critical-learning.md`.
+
 ## Safety boundary
 
 v0.1 defaults:
 
 - binds only to localhost;
 - permits registered native capabilities plus tested Docker worker skills;
-- rejects arbitrary research URLs and limits each response, source count, and curriculum cycle;
+- validates public research URLs against SSRF, credentials, robots, redirects, response size,
+  content type, source count, and research-window limits;
 - prohibits system-file mutation;
 - exposes no arbitrary shell capability;
 - permits only registered actions;
@@ -138,11 +164,12 @@ v0.1 defaults:
 - allows free PyPI/npm dependencies only inside the disposable Docker skill worker;
 - does not include a model-weight training pipeline yet.
 
-The reference configuration enables the allowlisted academic-research capability. It
-queries bibliographic metadata and available abstracts only; it does not claim to read
-paywalled or unavailable full text. This read-only, fixed-host capability may run
-autonomously without per-task approval, remains bounded to configured source and cycle
-limits, and must still pass its Success Contract before becoming positive learning.
+The reference configuration enables both fixed-host Crossref academic research and the
+v0.2-development critical current-information loop. Crossref queries bibliographic metadata
+and available abstracts only; it does not claim to read paywalled or unavailable full text.
+Critical research can read public HTML through a separate read-only operation surface, but
+cannot click, log in, post, publish, follow, like, or send messages. Both paths remain bounded
+and must pass a Success Contract before the research procedure becomes positive learning.
 The supervisor only assigns a new test when no task is queued, running, or awaiting
 approval. Dialogue responses are not admitted as learning by themselves.
 

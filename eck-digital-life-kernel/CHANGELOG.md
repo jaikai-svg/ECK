@@ -4,6 +4,17 @@ All notable changes are documented here.
 
 ## [0.2.0] - Unreleased
 
+### Added
+
+- Evidence-grounded current-information research with GDELT discovery, retained source
+  provenance, claim-level support/contradiction links, and explicit uncertainty.
+- In-memory raw response buffers, compressed 30-day cleaned-text retention, SHA-256/SimHash
+  duplicate grouping, and permanent source metadata in SQLite.
+- A rolling quality gate that marks research degraded when more than half of the latest ten
+  completed runs are inconclusive.
+- A read-only public research operation surface isolated from future state-changing browser
+  workers, plus research run and quality APIs.
+
 ### Planned
 
 - Contract-guided candidate planning with bounded repair and fixed verification.

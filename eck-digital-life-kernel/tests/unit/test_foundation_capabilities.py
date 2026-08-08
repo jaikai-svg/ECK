@@ -88,7 +88,11 @@ class _WebClient:
             )
         return _Response(
             url=url,
-            content=b'<html><body>Verified <a href="/next">source</a></body></html>',
+            content=(
+                b'<html><body>Verified public research article with enough retained '
+                b'text to exercise content extraction and source hashing safely. '
+                b'<a href="/next">source</a></body></html>'
+            ),
             content_type="text/html; charset=utf-8",
         )
 
@@ -188,7 +192,7 @@ async def test_public_web_html_json_and_policy_gates(settings, monkeypatch) -> N
     html = await capability.execute(
         ActionProposal(
             capability="web.public_explore",
-            operation="get",
+            operation="read",
             payload={"url": "https://example.com/page"},
         )
     )
@@ -199,17 +203,34 @@ async def test_public_web_html_json_and_policy_gates(settings, monkeypatch) -> N
             payload={"url": "https://example.com/data"},
         )
     )
-    social = await capability.execute(
+    legacy_get = await capability.execute(
         ActionProposal(
             capability="web.public_explore",
             operation="get",
+            payload={"url": "https://example.com/page"},
+        )
+    )
+    social = await capability.execute(
+        ActionProposal(
+            capability="web.public_explore",
+            operation="read",
             payload={"url": "https://x.com/post"},
+        )
+    )
+    state_change = await capability.execute(
+        ActionProposal(
+            capability="web.public_explore",
+            operation="click",
+            payload={"url": "https://example.com/page"},
         )
     )
 
     assert html.success and html.output["links"][0]["href"] == "https://example.com/next"
+    assert html.output["content_sha256"]
+    assert legacy_get.success
     assert data.success and data.output["json"]["verified"] is True
     assert not social.success and "automation permission" in social.output["error"]
+    assert not state_change.success and "read-only" in state_change.output["error"]
 
     validation_capability = PublicWebCapability(settings)
     with pytest.raises(ValueError, match="public HTTP"):

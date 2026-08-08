@@ -16,7 +16,7 @@ from eck.core.time import utc_now
 from eck.domain.enums import TaskStatus
 from eck.domain.models import SkillForgeRequest, SupervisorReviewRecord
 from eck.events.bus import EventBus
-from eck.services.research import build_research_task
+from eck.services.research import build_critical_research_task
 from eck.services.skill_forge import SkillForgeService
 from eck.services.tasks import TaskService
 from eck.storage.sqlite import SQLiteStore
@@ -206,6 +206,10 @@ class SupervisorService:
             for item in self.store.list_missions(limit=20)
             if item.status.value not in {"approved", "cancelled"}
         ]
+        research_quality = self.store.research_quality_metrics(
+            window=self.settings.critical_research_quality_window,
+            max_inconclusive_ratio=self.settings.critical_research_max_inconclusive_ratio,
+        )
         schema = {
             "type": "object",
             "properties": {
@@ -247,6 +251,7 @@ class SupervisorService:
                 "previous_challenge_topics": prior_topics[:100],
                 "runtime_skills": runtime_skills,
                 "active_missions": missions,
+                "critical_research_quality": research_quality,
             },
             ensure_ascii=False,
         )
@@ -266,8 +271,10 @@ class SupervisorService:
                             "/no_think\n你是 ECK 的獨立學習監督者。"
                             "只根據提供的可驗證紀錄評估，"
                             "不可聲稱看見私有思考過程。請找出一個能力缺口，提出一項能用"
-                            " Crossref 學術中繼資料驗證的安全研究考驗，或選擇 skill_forge"
+                            " 最新公開資訊與獨立來源驗證的安全研究考驗，或選擇 skill_forge"
                             " 補足 active_missions 的明確能力缺口。若技能已存在就不可重複鍛造。"
+                            "若 critical_research_quality 顯示不確定結論比例超標，優先提出"
+                            "能改善來源品質、查證詞或反例搜尋的考驗，不得只重複派新主題。"
                             "新技能只能在 Docker 隔離環境測試後自動啟用。避免重複舊主題，"
                             "不得使用付費 API、真實金錢或未授權帳號。activity_text 必須是"
                             "繁體中文動態短句，例如「正在比較企業管理研究並形成新問題」。"
@@ -364,7 +371,7 @@ class SupervisorService:
             proposal["recommendations"].append("啟用受限學術網路後再執行此考驗。")
             proposal["recommendations"] = proposal["recommendations"][:3]
             return None
-        create = build_research_task(
+        create = build_critical_research_task(
             proposal["challenge_topic"],
             source="supervisor",
         )
@@ -416,12 +423,12 @@ class SupervisorService:
         if not assessment:
             assessment = "目前沒有待處理任務，適合用新的可驗證研究考驗補足知識廣度。"
         goal = (
-            f"搜尋並比較「{topic}」至少三筆高相關學術來源，"
-            "產出可追溯摘要與至少三個後續問題。"
+            f"批判查證「{topic}」的最新公開資訊，尋找支持證據與反例，"
+            "產出可追溯主張表與明確的不確定性。"
         )
         activity = self._clean(str(parsed.get("activity_text", "")), 180)
         if not activity or duplicate_topic:
-            activity = f"正在規劃「{topic}」的下一輪學術研究。"
+            activity = f"正在規劃「{topic}」的最新資訊批判研究。"
         raw_recommendations = parsed.get("recommendations", [])
         if not isinstance(raw_recommendations, list):
             raw_recommendations = []

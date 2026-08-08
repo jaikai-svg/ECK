@@ -26,11 +26,12 @@
 13. [Roadmap & Research](13-roadmap-research.md)
 14. [v0.1.0 Completion Report](14-v0.1.0-completion-report.md)
 15. [v0.2.0 Development Specification](15-v0.2.0-development-specification.md)
+16. [Current Information Critical Learning](16-current-information-critical-learning.md)
 
 ## v0.2 開發規格下載
 
 - [DOCX](ECK_Digital_Life_Kernel_v0.2.0_Development_Specification_zh-TW.docx)
-- [PDF](ECK_Digital_Life_Kernel_v0.2.0_Development_Specification_zh-TW.pdf)
+- [PDF（2026-08-02 基線）](ECK_Digital_Life_Kernel_v0.2.0_Development_Specification_zh-TW.pdf)
 
 ## 文件治理
 

@@ -51,6 +51,15 @@ class ResearchCurriculumRequest(BaseModel):
     cycles: int = Field(default=2, ge=1, le=8)
 
 
+class CriticalResearchRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=200)
+    url: str | None = Field(default=None, min_length=10, max_length=2000)
+    timespan: str | None = Field(
+        default=None,
+        pattern=r"^\d{1,3}(?:min|h|d|w|m)$",
+    )
+
+
 def create_api(
     settings: Settings | None = None,
     application: Application | None = None,
@@ -161,6 +170,12 @@ def create_api(
                 "reflections": len(app.store.list_reflections(limit=10000)),
                 "skills": len(app.store.list_skills(limit=10000)),
             },
+            "critical_research": app.store.research_quality_metrics(
+                window=app.settings.critical_research_quality_window,
+                max_inconclusive_ratio=(
+                    app.settings.critical_research_max_inconclusive_ratio
+                ),
+            ),
             "learning_progress": {
                 "status": "stalled" if stalled else ("working" if learning_tasks else "idle"),
                 "stalled": stalled,
@@ -360,6 +375,40 @@ def create_api(
     @api.post("/v1/research/relevance-audit")
     async def audit_research_relevance(app: AppDependency) -> dict[str, object]:
         return await ResearchCurriculumService(app).audit_relevance()
+
+    @api.post("/v1/research/critical", status_code=202)
+    async def start_critical_research(
+        request: CriticalResearchRequest,
+        app: AppDependency,
+    ) -> dict[str, object]:
+        if not app.settings.critical_research_enabled:
+            raise HTTPException(status_code=409, detail="Critical research is disabled.")
+        return await ResearchCurriculumService(app).submit_critical(
+            request.topic,
+            url=request.url,
+            timespan=request.timespan,
+        )
+
+    @api.get("/v1/research/runs")
+    async def list_critical_research_runs(
+        app: AppDependency,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    ) -> dict[str, Any]:
+        return {"items": app.store.list_research_runs(limit=limit)}
+
+    @api.get("/v1/research/runs/{run_id}")
+    async def get_critical_research_run(run_id: str, app: AppDependency) -> Any:
+        try:
+            return app.store.get_research_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.get("/v1/research/quality")
+    async def get_critical_research_quality(app: AppDependency) -> dict[str, Any]:
+        return app.store.research_quality_metrics(
+            window=app.settings.critical_research_quality_window,
+            max_inconclusive_ratio=app.settings.critical_research_max_inconclusive_ratio,
+        )
 
     @api.post("/v1/challenges/social-engagement", status_code=202)
     async def bootstrap_social_challenge(app: AppDependency) -> Any:

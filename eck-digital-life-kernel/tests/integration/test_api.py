@@ -22,6 +22,7 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert health.status_code == 200
         assert health.json()["event_chain"]["valid"]
         assert health.json()["learning_progress"]["stall_threshold_minutes"] == 30
+        assert health.json()["critical_research"]["status"] == "insufficient_history"
 
         chat = client.post("/v1/chat", json={"message": "What have you learned?"})
         assert chat.status_code == 200
@@ -35,7 +36,7 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert client.post("/v1/kernel/pause").json()["phase"] == "paused"
         assert client.post("/v1/kernel/resume").json()["phase"] == "running"
         assert client.post("/v1/kernel/sleep").json()["accepted"]
-        assert len(client.get("/v1/capabilities").json()["items"]) == 13
+        assert len(client.get("/v1/capabilities").json()["items"]) == 14
         image_status = client.get("/v1/image/status")
         assert image_status.status_code == 200
         assert image_status.json()["quality"]["steps"] == 36
@@ -93,6 +94,27 @@ def test_human_submitted_research_curriculum_is_queued(settings) -> None:
     assert len(tasks) == 2
     assert all(task["status"] == "queued" for task in tasks)
     assert all(task["action"]["capability"] == "academic.research" for task in tasks)
+
+
+def test_human_submitted_critical_research_is_queued(settings) -> None:
+    enabled_settings = settings.model_copy(update={"network_enabled": True})
+    application = build_application(enabled_settings)
+    api = create_api(application=application)
+
+    with TestClient(api) as client:
+        response = client.post(
+            "/v1/research/critical",
+            json={"topic": "latest energy transition", "timespan": "7d"},
+        )
+        quality = client.get("/v1/research/quality")
+        runs = client.get("/v1/research/runs")
+
+    assert response.status_code == 202
+    task = response.json()["task"]
+    assert task["status"] == "queued"
+    assert task["action"]["capability"] == "web.critical_research"
+    assert quality.json()["status"] == "insufficient_history"
+    assert runs.json()["items"] == []
 
 
 def test_ultimate_challenge_governance_and_evaluation_api(application) -> None:

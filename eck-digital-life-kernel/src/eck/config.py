@@ -46,6 +46,23 @@ class Settings(BaseSettings):
     academic_research_timeout_seconds: float = Field(default=30.0, ge=5, le=120)
     academic_research_max_sources: int = Field(default=6, ge=3, le=12)
     academic_research_max_cycles: int = Field(default=3, ge=1, le=8)
+    critical_research_enabled: bool = True
+    critical_research_gdelt_base_url: str = (
+        "https://api.gdeltproject.org/api/v2/doc/doc"
+    )
+    critical_research_timeout_seconds: float = Field(default=30.0, ge=5, le=120)
+    critical_research_max_sources: int = Field(default=8, ge=3, le=20)
+    critical_research_max_claims: int = Field(default=5, ge=1, le=12)
+    critical_research_max_document_chars: int = Field(
+        default=50000, ge=2000, le=200000
+    )
+    critical_research_snapshot_retention_days: int = Field(default=30, ge=1, le=365)
+    critical_research_default_timespan: str = Field(
+        default="7d", pattern=r"^\d{1,3}(?:min|h|d|w|m)$"
+    )
+    critical_research_quality_window: int = Field(default=10, ge=5, le=100)
+    critical_research_max_inconclusive_ratio: float = Field(default=0.5, ge=0, le=1)
+    critical_research_near_duplicate_distance: int = Field(default=3, ge=0, le=16)
     image_generation_enabled: bool = True
     image_backend: Literal["diffusers", "forge"] = "forge"
     image_engine_python: Path = Path("workspace/image_engine/.venv/Scripts/python.exe")
@@ -169,6 +186,11 @@ class Settings(BaseSettings):
             "::1",
         }:
             raise ValueError("Forge must use a local, non-billable HTTP endpoint.")
+        discovery_url = urlparse(self.critical_research_gdelt_base_url)
+        if discovery_url.scheme != "https" or discovery_url.hostname != (
+            "api.gdeltproject.org"
+        ):
+            raise ValueError("Critical research discovery must use the free GDELT HTTPS API.")
         return self
 
     def prepare_directories(self) -> None:

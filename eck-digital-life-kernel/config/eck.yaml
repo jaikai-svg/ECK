@@ -29,6 +29,17 @@ max_events_page_size: 500
 academic_research_timeout_seconds: 30
 academic_research_max_sources: 6
 academic_research_max_cycles: 3
+critical_research_enabled: true
+critical_research_gdelt_base_url: https://api.gdeltproject.org/api/v2/doc/doc
+critical_research_timeout_seconds: 30
+critical_research_max_sources: 8
+critical_research_max_claims: 5
+critical_research_max_document_chars: 50000
+critical_research_snapshot_retention_days: 30
+critical_research_default_timespan: 7d
+critical_research_quality_window: 10
+critical_research_max_inconclusive_ratio: 0.5
+critical_research_near_duplicate_distance: 3
 
 image_generation_enabled: true
 image_backend: forge

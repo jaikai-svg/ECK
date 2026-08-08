@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import ipaddress
 import json
 import socket
@@ -21,6 +22,8 @@ from eck.config import Settings
 from eck.core.time import utc_now
 from eck.domain.enums import EvidenceSource, RiskLevel
 from eck.domain.models import ActionProposal, CapabilityResult, Evidence
+from eck.research.content import extract_document
+from eck.research.dedup import canonicalize_url, sha256_text
 
 
 class _TextExtractor(HTMLParser):
@@ -141,14 +144,10 @@ class PublicWebCapability(Capability):
         started = utc_now()
         url = str(action.payload.get("url", ""))
         try:
-            parsed = await self._validate_url(url)
-            host = parsed.hostname or ""
-            if any(
-                host == item or host.endswith(f".{item}") for item in self._social_hosts
-            ) and not action.payload.get("platform_automation_allowed"):
+            if action.operation not in {"read", "get", "get_json"}:
                 raise ValueError(
-                    "This social platform requires confirmed automation permission "
-                    "or an official API."
+                    "The public research worker is read-only; state-changing browser "
+                    "operations require a separate worker."
                 )
             headers = {"User-Agent": "ECK-Digital-Life-Kernel/0.1 public-research"}
             async with httpx.AsyncClient(
@@ -156,11 +155,21 @@ class PublicWebCapability(Capability):
                 follow_redirects=False,
                 headers=headers,
             ) as client:
-                await self._check_robots(client, parsed)
-                response = await client.get(url)
+                request_url = url
+                for _ in range(4):
+                    parsed = await self._validate_url(request_url)
+                    self._validate_social_policy(parsed, action)
+                    await self._check_robots(client, parsed)
+                    response = await client.get(request_url)
+                    if not response.is_redirect:
+                        break
+                    location = response.headers.get("location")
+                    if not location:
+                        raise ValueError("Redirect response omitted its destination.")
+                    request_url = urljoin(request_url, location)
+                else:
+                    raise ValueError("Public web redirects exceeded the limit of three.")
                 response.raise_for_status()
-            if response.is_redirect:
-                raise ValueError("Redirects require a new validated request.")
             if len(response.content) > 2_000_000:
                 raise ValueError("Public web responses are limited to 2 MB.")
             content_type = response.headers.get("content-type", "").lower()
@@ -173,12 +182,42 @@ class PublicWebCapability(Capability):
                     "metrics": {"completed": True, "bytes": len(response.content)},
                 }
             else:
+                if not any(
+                    item in content_type
+                    for item in ("html", "text/plain", "application/xhtml+xml")
+                ):
+                    raise ValueError(
+                        "The read-only web worker accepts HTML or plain text. "
+                        "PDF and Office files require the isolated document worker."
+                    )
+                document = extract_document(
+                    response.content,
+                    url=str(response.url),
+                    content_type=content_type,
+                    max_chars=self.settings.critical_research_max_document_chars,
+                )
+                if len(document.text) < 80:
+                    raise ValueError("The page did not contain enough extractable article text.")
                 extractor = _TextExtractor()
                 extractor.feed(response.text)
+                canonical_url = canonicalize_url(str(response.url))
                 output = {
                     "url": str(response.url),
+                    "canonical_url": canonical_url,
                     "content_type": content_type,
-                    "text": "\n".join(extractor.text)[:50000],
+                    "title": document.title,
+                    "author": document.author,
+                    "published_at": document.published_at,
+                    "text": document.text,
+                    "extraction_method": document.method,
+                    "url_sha256": sha256_text(canonical_url),
+                    "raw_sha256": hashlib.sha256(response.content).hexdigest(),
+                    "content_sha256": sha256_text(document.text),
+                    "fetched_at": utc_now().isoformat(),
+                    "response_metadata": {
+                        "etag": response.headers.get("etag"),
+                        "last_modified": response.headers.get("last-modified"),
+                    },
                     "links": [
                         {**item, "href": urljoin(url, item["href"])} for item in extractor.links
                     ],
@@ -209,6 +248,20 @@ class PublicWebCapability(Capability):
             if not ip.is_global:
                 raise ValueError(f"Non-public network address was blocked: {ip}")
         return parsed
+
+    def _validate_social_policy(
+        self,
+        parsed: SplitResult,
+        action: ActionProposal,
+    ) -> None:
+        host = parsed.hostname or ""
+        if any(
+            host == item or host.endswith(f".{item}") for item in self._social_hosts
+        ) and not action.payload.get("platform_automation_allowed"):
+            raise ValueError(
+                "This social platform requires confirmed automation permission "
+                "or an official API."
+            )
 
     async def _check_robots(self, client: httpx.AsyncClient, parsed: Any) -> None:
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"

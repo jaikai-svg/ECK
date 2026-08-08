@@ -6,6 +6,7 @@ from eck.brain.base import BrainProvider
 from eck.brain.mock import MockBrainProvider
 from eck.brain.ollama import OllamaBrainProvider
 from eck.capabilities.academic_research import AcademicResearchCapability
+from eck.capabilities.critical_research import CriticalResearchCapability
 from eck.capabilities.foundation import (
     ArtifactPackageCapability,
     DataAnalysisCapability,
@@ -28,6 +29,7 @@ from eck.kernel.runtime import LifeKernel
 from eck.memory.experience import ExperienceEngine
 from eck.policy.autonomy import AutonomyGate
 from eck.policy.gate import PolicyGate
+from eck.research.discovery import GDELTDiscoveryClient
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.challenges import ChallengeService
 from eck.services.evaluations import EvaluationService
@@ -93,7 +95,8 @@ def build_application(settings: Settings | None = None) -> Application:
     registry.register(SafePythonExpressionCapability())
     registry.register(GridWorldCapability(store))
     registry.register(WorkspaceCapability(settings.workspace_dir))
-    registry.register(PublicWebCapability(settings))
+    public_web = PublicWebCapability(settings)
+    registry.register(public_web)
     registry.register(PublicRestCapability(settings))
     registry.register(DataAnalysisCapability())
     registry.register(ArtifactPackageCapability(settings.workspace_dir))
@@ -111,6 +114,19 @@ def build_application(settings: Settings | None = None) -> Application:
             max_sources=settings.academic_research_max_sources,
         )
     )
+    if settings.critical_research_enabled:
+        registry.register(
+            CriticalResearchCapability(
+                settings,
+                brain,
+                store,
+                public_web,
+                GDELTDiscoveryClient(
+                    timeout_seconds=settings.critical_research_timeout_seconds,
+                    base_url=settings.critical_research_gdelt_base_url,
+                ),
+            )
+        )
 
     task_service = TaskService(
         store=store,

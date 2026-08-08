@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -52,6 +53,7 @@ from eck.domain.models import (
     TaskRecord,
     VerificationReport,
 )
+from eck.research.dedup import simhash_distance
 
 GENESIS_HASH = "0" * 64
 
@@ -301,6 +303,96 @@ class SQLiteStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_runtime_skills_status
                     ON runtime_skills(status, name);
+
+                CREATE TABLE IF NOT EXISTS research_contents (
+                    content_id TEXT PRIMARY KEY,
+                    content_sha256 TEXT NOT NULL UNIQUE,
+                    simhash TEXT NOT NULL,
+                    text_zlib BLOB,
+                    text_chars INTEGER NOT NULL,
+                    extraction_method TEXT NOT NULL,
+                    retain_until TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_contents_simhash
+                    ON research_contents(simhash);
+                CREATE INDEX IF NOT EXISTS idx_research_contents_retention
+                    ON research_contents(retain_until);
+
+                CREATE TABLE IF NOT EXISTS research_source_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    canonical_url TEXT NOT NULL,
+                    url_sha256 TEXT NOT NULL,
+                    raw_sha256 TEXT NOT NULL,
+                    content_id TEXT NOT NULL,
+                    duplicate_of_content_id TEXT,
+                    source_domain TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    author TEXT,
+                    provider TEXT NOT NULL,
+                    published_at TEXT,
+                    fetched_at TEXT NOT NULL,
+                    content_type TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(canonical_url, content_id),
+                    FOREIGN KEY(content_id) REFERENCES research_contents(content_id),
+                    FOREIGN KEY(duplicate_of_content_id)
+                        REFERENCES research_contents(content_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_snapshots_url
+                    ON research_source_snapshots(url_sha256, fetched_at);
+                CREATE INDEX IF NOT EXISTS idx_research_snapshots_domain
+                    ON research_source_snapshots(source_domain, fetched_at);
+
+                CREATE TABLE IF NOT EXISTS research_runs (
+                    run_id TEXT PRIMARY KEY,
+                    action_id TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    seed_url TEXT,
+                    status TEXT NOT NULL,
+                    conclusion_status TEXT NOT NULL,
+                    conclusion TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    queries_json TEXT NOT NULL,
+                    source_snapshot_ids_json TEXT NOT NULL,
+                    metrics_json TEXT NOT NULL,
+                    report_json TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_runs_status
+                    ON research_runs(status, finished_at);
+
+                CREATE TABLE IF NOT EXISTS research_claims (
+                    claim_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    claim_text TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    rationale TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES research_runs(run_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_claims_run
+                    ON research_claims(run_id, status);
+
+                CREATE TABLE IF NOT EXISTS research_evidence_links (
+                    link_id TEXT PRIMARY KEY,
+                    claim_id TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    stance TEXT NOT NULL,
+                    excerpt TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    independence_key TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(claim_id) REFERENCES research_claims(claim_id),
+                    FOREIGN KEY(snapshot_id)
+                        REFERENCES research_source_snapshots(snapshot_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_evidence_claim
+                    ON research_evidence_links(claim_id, stance);
 
                 CREATE TABLE IF NOT EXISTS runtime_version_state (
                     identity TEXT PRIMARY KEY,
@@ -1642,6 +1734,436 @@ class SQLiteStore:
                 )
             )
         return records
+
+    def add_research_snapshot(
+        self,
+        *,
+        canonical_url: str,
+        url_sha256: str,
+        raw_sha256: str,
+        content_sha256: str,
+        simhash: str,
+        text: str,
+        extraction_method: str,
+        retain_until: datetime,
+        source_domain: str,
+        title: str,
+        author: str | None,
+        provider: str,
+        published_at: str | None,
+        fetched_at: datetime,
+        content_type: str,
+        metadata: dict[str, Any],
+        near_duplicate_distance: int,
+    ) -> dict[str, Any]:
+        now = iso_now()
+        compressed = zlib.compress(text.encode("utf-8"), level=9)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            exact = conn.execute(
+                "SELECT * FROM research_contents WHERE content_sha256 = ?",
+                (content_sha256,),
+            ).fetchone()
+            duplicate_of_content_id: str | None = None
+            exact_duplicate = exact is not None
+            near_duplicate = False
+            if exact is None:
+                candidates = conn.execute(
+                    """
+                    SELECT content_id, simhash FROM research_contents
+                    ORDER BY created_at DESC LIMIT 2000
+                    """
+                ).fetchall()
+                nearest = next(
+                    (
+                        row
+                        for row in candidates
+                        if simhash_distance(simhash, str(row["simhash"]))
+                        <= near_duplicate_distance
+                    ),
+                    None,
+                )
+                if nearest is not None:
+                    duplicate_of_content_id = str(nearest["content_id"])
+                    near_duplicate = True
+                content_id = new_id("research-content")
+                conn.execute(
+                    """
+                    INSERT INTO research_contents (
+                        content_id, content_sha256, simhash, text_zlib, text_chars,
+                        extraction_method, retain_until, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        content_id,
+                        content_sha256,
+                        simhash,
+                        compressed,
+                        len(text),
+                        extraction_method,
+                        retain_until.isoformat(),
+                        now,
+                    ),
+                )
+            else:
+                content_id = str(exact["content_id"])
+                duplicate_of_content_id = content_id
+                if exact["text_zlib"] is None:
+                    conn.execute(
+                        """
+                        UPDATE research_contents SET text_zlib = ?, text_chars = ?,
+                            extraction_method = ?, retain_until = ?
+                        WHERE content_id = ?
+                        """,
+                        (
+                            compressed,
+                            len(text),
+                            extraction_method,
+                            retain_until.isoformat(),
+                            content_id,
+                        ),
+                    )
+                elif str(exact["retain_until"]) < retain_until.isoformat():
+                    conn.execute(
+                        "UPDATE research_contents SET retain_until = ? WHERE content_id = ?",
+                        (retain_until.isoformat(), content_id),
+                    )
+            existing_snapshot = conn.execute(
+                """
+                SELECT snapshot_id FROM research_source_snapshots
+                WHERE canonical_url = ? AND content_id = ?
+                """,
+                (canonical_url, content_id),
+            ).fetchone()
+            if existing_snapshot is None:
+                snapshot_id = new_id("research-snapshot")
+                conn.execute(
+                    """
+                    INSERT INTO research_source_snapshots (
+                        snapshot_id, canonical_url, url_sha256, raw_sha256,
+                        content_id, duplicate_of_content_id, source_domain,
+                        title, author, provider, published_at, fetched_at,
+                        content_type, metadata_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        canonical_url,
+                        url_sha256,
+                        raw_sha256,
+                        content_id,
+                        duplicate_of_content_id,
+                        source_domain,
+                        title,
+                        author,
+                        provider,
+                        published_at,
+                        fetched_at.isoformat(),
+                        content_type,
+                        _json(metadata),
+                        now,
+                    ),
+                )
+            else:
+                snapshot_id = str(existing_snapshot["snapshot_id"])
+            conn.execute("COMMIT")
+        return {
+            "snapshot_id": snapshot_id,
+            "content_id": content_id,
+            "canonical_url": canonical_url,
+            "content_sha256": content_sha256,
+            "simhash": simhash,
+            "duplicate_of_content_id": duplicate_of_content_id,
+            "exact_duplicate": exact_duplicate,
+            "near_duplicate": near_duplicate,
+            "independence_key": duplicate_of_content_id or content_id,
+            "source_domain": source_domain,
+            "title": title,
+            "provider": provider,
+            "published_at": published_at,
+            "fetched_at": fetched_at.isoformat(),
+        }
+
+    def begin_research_run(
+        self,
+        *,
+        action_id: str,
+        topic: str,
+        seed_url: str | None,
+    ) -> str:
+        run_id = new_id("research-run")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO research_runs (
+                    run_id, action_id, topic, seed_url, status,
+                    conclusion_status, conclusion, confidence, queries_json,
+                    source_snapshot_ids_json, metrics_json, report_json, started_at
+                ) VALUES (?, ?, ?, ?, 'running', 'unverified', '', 0, '[]',
+                          '[]', '{}', '{}', ?)
+                """,
+                (run_id, action_id, topic, seed_url, iso_now()),
+            )
+        return run_id
+
+    def complete_research_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        conclusion_status: str,
+        conclusion: str,
+        confidence: float,
+        queries: list[str],
+        source_snapshot_ids: list[str],
+        metrics: dict[str, Any],
+        report: dict[str, Any],
+        claims: list[dict[str, Any]],
+        evidence_links: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        now = iso_now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.execute(
+                """
+                UPDATE research_runs SET status = ?, conclusion_status = ?,
+                    conclusion = ?, confidence = ?, queries_json = ?,
+                    source_snapshot_ids_json = ?, metrics_json = ?, report_json = ?,
+                    finished_at = ? WHERE run_id = ?
+                """,
+                (
+                    status,
+                    conclusion_status,
+                    conclusion,
+                    confidence,
+                    _json(queries),
+                    _json(source_snapshot_ids),
+                    _json(metrics),
+                    _json(report),
+                    now,
+                    run_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                conn.execute("ROLLBACK")
+                raise KeyError(f"Unknown research run: {run_id}")
+            claim_ids: list[str] = []
+            for claim in claims:
+                claim_id = new_id("research-claim")
+                claim_ids.append(claim_id)
+                conn.execute(
+                    """
+                    INSERT INTO research_claims (
+                        claim_id, run_id, claim_text, kind, status,
+                        confidence, rationale, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        claim_id,
+                        run_id,
+                        claim["claim"],
+                        claim["kind"],
+                        claim["status"],
+                        claim["confidence"],
+                        claim["rationale"],
+                        now,
+                    ),
+                )
+            for link in evidence_links:
+                claim_index = int(link["claim_index"])
+                if claim_index < 0 or claim_index >= len(claim_ids):
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO research_evidence_links (
+                        link_id, claim_id, snapshot_id, stance, excerpt,
+                        note, independence_key, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_id("research-evidence"),
+                        claim_ids[claim_index],
+                        link["snapshot_id"],
+                        link["stance"],
+                        link["excerpt"],
+                        link["note"],
+                        link["independence_key"],
+                        now,
+                    ),
+                )
+            conn.execute("COMMIT")
+        return self.get_research_run(run_id)
+
+    def fail_research_run(
+        self,
+        run_id: str,
+        *,
+        conclusion: str,
+        metrics: dict[str, Any],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE research_runs SET status = 'failed',
+                    conclusion_status = 'unverified', conclusion = ?,
+                    metrics_json = ?, finished_at = ? WHERE run_id = ?
+                """,
+                (conclusion, _json(metrics), iso_now(), run_id),
+            )
+
+    def get_research_run(self, run_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM research_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown research run: {run_id}")
+            claims = conn.execute(
+                "SELECT * FROM research_claims WHERE run_id = ? ORDER BY created_at, claim_id",
+                (run_id,),
+            ).fetchall()
+            snapshot_ids = [str(item) for item in _load(row["source_snapshot_ids_json"], [])]
+            if snapshot_ids:
+                placeholders = ",".join("?" for _ in snapshot_ids)
+                sources = conn.execute(
+                    f"""
+                    SELECT * FROM research_source_snapshots
+                    WHERE snapshot_id IN ({placeholders}) ORDER BY fetched_at
+                    """,
+                    snapshot_ids,
+                ).fetchall()
+            else:
+                sources = []
+            evidence = conn.execute(
+                """
+                SELECT link.* FROM research_evidence_links AS link
+                JOIN research_claims AS claim ON claim.claim_id = link.claim_id
+                WHERE claim.run_id = ? ORDER BY link.created_at, link.link_id
+                """,
+                (run_id,),
+            ).fetchall()
+        return {
+            "run_id": row["run_id"],
+            "action_id": row["action_id"],
+            "topic": row["topic"],
+            "seed_url": row["seed_url"],
+            "status": row["status"],
+            "conclusion_status": row["conclusion_status"],
+            "conclusion": row["conclusion"],
+            "confidence": row["confidence"],
+            "queries": _load(row["queries_json"], []),
+            "source_snapshot_ids": _load(row["source_snapshot_ids_json"], []),
+            "metrics": _load(row["metrics_json"], {}),
+            "report": _load(row["report_json"], {}),
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+            "claims": [
+                {
+                    "claim_id": claim["claim_id"],
+                    "claim": claim["claim_text"],
+                    "kind": claim["kind"],
+                    "status": claim["status"],
+                    "confidence": claim["confidence"],
+                    "rationale": claim["rationale"],
+                }
+                for claim in claims
+            ],
+            "sources": [
+                {
+                    "snapshot_id": source["snapshot_id"],
+                    "canonical_url": source["canonical_url"],
+                    "content_id": source["content_id"],
+                    "duplicate_of_content_id": source["duplicate_of_content_id"],
+                    "source_domain": source["source_domain"],
+                    "title": source["title"],
+                    "provider": source["provider"],
+                    "published_at": source["published_at"],
+                    "fetched_at": source["fetched_at"],
+                }
+                for source in sources
+            ],
+            "evidence_links": [
+                {
+                    "link_id": link["link_id"],
+                    "claim_id": link["claim_id"],
+                    "snapshot_id": link["snapshot_id"],
+                    "stance": link["stance"],
+                    "excerpt": link["excerpt"],
+                    "note": link["note"],
+                    "independence_key": link["independence_key"],
+                }
+                for link in evidence
+            ],
+        }
+
+    def list_research_runs(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT run_id FROM research_runs
+                ORDER BY started_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self.get_research_run(str(row["run_id"])) for row in rows]
+
+    def research_quality_metrics(
+        self,
+        *,
+        window: int,
+        max_inconclusive_ratio: float,
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT conclusion_status FROM research_runs
+                WHERE status = 'completed'
+                ORDER BY finished_at DESC LIMIT ?
+                """,
+                (window,),
+            ).fetchall()
+        completed = len(rows)
+        inconclusive = sum(
+            str(row["conclusion_status"]) == "inconclusive" for row in rows
+        )
+        ratio = inconclusive / completed if completed else 0.0
+        threshold_exceeded = completed >= window and ratio > max_inconclusive_ratio
+        return {
+            "status": (
+                "degraded"
+                if threshold_exceeded
+                else ("ok" if completed >= window else "insufficient_history")
+            ),
+            "window": window,
+            "completed_runs": completed,
+            "inconclusive_runs": inconclusive,
+            "inconclusive_ratio": round(ratio, 4),
+            "max_inconclusive_ratio": max_inconclusive_ratio,
+            "threshold_exceeded": threshold_exceeded,
+        }
+
+    def get_research_content_text(self, content_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT text_zlib FROM research_contents WHERE content_id = ?",
+                (content_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown research content: {content_id}")
+        if row["text_zlib"] is None:
+            return None
+        return zlib.decompress(row["text_zlib"]).decode("utf-8")
+
+    def purge_expired_research_content(self, *, before: datetime) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE research_contents SET text_zlib = NULL
+                WHERE text_zlib IS NOT NULL AND retain_until < ?
+                """,
+                (before.isoformat(),),
+            )
+        return max(0, cursor.rowcount)
 
     @staticmethod
     def _event_from_row(row: sqlite3.Row) -> EventRecord:

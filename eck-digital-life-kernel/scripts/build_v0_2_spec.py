@@ -48,7 +48,7 @@ OUTPUT = PROJECT_ROOT / "docs" / (
     "ECK_Digital_Life_Kernel_v0.2.0_Development_Specification_zh-TW.docx"
 )
 REFERENCE_SHA256 = "0702B01F55198A6A6167D238F6AF856E984F56B4F49BE2F6FA0A3FFFC2F0ED67"
-BUILD_DATE = "2026-08-02"
+BUILD_DATE = "2026-08-08"
 
 
 def clear_body(doc: DocumentType) -> None:
@@ -231,6 +231,7 @@ def add_front_matter(doc: DocumentType) -> None:
         doc,
         [
             ["階段", "主要交付", "證明方式"],
+            ["M2.0", "最新資訊批判學習", "來源快照、主張證據、無結論品質閘門"],
             ["M2.1", "Work Portfolio 與學習產率", "停滯與重複工作故障注入"],
             ["M2.2", "Contract-Guided Planner", "固定合約、bounded repair、基線比較"],
             ["M2.3", "Experience Graph", "來源、反例、技能與結果可追溯"],

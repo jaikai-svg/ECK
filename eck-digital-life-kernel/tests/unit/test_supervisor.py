@@ -22,10 +22,10 @@ async def test_idle_supervisor_reviews_and_assigns_safe_research(settings) -> No
     assert review is not None
     assert review.task_id is not None
     assert review.challenge_topic == "企業管理與組織效能"
-    assert "至少三筆高相關學術來源" in review.challenge_goal
+    assert "最新公開資訊" in review.challenge_goal
     task = application.store.get_task(review.task_id)
     assert task.status is TaskStatus.QUEUED
-    assert task.action.capability == "academic.research"
+    assert task.action.capability == "web.critical_research"
     assert task.action.payload["source"] == "supervisor"
     assert application.store.get_task_approval(task.task_id) is None
     assert application.supervisor.status()["latest_review"]["review_id"] == review.review_id
