@@ -117,6 +117,7 @@ class SkillForgeService:
             "worker": health,
             "auto_enable": self.settings.skill_forge_auto_enable,
             "dependency_install": self.settings.skill_dependency_install_enabled,
+            "automatic_repair_attempts": self.settings.skill_forge_max_repair_attempts,
             "active": sum(item.status is RuntimeSkillStatus.ACTIVE for item in skills),
             "testing": sum(item.status is RuntimeSkillStatus.TESTING for item in skills),
             "draft": sum(item.status is RuntimeSkillStatus.DRAFT for item in skills),
@@ -279,7 +280,110 @@ class SkillForgeService:
             correlation_id=skill.runtime_skill_id,
         )
         await self.validate_skill(skill.runtime_skill_id)
-        return self.store.get_runtime_skill(skill.runtime_skill_id)
+        current = self.store.get_runtime_skill(skill.runtime_skill_id)
+        for _ in range(self.settings.skill_forge_max_repair_attempts):
+            if current.status is not RuntimeSkillStatus.FAILED:
+                break
+            try:
+                current = await self.repair_failed_skill(current.runtime_skill_id)
+            except (OSError, RuntimeError, SyntaxError, ValueError) as exc:
+                await self.events.publish(
+                    "RuntimeSkillRepairFailed",
+                    current.runtime_skill_id,
+                    {"name": current.manifest.name, "detail": str(exc)},
+                    correlation_id=current.runtime_skill_id,
+                )
+                break
+        return current
+
+    async def repair_failed_skill(self, runtime_skill_id: str) -> RuntimeSkillRecord:
+        failed = self.store.get_runtime_skill(runtime_skill_id)
+        if failed.status is not RuntimeSkillStatus.FAILED:
+            raise ValueError("Only a failed runtime skill can enter automatic repair.")
+        source_dir = Path(failed.source_dir)
+        prior_code = (source_dir / failed.manifest.entrypoint).read_text(encoding="utf-8")
+        prior_tests = (source_dir / "test_skill.py").read_text(encoding="utf-8")
+        versions = [
+            item.manifest.version
+            for item in self.store.list_runtime_skills(limit=10000)
+            if item.manifest.name == failed.manifest.name
+        ]
+        version = self._next_version(versions)
+        response = await self.brain.chat(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 ECK 的隔離技能修復工程師。根據失敗測試報告修正 code 與 tests，"
+                        "輸出 JSON。不得刪除有效測試來偽造通過，不得增加權限、主機存取、"
+                        "Docker socket、憑證存取或平台規則規避。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "name": failed.manifest.name,
+                            "next_version": version,
+                            "manifest": failed.manifest.model_dump(mode="json"),
+                            "failed_test_report": failed.test_report,
+                            "prior_code": prior_code,
+                            "prior_tests": prior_tests,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            format_schema={
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string"},
+                    "tests": {"type": "string"},
+                    "improvements": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["code", "tests", "improvements"],
+            },
+        )
+        parsed = self._json_object(response.content)
+        code = self._clean_code(str(parsed.get("code", "")))
+        tests = self._clean_code(str(parsed.get("tests", "")))
+        if not code or not tests:
+            raise ValueError("The model did not produce repaired skill code and tests.")
+        self._security_scan(code, failed.manifest.permissions)
+        self._security_scan(tests, ())
+        manifest = failed.manifest.model_copy(update={"version": version})
+        repaired_dir = self.generated_root / manifest.name / version
+        repaired_dir.mkdir(parents=True, exist_ok=False)
+        (repaired_dir / "manifest.json").write_text(
+            manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+        (repaired_dir / manifest.entrypoint).write_text(code, encoding="utf-8")
+        (repaired_dir / "test_skill.py").write_text(tests, encoding="utf-8")
+        improvements = tuple(
+            str(item)[:500]
+            for item in parsed.get("improvements", [])
+            if str(item).strip()
+        ) or (f"Automatic repair of failed version {failed.manifest.version}.",)
+        repaired = self.store.add_runtime_skill(
+            manifest,
+            source_dir=str(repaired_dir),
+            source="eck-generated",
+            status=RuntimeSkillStatus.DRAFT,
+            improvements=improvements,
+        )
+        await self.events.publish(
+            "RuntimeSkillRepairForged",
+            repaired.runtime_skill_id,
+            {
+                "name": manifest.name,
+                "version": version,
+                "repaired_from": failed.runtime_skill_id,
+                "model": response.model,
+            },
+            correlation_id=repaired.runtime_skill_id,
+        )
+        await self.validate_skill(repaired.runtime_skill_id)
+        return self.store.get_runtime_skill(repaired.runtime_skill_id)
 
     @staticmethod
     def _next_version(versions: list[str]) -> str:

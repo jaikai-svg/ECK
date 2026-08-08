@@ -93,11 +93,16 @@ class Settings(BaseSettings):
     rembg_model_dir: Path = Path("workspace/rembg/models")
     rembg_model: str = "birefnet-general"
     video_generation_enabled: bool = True
+    video_backend: Literal["auto", "cogvideox", "framepack"] = "auto"
     video_engine_python: Path = Path(
         "workspace/framepack/framepack_cu126_torch26/system/python/python.exe"
     )
     video_engine_script: Path = Path("scripts/run_framepack_engine.py")
     framepack_source_dir: Path = Path("workspace/framepack/source")
+    cogvideo_python: Path = Path("workspace/cogvideo/.conda/python.exe")
+    cogvideo_script: Path = Path("scripts/run_cogvideo_engine.py")
+    cogvideo_model_dir: Path = Path("workspace/cogvideo/model")
+    cogvideo_smoke_report: Path = Path("workspace/cogvideo/verified-runtime.json")
     video_generation_timeout_seconds: float = Field(default=14400.0, ge=300, le=86400)
     video_default_seconds: float = Field(default=3.0, ge=1, le=10)
     video_generation_steps: int = Field(default=25, ge=10, le=50)
@@ -105,6 +110,8 @@ class Settings(BaseSettings):
     video_adult_content_enabled: bool = True
     video_min_system_ram_gb: float = Field(default=24, ge=8, le=256)
     video_min_available_ram_gb: float = Field(default=12, ge=2, le=128)
+    cogvideo_min_system_ram_gb: float = Field(default=15, ge=8, le=256)
+    cogvideo_min_available_ram_gb: float = Field(default=2, ge=1, le=128)
     supervisor_enabled: bool = True
     supervisor_model: str | None = None
     supervisor_initial_delay_seconds: float = Field(default=30.0, ge=1, le=3600)
@@ -127,6 +134,7 @@ class Settings(BaseSettings):
     skill_worker_memory_mb: int = Field(default=1024, ge=256, le=16384)
     skill_dependency_install_enabled: bool = True
     skill_forge_auto_enable: bool = True
+    skill_forge_max_repair_attempts: int = Field(default=2, ge=0, le=5)
     autonomous_learning_percent: int = Field(default=90, ge=50, le=100)
     challenge_execution_percent: int = Field(default=10, ge=0, le=50)
 
@@ -173,6 +181,10 @@ class Settings(BaseSettings):
         "video_engine_python",
         "video_engine_script",
         "framepack_source_dir",
+        "cogvideo_python",
+        "cogvideo_script",
+        "cogvideo_model_dir",
+        "cogvideo_smoke_report",
         mode="before",
     )
     @classmethod
@@ -209,8 +221,11 @@ class Settings(BaseSettings):
             self.forge_root.resolve().relative_to(self.workspace_dir.resolve())
             self.rembg_model_dir.resolve().relative_to(self.workspace_dir.resolve())
             self.framepack_source_dir.resolve().relative_to(self.workspace_dir.resolve())
+            workspace_path = Path(os.path.abspath(self.workspace_dir))
+            Path(os.path.abspath(self.cogvideo_model_dir)).relative_to(workspace_path)
+            Path(os.path.abspath(self.cogvideo_smoke_report)).relative_to(workspace_path)
         except ValueError as exc:
-            raise ValueError("Local image workers must stay inside the ECK workspace.") from exc
+            raise ValueError("Local model workers must stay inside the ECK workspace.") from exc
         forge_url = urlparse(self.forge_base_url)
         if forge_url.scheme != "http" or forge_url.hostname not in {
             "127.0.0.1",

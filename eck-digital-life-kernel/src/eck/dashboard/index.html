@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07111f">
   <title>ECK 數位生命核心</title>
-  <link rel="stylesheet" href="/static/styles.css?v=15">
+  <link rel="stylesheet" href="/static/styles.css?v=16">
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -22,8 +22,9 @@
         <a href="#home" data-view-link="home" class="active"><span>01</span>對話與狀態</a>
         <a href="#challenges" data-view-link="challenges"><span>02</span>課題挑戰</a>
         <a href="#learning" data-view-link="learning"><span>03</span>學習成果</a>
-        <a href="#roadmap" data-view-link="roadmap"><span>04</span>使命與路線圖</a>
-        <a href="#system" data-view-link="system"><span>05</span>系統資訊</a>
+        <a href="#skill-tree" data-view-link="skill-tree"><span>04</span>技能樹</a>
+        <a href="#roadmap" data-view-link="roadmap"><span>05</span>使命與路線圖</a>
+        <a href="#system" data-view-link="system"><span>06</span>系統資訊</a>
       </nav>
 
       <div class="sidebar-status">
@@ -213,6 +214,35 @@
         </div>
       </section>
 
+      <section class="view" data-view="skill-tree" hidden>
+        <header class="page-intro skill-tree-intro">
+          <div>
+            <p class="eyebrow">PORTABLE SKILL KNOWLEDGE GRAPH</p>
+            <p>從 ECK 記憶一路追蹤分類、研究結果、可執行技能與驗證來源；金色代表已通過驗證且可重用的技能。</p>
+          </div>
+          <form id="skill-tree-search" class="skill-tree-search">
+            <input id="skill-tree-query" maxlength="200" placeholder="搜尋 Agent、影片生成、網頁操作…">
+            <button type="submit">搜尋記憶</button>
+          </form>
+        </header>
+
+        <section class="learning-summary skill-tree-summary">
+          <article><span>金色習得技能</span><b id="tree-acquired-count">—</b></article>
+          <article><span>學習中技能</span><b id="tree-learning-count">—</b></article>
+          <article><span>研究結果</span><b id="tree-research-count">—</b></article>
+          <article><span>可追溯來源</span><b id="tree-source-count">—</b></article>
+        </section>
+
+        <article class="panel skill-tree-panel">
+          <div class="panel-head compact">
+            <div><p class="eyebrow">ECK MEMORY → DOMAIN → SKILL → SOURCE</p><h2 id="skill-tree-heading">完整技能關聯</h2></div>
+            <div class="skill-tree-legend"><span class="legend-gold">已習得</span><span class="legend-learning">學習中</span><span class="legend-knowledge">研究知識</span></div>
+          </div>
+          <p class="skill-tree-portability" id="skill-tree-portability">技能圖由可攜 SQLite 記憶即時重建，不建立第二份易失資料。</p>
+          <div class="skill-tree-grid" id="skill-tree-grid"><div class="empty">讀取技能關聯中。</div></div>
+        </article>
+      </section>
+
       <section class="view" data-view="roadmap" hidden>
         <header class="page-intro">
           <div><p class="eyebrow">MISSION & CAPABILITY ROADMAP</p><p>清楚分開長期願景、工程進度與已通過外部證據驗證的能力，避免把目標誤認為現況。</p></div>
@@ -317,6 +347,6 @@
   </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>

@@ -22,6 +22,7 @@ def settings(tmp_path: Path) -> Settings:
         image_model_dir=tmp_path / "workspace" / "models" / "stable-diffusion-v1-5",
         image_output_dir=tmp_path / "workspace" / "generated_images",
         video_output_dir=tmp_path / "workspace" / "generated_videos",
+        video_backend="framepack",
         image_model_catalog_path=tmp_path / "config" / "image-models.json",
         image_backend="diffusers",
         forge_root=tmp_path / "workspace" / "forge",
@@ -32,6 +33,13 @@ def settings(tmp_path: Path) -> Settings:
         video_engine_python=tmp_path / "workspace" / "framepack" / "python.exe",
         video_engine_script=tmp_path / "scripts" / "run_framepack_engine.py",
         framepack_source_dir=tmp_path / "workspace" / "framepack" / "source",
+        cogvideo_python=tmp_path / "workspace" / "cogvideo" / ".conda" / "python.exe",
+        cogvideo_script=tmp_path / "scripts" / "run_cogvideo_engine.py",
+        cogvideo_model_dir=tmp_path / "workspace" / "cogvideo" / "model",
+        cogvideo_smoke_report=tmp_path
+        / "workspace"
+        / "cogvideo"
+        / "verified-runtime.json",
         brain_provider="mock",
         network_enabled=False,
         supervisor_enabled=False,

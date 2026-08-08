@@ -29,6 +29,7 @@
 16. [Current Information Critical Learning](16-current-information-critical-learning.md)
 17. [Autonomous Learning, Portability & Local Media](17-autonomous-learning-portability-media.md)
 18. [ECK-focused Community Learning](18-eck-focused-community-learning.md)
+19. [Self-Evolution & Portable Skill Graph](19-self-evolution-and-skill-graph.md)
 
 ## v0.2 開發規格下載
 

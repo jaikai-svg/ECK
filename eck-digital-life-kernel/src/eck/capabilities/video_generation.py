@@ -10,6 +10,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
+
 from eck.capabilities.base import Capability, CapabilityDefinition
 from eck.capabilities.image_generation import ImageGenerationCapability
 from eck.config import Settings
@@ -57,6 +59,49 @@ class VideoGenerationCapability(Capability):
         self._started_at: str | None = None
 
     def status(self) -> dict[str, Any]:
+        total_ram_gb, available_ram_gb = self._memory_status_gb()
+        backends = {
+            "framepack": self._framepack_status(total_ram_gb, available_ram_gb),
+            "cogvideox": self._cogvideo_status(total_ram_gb, available_ram_gb),
+        }
+        configured = self.settings.video_backend
+        if configured == "auto":
+            backend = next(
+                (name for name in ("framepack", "cogvideox") if backends[name]["available"]),
+                "framepack",
+            )
+        else:
+            backend = configured
+        selected = dict(backends[backend])
+        selected.update(
+            {
+                "enabled": self.settings.video_generation_enabled,
+                "backend": backend,
+                "configured_backend": configured,
+                "local_only": True,
+                "paid_api": False,
+                "backends": backends,
+                "activity": {
+                    "stage": self._stage,
+                    "started_at": self._started_at,
+                    "busy": self._stage != "idle",
+                },
+                "content_policy": {
+                    "legal_adult_content": self.settings.video_adult_content_enabled,
+                    "minor_sexual_content": False,
+                    "nonconsensual_sexual_content": False,
+                    "bestiality": False,
+                    "safeguard_bypass": False,
+                },
+            }
+        )
+        return selected
+
+    def _framepack_status(
+        self,
+        total_ram_gb: float | None,
+        available_ram_gb: float | None,
+    ) -> dict[str, Any]:
         cache = self.settings.framepack_source_dir / "hf_download" / "hub"
         models = {
             "hunyuan_video": cache / "models--hunyuanvideo-community--HunyuanVideo",
@@ -69,7 +114,6 @@ class VideoGenerationCapability(Capability):
             "source": (self.settings.framepack_source_dir / "demo_gradio.py").is_file(),
             **{name: path.is_dir() for name, path in models.items()},
         }
-        total_ram_gb, available_ram_gb = self._memory_status_gb()
         memory_ready = (
             total_ram_gb is None
             or available_ram_gb is None
@@ -81,13 +125,9 @@ class VideoGenerationCapability(Capability):
         installed = all(checks.values())
         available = self.settings.video_generation_enabled and installed and memory_ready
         return {
-            "enabled": self.settings.video_generation_enabled,
             "installed": installed,
             "available": available,
-            "backend": "framepack",
             "model": "lllyasviel/FramePackI2V_HY",
-            "local_only": True,
-            "paid_api": False,
             "checks": checks,
             "resources": {
                 "system_ram_gb": total_ram_gb,
@@ -102,24 +142,121 @@ class VideoGenerationCapability(Capability):
                     else "Local resource gate passed."
                 ),
             },
-            "activity": {
-                "stage": self._stage,
-                "started_at": self._started_at,
-                "busy": self._stage != "idle",
-            },
             "quality": {
                 "seconds": self.settings.video_default_seconds,
                 "fps": 30,
                 "steps": self.settings.video_generation_steps,
                 "teacache": self.settings.video_teacache_enabled,
             },
-            "content_policy": {
-                "legal_adult_content": self.settings.video_adult_content_enabled,
-                "minor_sexual_content": False,
-                "nonconsensual_sexual_content": False,
-                "bestiality": False,
-                "safeguard_bypass": False,
+        }
+
+    def _cogvideo_status(
+        self,
+        total_ram_gb: float | None,
+        available_ram_gb: float | None,
+    ) -> dict[str, Any]:
+        model = self.settings.cogvideo_model_dir
+        report = self._load_cogvideo_smoke_report()
+        checks = {
+            "python": self.settings.cogvideo_python.is_file(),
+            "worker": self.settings.cogvideo_script.is_file(),
+            "model_index": (model / "model_index.json").is_file(),
+            "text_encoder": (model / "text_encoder" / "config.json").is_file(),
+            "transformer": (model / "transformer" / "config.json").is_file(),
+            "vae": (model / "vae" / "config.json").is_file(),
+            "smoke_test": bool(report.get("verified")),
+        }
+        installed = all(value for name, value in checks.items() if name != "smoke_test")
+        memory_ready = (
+            total_ram_gb is None
+            or available_ram_gb is None
+            or (
+                total_ram_gb >= self.settings.cogvideo_min_system_ram_gb
+                and available_ram_gb >= self.settings.cogvideo_min_available_ram_gb
+            )
+        )
+        available = (
+            self.settings.video_generation_enabled
+            and installed
+            and checks["smoke_test"]
+            and memory_ready
+        )
+        return {
+            "installed": installed,
+            "available": available,
+            "model": "zai-org/CogVideoX-2b",
+            "checks": checks,
+            "resources": {
+                "system_ram_gb": total_ram_gb,
+                "available_ram_gb": available_ram_gb,
+                "minimum_system_ram_gb": self.settings.cogvideo_min_system_ram_gb,
+                "minimum_available_ram_gb": self.settings.cogvideo_min_available_ram_gb,
+                "ready": memory_ready,
+                "detail": (
+                    "CogVideoX is installed but current free system memory is below "
+                    "the locally verified profile."
+                    if installed and not memory_ready
+                    else "Local low-memory CogVideoX profile passed."
+                ),
             },
+            "quality": {
+                "seconds": self.settings.video_default_seconds,
+                "fps": 8,
+                "steps": self.settings.video_generation_steps,
+                "precision": "fp16",
+                "offload": "sequential_cpu",
+            },
+            "verification": report,
+        }
+
+    def _load_cogvideo_smoke_report(self) -> dict[str, Any]:
+        try:
+            report = json.loads(
+                self.settings.cogvideo_smoke_report.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(report, dict) or report.get("model") != "zai-org/CogVideoX-2b":
+            return {}
+        return report
+
+    def skill_graph_snapshot(self) -> dict[str, Any]:
+        status = self.status()
+        backend = str(status.get("backend", self.settings.video_backend))
+        model = str(status.get("model", "local video model"))
+        verification = status.get("verification", {})
+        verified = bool(
+            backend == "cogvideox"
+            and isinstance(verification, dict)
+            and verification.get("verified")
+        )
+        acquired = bool(status.get("enabled") and status.get("installed") and verified)
+        sources: list[dict[str, Any]] = []
+        if verified:
+            sources.append(
+                {
+                    "title": "CogVideoX 本機低記憶體煙霧測試報告",
+                    "reference": str(self.settings.cogvideo_smoke_report),
+                    "source_type": "verification",
+                    "verified": verified,
+                }
+            )
+        return {
+            "fingerprint": "video.generate:cogvideox-2b:v1",
+            "title": "本機影片生成：CogVideoX-2B",
+            "capability": self.definition.name,
+            "description": (
+                "使用 FP16、循序 CPU offload、VAE slicing 與 tiling 在本機生成影片。"
+            ),
+            "acquired": acquired,
+            "runtime_available": bool(status.get("available")),
+            "procedure": {
+                "backend": backend,
+                "model": model,
+                **dict(status.get("quality", {})),
+            },
+            "verification": verification if isinstance(verification, dict) else {},
+            "sources": sources,
         }
 
     @staticmethod
@@ -177,9 +314,10 @@ class VideoGenerationCapability(Capability):
             return self._failure(
                 action,
                 started,
-                "The local FramePack runtime is not ready.",
+                "The selected local video runtime is not ready.",
                 status,
             )
+        backend = str(status.get("backend", "framepack"))
         prompt = str(action.payload.get("user_request") or action.payload.get("prompt", "")).strip()
         try:
             self._validate_request_policy(prompt)
@@ -190,38 +328,63 @@ class VideoGenerationCapability(Capability):
 
         async with self._lock:
             try:
-                input_path, initial_metadata = await self._input_image(action, prompt)
-                self._set_stage("releasing_image_gpu")
+                seconds = min(
+                    6.0 if backend == "cogvideox" else 10.0,
+                    max(
+                        1.0,
+                        float(
+                            action.payload.get(
+                                "seconds",
+                                self.settings.video_default_seconds,
+                            )
+                        ),
+                    ),
+                )
+                initial_metadata: dict[str, Any]
+                input_path: Path | None
+                if backend == "framepack":
+                    input_path, initial_metadata = await self._input_image(action, prompt)
+                else:
+                    input_path = None
+                    initial_metadata = {"source": "text-to-video"}
+                self._set_stage("releasing_gpu_workers")
                 await self.image_generation.stop_forge()
+                await self._release_ollama_gpu()
                 self._set_stage("generating_video")
                 video_id = new_id("video")
                 output_path = (self.settings.video_output_dir / f"{video_id}.mp4").resolve()
-                report = await self._run_worker(
-                    {
+                request: dict[str, Any] = {
+                    "backend": backend,
+                    "prompt": prompt,
+                    "negative_prompt": str(action.payload.get("negative_prompt", "")),
+                    "seconds": seconds,
+                    "steps": self.settings.video_generation_steps,
+                    "seed": int(action.payload.get("seed", 31337)),
+                }
+                if backend == "cogvideox":
+                    frame_groups = max(1, min(6, round(seconds)))
+                    request.update(
+                        {
+                            "model_dir": str(self.settings.cogvideo_model_dir.resolve()),
+                            "frames": frame_groups * 8 + 1,
+                            "fps": 8,
+                            "guidance_scale": float(
+                                action.payload.get("guidance_scale", 6.0)
+                            ),
+                        }
+                    )
+                else:
+                    assert input_path is not None
+                    request.update(
+                        {
                         "source_dir": str(self.settings.framepack_source_dir.resolve()),
                         "input_image": str(input_path),
-                        "prompt": prompt,
-                        "negative_prompt": str(action.payload.get("negative_prompt", "")),
-                        "seconds": min(
-                            10.0,
-                            max(
-                                1.0,
-                                float(
-                                    action.payload.get(
-                                        "seconds",
-                                        self.settings.video_default_seconds,
-                                    )
-                                ),
-                            ),
-                        ),
-                        "steps": self.settings.video_generation_steps,
-                        "seed": int(action.payload.get("seed", 31337)),
                         "gpu_memory_preservation": 6.0,
                         "use_teacache": self.settings.video_teacache_enabled,
                         "mp4_crf": 16,
-                    },
-                    output_path,
-                )
+                        }
+                    )
+                report = await self._run_worker(request, output_path)
                 self._set_stage("verifying_artifact")
             except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
                 return self._failure(action, started, str(exc))
@@ -232,14 +395,14 @@ class VideoGenerationCapability(Capability):
             return self._failure(
                 action,
                 started,
-                str(report.get("detail") or "FramePack did not produce a video."),
+                str(report.get("detail") or f"{backend} did not produce a video."),
                 report,
             )
         digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
         metadata = report.get("metadata", {})
         if not isinstance(metadata, dict):
-            return self._failure(action, started, "FramePack returned invalid metadata.")
-        metadata["initial_image"] = initial_metadata
+            return self._failure(action, started, f"{backend} returned invalid metadata.")
+        metadata["generation_input"] = initial_metadata
         relative = output_path.relative_to(self.settings.workspace_dir.resolve()).as_posix()
         finished = utc_now()
         elapsed = round((finished - started).total_seconds(), 3)
@@ -255,13 +418,21 @@ class VideoGenerationCapability(Capability):
                 "sha256": digest,
                 "seconds": metadata.get("seconds"),
             },
-            "skill_fingerprint": "video.generate:framepack-i2v-hy:v1",
-            "skill_name": "本機影片生成：FramePack I2V",
+            "skill_fingerprint": (
+                "video.generate:cogvideox-2b:v1"
+                if backend == "cogvideox"
+                else "video.generate:framepack-i2v-hy:v1"
+            ),
+            "skill_name": (
+                "CogVideoX-2B local text-to-video"
+                if backend == "cogvideox"
+                else "FramePack local image-to-video"
+            ),
             "skill_procedure": {
-                "backend": "framepack",
-                "model": "lllyasviel/FramePackI2V_HY",
+                "backend": backend,
+                "model": metadata.get("model"),
                 "steps": metadata.get("steps"),
-                "teacache": metadata.get("teacache"),
+                "offload": metadata.get("offload"),
             },
         }
         return CapabilityResult(
@@ -272,7 +443,7 @@ class VideoGenerationCapability(Capability):
             evidence=(
                 Evidence(
                     source=EvidenceSource.TOOL,
-                    claim="The local FramePack worker wrote and hashed an MP4 artifact.",
+                    claim=f"The local {backend} worker wrote and hashed an MP4 artifact.",
                     payload={
                         "artifact": output_path.name,
                         "bytes": output_path.stat().st_size,
@@ -286,6 +457,19 @@ class VideoGenerationCapability(Capability):
             started_at=started,
             finished_at=finished,
         )
+
+    async def _release_ollama_gpu(self) -> None:
+        if self.settings.brain_provider != "ollama":
+            return
+        endpoint = f"{self.settings.ollama_base_url.rstrip('/')}/api/generate"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.post(
+                    endpoint,
+                    json={"model": self.settings.ollama_model, "keep_alive": 0},
+                )
+        except httpx.HTTPError:
+            return
 
     async def _input_image(
         self,
@@ -332,9 +516,20 @@ class VideoGenerationCapability(Capability):
             json.dumps(request, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        backend = str(request.get("backend", "framepack"))
+        python = (
+            self.settings.cogvideo_python
+            if backend == "cogvideox"
+            else self.settings.video_engine_python
+        )
+        script = (
+            self.settings.cogvideo_script
+            if backend == "cogvideox"
+            else self.settings.video_engine_script
+        )
         process = await asyncio.create_subprocess_exec(
-            str(self.settings.video_engine_python.resolve()),
-            str(self.settings.video_engine_script.resolve()),
+            str(python.resolve()),
+            str(script.resolve()),
             "--request",
             str(request_path),
             "--output",
@@ -350,17 +545,17 @@ class VideoGenerationCapability(Capability):
         except TimeoutError:
             process.kill()
             await process.wait()
-            raise RuntimeError("The FramePack worker exceeded its generation timeout.") from None
+            raise RuntimeError(f"The {backend} worker exceeded its generation timeout.") from None
         finally:
             request_path.unlink(missing_ok=True)
         lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
         try:
             report = json.loads(lines[-1]) if lines else {}
         except ValueError as exc:
-            raise RuntimeError("FramePack returned invalid JSON.") from exc
+            raise RuntimeError(f"{backend} returned invalid JSON.") from exc
         if process.returncode != 0 and not report:
             detail = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(detail[-2000:] or "FramePack worker failed.")
+            raise RuntimeError(detail[-2000:] or f"{backend} worker failed.")
         return report if isinstance(report, dict) else {}
 
     def _validate_request_policy(self, request: str) -> None:

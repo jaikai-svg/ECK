@@ -80,6 +80,36 @@
       "license": "MIT",
       "adoption_mode": "pattern-candidate",
       "topics": ["agent workflow", "handoff", "guardrail", "trace evaluation"]
+    },
+    {
+      "source_id": "darwin-godel-machine",
+      "name": "Darwin Gödel Machine",
+      "url": "https://github.com/jennyzzt/dgm",
+      "owner": "Darwin Gödel Machine authors",
+      "trust_tier": "official-maintainer",
+      "license": "Apache-2.0",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["self improvement", "agent code modification", "empirical benchmark", "candidate archive", "sandbox"]
+    },
+    {
+      "source_id": "voyager",
+      "name": "Voyager",
+      "url": "https://github.com/MineDojo/Voyager",
+      "owner": "MineDojo",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["lifelong learning", "automatic curriculum", "skill library", "iterative repair", "self verification"]
+    },
+    {
+      "source_id": "swe-agent",
+      "name": "SWE-agent",
+      "url": "https://github.com/SWE-agent/SWE-agent",
+      "owner": "SWE-agent",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["software repair", "agent computer interface", "repository navigation", "test driven patch", "sandbox"]
     }
   ]
 }

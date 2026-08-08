@@ -132,6 +132,8 @@ class CognitiveBundleService:
             Path("uv.lock"),
             Path("config/eck.yaml"),
             Path("config/image-models.json"),
+            Path("config/community-sources.json"),
+            Path("config/cogvideo-requirements.txt"),
         ):
             source = project_root / relative
             if not source.is_file():
@@ -173,6 +175,7 @@ class CognitiveBundleService:
                 "reflections": len(self.store.list_reflections(limit=10000)),
                 "skills": len(self.store.list_skills(limit=10000)),
                 "runtime_skills": len(self.store.list_runtime_skills(limit=10000)),
+                "skill_graph_rebuildable": True,
             },
             "event_chain": {
                 "valid": chain_valid,

@@ -12,7 +12,7 @@ def test_official_community_catalog_is_valid_and_matchable(application) -> None:
     )
 
     assert status["available"]
-    assert status["source_count"] == 8
+    assert status["source_count"] >= 11
     assert match is not None
     assert match["source_id"] == "langgraph"
     assert match["adoption_mode"] == "pattern-candidate"

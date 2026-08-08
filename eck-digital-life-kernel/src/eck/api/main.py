@@ -341,6 +341,22 @@ def create_api(
     async def community_learning_sources(app: AppDependency) -> dict[str, Any]:
         return app.community_sources.status()
 
+    @api.get("/v1/learning/skill-tree")
+    async def learning_skill_tree(app: AppDependency) -> dict[str, Any]:
+        return app.skill_graph.build()
+
+    @api.get("/v1/learning/skill-tree/search")
+    async def search_learning_skill_tree(
+        app: AppDependency,
+        query: str = Query(alias="q", min_length=2, max_length=200),
+        limit: int = Query(default=8, ge=1, le=30),
+    ) -> dict[str, Any]:
+        return {"items": app.skill_graph.search(query, limit=limit)}
+
+    @api.get("/v1/evolution/status")
+    async def evolution_status(app: AppDependency) -> dict[str, Any]:
+        return await app.evolution.status()
+
     @api.post("/v1/portability/bundles", status_code=201)
     async def export_cognitive_bundle(
         request: CognitiveBundleRequest,

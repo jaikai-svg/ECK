@@ -43,7 +43,18 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert "background_removal" in image_status.json()
         community_sources = client.get("/v1/learning/community-sources")
         assert community_sources.status_code == 200
-        assert community_sources.json()["source_count"] == 8
+        assert community_sources.json()["source_count"] == 11
+        skill_tree = client.get("/v1/learning/skill-tree")
+        assert skill_tree.status_code == 200
+        assert skill_tree.json()["schema_version"] == "eck-skill-knowledge-graph.v1"
+        assert skill_tree.json()["portable"] is True
+        skill_search = client.get("/v1/learning/skill-tree/search?q=browser")
+        assert skill_search.status_code == 200
+        assert skill_search.json()["items"][0]["title"] == "browser.explore"
+        evolution = client.get("/v1/evolution/status")
+        assert evolution.status_code == 200
+        assert evolution.json()["verified_now"]["skill_self_authoring"] is True
+        assert evolution.json()["not_yet_verified"]["automatic_structural_core_patch"]
 
         roadmap = client.get("/v1/roadmap")
         assert roadmap.status_code == 200

@@ -231,6 +231,65 @@ async def test_generated_skill_is_scanned_tested_and_activated(application, monk
 
 
 @pytest.mark.asyncio
+async def test_failed_generated_skill_repairs_and_retests_without_kernel_restart(
+    application, monkeypatch
+) -> None:
+    responses = iter(
+        (
+            {
+                "code": "def execute(operation, payload, context):\n    return missing\n",
+                "tests": "def test_execute():\n    assert False\n",
+                "improvements": ["initial candidate"],
+            },
+            {
+                "code": (
+                    "def execute(operation, payload, context):\n"
+                    "    return {'success': True}\n"
+                ),
+                "tests": "def test_execute():\n    assert True\n",
+                "improvements": ["fixed failing return path"],
+            },
+        )
+    )
+    validations = iter((False, True))
+
+    async def chat(*args, **kwargs):
+        return BrainResponse(
+            content=json.dumps(next(responses)),
+            model="repair-test",
+            raw={},
+        )
+
+    async def validate(skill):
+        success = next(validations)
+        return {"success": success, "tests": 1, "detail": "pass" if success else "fail"}
+
+    monkeypatch.setattr(application.forge.brain, "chat", chat)
+    monkeypatch.setattr(application.worker, "validate", validate)
+
+    skill = await application.forge.forge(
+        SkillForgeRequest(
+            name="generated.repairable",
+            objective="建立會先失敗再依錯誤報告自動修復的技能",
+            category="development",
+            operations=("execute",),
+        )
+    )
+    versions = [
+        item
+        for item in application.store.list_runtime_skills(limit=100)
+        if item.manifest.name == "generated.repairable"
+    ]
+
+    assert skill.status is RuntimeSkillStatus.ACTIVE
+    assert skill.manifest.version == "0.1.1"
+    assert {item.status for item in versions} == {
+        RuntimeSkillStatus.ACTIVE,
+        RuntimeSkillStatus.FAILED,
+    }
+
+
+@pytest.mark.asyncio
 async def test_worker_reports_disabled_missing_image_and_unsupported_operation(
     settings,
     monkeypatch,

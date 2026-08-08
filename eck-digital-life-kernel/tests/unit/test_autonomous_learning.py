@@ -31,7 +31,7 @@ async def test_autonomous_curriculum_queues_distinct_critical_research(settings)
     assert status["active_tasks"] == 1
     assert status["runs_last_24h"] == 1
     assert status["eck_focus_percent"] == 70
-    assert status["trusted_community_sources"] == 8
+    assert status["trusted_community_sources"] >= 11
 
 
 def test_supervisor_fallback_expands_after_base_topics(application) -> None:

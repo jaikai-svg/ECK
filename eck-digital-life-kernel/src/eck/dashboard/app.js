@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const CHAT_STORAGE_KEY = "eck-chat-history-v2";
 let kernelStartedAt = null;
+let skillTreeLastLoaded = 0;
 
 const escapeHtml = (value) => String(value ?? "")
   .replaceAll("&", "&amp;")
@@ -142,6 +143,8 @@ function eventLabel(value) {
     SupervisorSkillForged: "監督者已鍛造技能",
     SupervisorDuplicateSkipped: "監督者已略過重複考驗",
     RuntimeSkillForged: "新技能程式已建立",
+    RuntimeSkillRepairForged: "技能修正版已建立",
+    RuntimeSkillRepairFailed: "技能自動修復失敗",
     RuntimeSkillTested: "技能測試已完成",
     RuntimeSkillActivated: "技能已熱啟用",
     RuntimeVersionChanged: "核心版本已更新",
@@ -168,6 +171,7 @@ const pageTitles = {
   home: "對話與狀態",
   challenges: "課題挑戰",
   learning: "學習成果",
+  "skill-tree": "技能樹",
   roadmap: "使命與路線圖",
   system: "系統資訊",
 };
@@ -184,6 +188,7 @@ function showView() {
     link.classList.toggle("active", link.dataset.viewLink === viewName);
   });
   $("#page-title").textContent = pageTitles[viewName];
+  if (viewName === "skill-tree") loadSkillTree();
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
@@ -564,6 +569,118 @@ function renderEvents(items) {
   `).join("") || '<div class="empty">尚無有效事件。</div>';
 }
 
+function skillTreeStatusLabel(value) {
+  return {
+    acquired: "已習得",
+    learning: "學習中",
+    active: "已啟用",
+    draft: "待測試",
+    testing: "測試中",
+    failed: "驗證失敗",
+    supported: "資料支持",
+    refuted: "資料反駁",
+    inconclusive: "證據不足",
+    unverified: "未驗證",
+  }[value] || value;
+}
+
+function skillTreeSource(source) {
+  const label = escapeHtml(source.title || source.reference || "未命名來源");
+  const type = escapeHtml(source.source_type || "source");
+  const url = safeUrl(source.url);
+  const content = url
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${label}</a>`
+    : `<span title="${escapeHtml(source.reference || "")}">${label}</span>`;
+  return `<li><i>${type}</i>${content}</li>`;
+}
+
+function renderSkillTreeItem(item) {
+  const sources = item.sources || [];
+  const summary = item.description
+    || item.conclusion
+    || (item.improvements || []).join(" · ")
+    || (item.operations || []).join(" · ")
+    || (item.procedure ? JSON.stringify(item.procedure) : "已保存可重用程序與驗證紀錄。");
+  const path = (item.path || []).map(escapeHtml).join(" → ");
+  const sourceList = sources.length
+    ? `<details class="skill-sources"><summary>${formatCount(sources.length)} 個驗證來源</summary><ul>${sources.slice(0, 12).map(skillTreeSource).join("")}</ul>${sources.length > 12 ? `<small>另有 ${formatCount(sources.length - 12)} 個來源保存在可攜記憶。</small>` : ""}</details>`
+    : '<div class="skill-source-empty">尚無外部網址；保留內部測試與事件證據。</div>';
+  const classes = ["skill-node", item.gold ? "gold" : "", `node-${item.type || "item"}`].filter(Boolean).join(" ");
+  return `
+    <article class="${classes}">
+      <div class="skill-node-head">
+        <span>${escapeHtml(item.type === "knowledge" ? "知識" : "技能")}</span>
+        <b>${escapeHtml(skillTreeStatusLabel(item.status))}</b>
+      </div>
+      <h3>${escapeHtml(item.title)}</h3>
+      <small>${path}</small>
+      <p>${escapeHtml(concise(summary, 260))}</p>
+      <div class="skill-node-meta">
+        ${item.success_count !== undefined ? `<span>成功 ${formatCount(item.success_count)}</span>` : ""}
+        ${item.failure_count !== undefined ? `<span>失敗 ${formatCount(item.failure_count)}</span>` : ""}
+        ${item.version ? `<span>v${escapeHtml(item.version)}</span>` : ""}
+      </div>
+      ${sourceList}
+    </article>
+  `;
+}
+
+function skillTreeDescendantCount(node) {
+  return (node.children || []).reduce(
+    (total, child) => total + (child.type === "category" ? skillTreeDescendantCount(child) : 1),
+    0,
+  );
+}
+
+function renderSkillTreeBranch(node, depth = 0) {
+  if (node.type !== "category") return renderSkillTreeItem(node);
+  const children = node.children || [];
+  return `
+    <details class="skill-branch depth-${depth}" open>
+      <summary><span>${escapeHtml(node.title)}</span><b>${formatCount(skillTreeDescendantCount(node))}</b></summary>
+      <div class="skill-branch-content">${children.map((child) => renderSkillTreeBranch(child, depth + 1)).join("")}</div>
+    </details>
+  `;
+}
+
+function renderSkillTree(data) {
+  const stats = data.stats || {};
+  $("#tree-acquired-count").textContent = formatCount(stats.acquired_skills);
+  $("#tree-learning-count").textContent = formatCount(stats.learning_skills);
+  $("#tree-research-count").textContent = formatCount(stats.research_results);
+  $("#tree-source-count").textContent = formatCount(stats.traceable_sources);
+  $("#skill-tree-heading").textContent = "完整技能關聯";
+  $("#skill-tree-portability").textContent = data.portable
+    ? "技能圖由可攜 SQLite 記憶即時重建；移機後可重新索引並直接檢索已驗證程序。"
+    : "技能圖目前不是可攜狀態。";
+  const branches = data.tree?.children || [];
+  $("#skill-tree-grid").innerHTML = branches.map((node) => renderSkillTreeBranch(node)).join("")
+    || '<div class="empty">尚無技能或研究資料。</div>';
+}
+
+async function loadSkillTree(force = false) {
+  if (!force && Date.now() - skillTreeLastLoaded < 60000) return;
+  try {
+    const data = await request("/v1/learning/skill-tree");
+    renderSkillTree(data);
+    skillTreeLastLoaded = Date.now();
+  } catch (error) {
+    $("#skill-tree-grid").innerHTML = `<div class="empty">技能圖讀取失敗：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function searchSkillTree(query) {
+  if (!query) {
+    skillTreeLastLoaded = 0;
+    await loadSkillTree(true);
+    return;
+  }
+  const result = await request(`/v1/learning/skill-tree/search?q=${encodeURIComponent(query)}&limit=30`);
+  $("#skill-tree-heading").textContent = `「${query}」相關記憶`;
+  $("#skill-tree-grid").innerHTML = result.items.map(renderSkillTreeItem).join("")
+    || '<div class="empty">沒有找到相關技能或研究記憶。</div>';
+}
+
 function updateSafety(health) {
   const chainValid = health.event_chain.valid;
   $("#chain-state").textContent = chainValid ? "事件鏈有效" : "事件鏈異常";
@@ -629,6 +746,7 @@ async function refresh() {
     $("#capability-tags").innerHTML = capabilities.items.map((item) =>
       `<span class="tag good" title="${escapeHtml(item.description)}">${escapeHtml(item.name)}</span>`
     ).join("");
+    if ((window.location.hash || "#home") === "#skill-tree") loadSkillTree();
   } catch (error) {
     setConnection(false);
     $("#phase").textContent = "OFFLINE";
@@ -938,6 +1056,19 @@ $("#research-form").addEventListener("submit", async (event) => {
     await refresh();
   } catch (error) {
     toast(`研究建立失敗：${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#skill-tree-search").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  try {
+    await searchSkillTree($("#skill-tree-query").value.trim());
+  } catch (error) {
+    toast(`技能記憶搜尋失敗：${error.message}`);
   } finally {
     button.disabled = false;
   }

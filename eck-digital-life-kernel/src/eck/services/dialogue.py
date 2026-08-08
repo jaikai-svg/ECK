@@ -103,6 +103,7 @@ class DialogueService:
             if item.status.value == "active"
         ]
         research_results = self._research_results() if self._research_intent.search(message) else []
+        related_skill_memory = self.application.skill_graph.search(message, limit=8)
         memory_context = {
             "verified_experiences": verified_experience_count,
             "active_skills": active_skill_names,
@@ -114,6 +115,7 @@ class DialogueService:
             "background_removal": self.application.image_background_removal.status(),
             "runtime_version": self.application.versions.status().model_dump(mode="json"),
             "research_results": research_results,
+            "related_skill_memory": related_skill_memory,
         }
         messages = [
             {
@@ -130,6 +132,8 @@ class DialogueService:
                     " image.generate 已安裝且對話可直接使用，不得稱為未啟用。"
                     "background_removal.available=true 代表可將最近生成圖片轉成透明背景 PNG。"
                     "若使用者詢問技能增強，只能依 runtime_skills 回答。"
+                    "related_skill_memory 是依本次問題檢索的可攜技能、程序與來源；"
+                    "執行任務時應優先重用其中已取得且 gold=true 的技能，但仍須通過現行驗證。"
                     "只有使用者詢問研究、論文或來源時，research_results 才會出現；引用時使用"
                     "可追溯標題、DOI 或 URL。證據不足時請明說。\n"
                     f"memory_context={json.dumps(memory_context, ensure_ascii=False)}"
@@ -417,6 +421,8 @@ class DialogueService:
 
     async def _generate_video(self, message: str) -> dict[str, Any]:
         engine_status = self.application.video_generation.status()
+        backend = str(engine_status.get("backend", "local-video"))
+        model = str(engine_status.get("model", "local-video-engine"))
         if not engine_status["available"]:
             missing = [name for name, ready in engine_status["checks"].items() if not ready]
             resources = engine_status.get("resources", {})
@@ -426,10 +432,10 @@ class DialogueService:
             detail = "缺少：" + ", ".join(missing) if missing else resource_detail
             return {
                 "answer": (
-                    "目前無法在本機安全生成影片。FramePack 模型已保留，但資源閘門未通過；"
+                    f"目前無法使用本機 {backend} 安全生成影片；"
                     f"{detail}。這不是任務成功，ECK 不會建立虛假成果。"
                 ),
-                "model": "local-video-engine",
+                "model": model,
                 "tool": "video.generate",
                 "blocked": True,
                 "pending": False,
@@ -481,9 +487,10 @@ class DialogueService:
             task = await self.application.tasks.execute(task.task_id)
             if task.status is TaskStatus.VERIFIED_SUCCESS and task.result is not None:
                 output = task.result.output
+                metadata = output.get("metadata", {})
                 return {
-                    "answer": "本機 FramePack 影片已生成並通過 MP4 檔案驗證。",
-                    "model": "lllyasviel/FramePackI2V_HY",
+                    "answer": f"本機 {backend} 影片已生成並通過 MP4 檔案驗證。",
+                    "model": metadata.get("model") or model,
                     "tool": "video.generate",
                     "artifacts": [
                         {
@@ -498,8 +505,8 @@ class DialogueService:
                     "context": self._memory_counts(),
                 }
         return {
-            "answer": "影片任務已排入本機 FramePack；首幀與影片完成後會自動顯示。",
-            "model": "lllyasviel/FramePackI2V_HY",
+            "answer": f"影片任務已排入本機 {backend}；完成驗證後會自動顯示。",
+            "model": model,
             "tool": "video.generate",
             "task_id": task.task_id,
             "pending": True,

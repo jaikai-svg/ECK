@@ -40,9 +40,11 @@ from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.challenges import ChallengeService
 from eck.services.community_sources import CommunitySourceCatalog
 from eck.services.evaluations import EvaluationService
+from eck.services.evolution import EvolutionAuditService
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
 from eck.services.skill_forge import SkillForgeService
+from eck.services.skill_graph import SkillKnowledgeGraphService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
 from eck.services.versioning import VersionService
@@ -68,7 +70,9 @@ class Application:
     missions: MissionService
     versions: VersionService
     evaluations: EvaluationService
+    evolution: EvolutionAuditService
     portability: CognitiveBundleService
+    skill_graph: SkillKnowledgeGraphService
     autonomy: AutonomyGate
     image_generation: ImageGenerationCapability
     image_background_removal: ImageBackgroundRemovalCapability
@@ -121,6 +125,10 @@ def build_application(settings: Settings | None = None) -> Application:
     registry.register(image_background_removal)
     video_generation = VideoGenerationCapability(settings, image_generation)
     registry.register(video_generation)
+    skill_graph = SkillKnowledgeGraphService(
+        store,
+        capability_provider=lambda: (video_generation.skill_graph_snapshot(),),
+    )
     registry.register(
         AcademicResearchCapability(
             brain,
@@ -165,6 +173,7 @@ def build_application(settings: Settings | None = None) -> Application:
         registry,
     )
     evaluation_service = EvaluationService(store, events)
+    evolution_service = EvolutionAuditService(settings, store, worker)
     portability_service = CognitiveBundleService(
         settings,
         store,
@@ -193,7 +202,13 @@ def build_application(settings: Settings | None = None) -> Application:
     async def observe_verified_skill(_: EventRecord) -> None:
         await versions.observe_verified_skills()
 
+    async def invalidate_skill_graph(_: EventRecord) -> None:
+        skill_graph.invalidate()
+
     events.subscribe("SkillUpdated", observe_verified_skill)
+    events.subscribe("SkillUpdated", invalidate_skill_graph)
+    events.subscribe("TaskVerified", invalidate_skill_graph)
+    events.subscribe("RuntimeSkillActivated", invalidate_skill_graph)
     events.subscribe("TaskVerified", mission_service.handle_task_verified)
     kernel = LifeKernel(
         settings,
@@ -220,7 +235,9 @@ def build_application(settings: Settings | None = None) -> Application:
         missions=mission_service,
         versions=versions,
         evaluations=evaluation_service,
+        evolution=evolution_service,
         portability=portability_service,
+        skill_graph=skill_graph,
         autonomy=autonomy_gate,
         image_generation=image_generation,
         image_background_removal=image_background_removal,
