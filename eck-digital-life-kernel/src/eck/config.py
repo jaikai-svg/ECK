@@ -118,6 +118,8 @@ class Settings(BaseSettings):
     autonomous_curriculum_enabled: bool = True
     autonomous_curriculum_interval_seconds: float = Field(default=300.0, ge=30, le=86400)
     autonomous_curriculum_max_runs_per_day: int = Field(default=144, ge=1, le=1000)
+    autonomous_eck_focus_percent: int = Field(default=70, ge=10, le=100)
+    community_source_catalog_path: Path = Path("config/community-sources.json")
 
     skill_worker_enabled: bool = True
     skill_worker_image: str = "eck-skill-worker:0.1.0"

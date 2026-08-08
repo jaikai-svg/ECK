@@ -146,6 +146,12 @@ an expensive supervisor inference first. Its status is available at
 `GET /v1/learning/autonomous/status`. Learning throughput is bounded and still requires
 external evidence; continuous GPU saturation is not treated as progress.
 
+By default, 70% of autonomous research slots now target agent architecture, workflow
+automation, reusable skills, MCP, memory, evaluation, sandboxing, local inference, and
+self-modification safety. Trusted official specifications and maintainer repositories are
+listed by `GET /v1/learning/community-sources`; catalog inclusion never authorizes direct
+code execution or bypasses the isolated skill and regression gates.
+
 ## Safety boundary
 
 v0.1 defaults:

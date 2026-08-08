@@ -95,6 +95,8 @@ learning_stall_minutes: 30
 autonomous_curriculum_enabled: true
 autonomous_curriculum_interval_seconds: 300
 autonomous_curriculum_max_runs_per_day: 144
+autonomous_eck_focus_percent: 70
+community_source_catalog_path: config/community-sources.json
 
 skill_worker_enabled: true
 skill_worker_image: eck-skill-worker:0.1.0

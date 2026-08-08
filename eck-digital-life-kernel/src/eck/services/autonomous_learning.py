@@ -8,13 +8,40 @@ from eck.core.time import utc_now
 from eck.domain.enums import TaskStatus
 from eck.domain.models import TaskRecord
 from eck.events.bus import EventBus
+from eck.services.community_sources import CommunitySourceCatalog
 from eck.services.research import build_critical_research_task
 from eck.services.tasks import TaskService
 from eck.storage.sqlite import SQLiteStore
 
 
 class AutonomousLearningService:
-    _domains = (
+    _eck_domains = (
+        "agent skill standards and reusable tool interfaces",
+        "LLM agent planning and hierarchical task decomposition",
+        "durable agent execution and checkpoint recovery",
+        "workflow automation and event driven orchestration",
+        "tool use evaluation and function calling reliability",
+        "agent memory RAG and retrieval evaluation",
+        "model context protocol security and capability isolation",
+        "sandboxed code execution for autonomous agents",
+        "self improving agents with verified feedback",
+        "automated skill synthesis and regression testing",
+        "local LLM inference quantization and GPU optimization",
+        "agent benchmarks and real world task evaluation",
+        "multi agent coordination and supervisor design",
+        "browser agents and policy compliant web automation",
+        "open source agent frameworks comparative evidence",
+        "AI workflow observability and trace evaluation",
+        "prompt injection and untrusted content isolation",
+        "agent tool selection and capability routing",
+        "autonomous research and evidence synthesis",
+        "model routing and local inference scheduling",
+        "context engineering and long horizon memory",
+        "data provenance and tamper evident learning",
+        "synthetic training data and verifier design",
+        "self modification safety and rollback architecture",
+    )
+    _general_domains = (
         "business management and organizational effectiveness",
         "organizational behavior and team decision making",
         "risk management and decisions under uncertainty",
@@ -62,11 +89,13 @@ class AutonomousLearningService:
         store: SQLiteStore,
         events: EventBus,
         tasks: TaskService,
+        community_sources: CommunitySourceCatalog,
     ) -> None:
         self.settings = settings
         self.store = store
         self.events = events
         self.tasks = tasks
+        self.community_sources = community_sources
         self._activity_text = "自主課程器待命。"
         self._last_task_id: str | None = None
 
@@ -85,6 +114,8 @@ class AutonomousLearningService:
             "activity_text": self._activity_text,
             "interval_seconds": self.settings.autonomous_curriculum_interval_seconds,
             "max_runs_per_day": self.settings.autonomous_curriculum_max_runs_per_day,
+            "eck_focus_percent": self.settings.autonomous_eck_focus_percent,
+            "trusted_community_sources": self.community_sources.status()["source_count"],
             "runs_last_24h": len(recent),
             "verified_last_24h": len(verified),
             "active_tasks": len(active),
@@ -120,15 +151,26 @@ class AutonomousLearningService:
         if topic is None:
             self._activity_text = "今日自主研究矩陣已完成，等待明日新資訊。"
             return None
+        trusted_source = self.community_sources.match(topic)
         task = await self.tasks.submit(
-            build_critical_research_task(topic, source="autonomous")
+            build_critical_research_task(
+                topic,
+                url=str(trusted_source["url"]) if trusted_source else None,
+                source="autonomous",
+            )
         )
         self._last_task_id = task.task_id
         self._activity_text = f"正在自主查證「{topic}」。"
         await self.events.publish(
             "AutonomousLearningQueued",
             task.task_id,
-            {"topic": topic, "status": task.status.value},
+            {
+                "topic": topic,
+                "status": task.status.value,
+                "trusted_source_id": (
+                    trusted_source["source_id"] if trusted_source else None
+                ),
+            },
             correlation_id=task.task_id,
         )
         return task
@@ -144,12 +186,33 @@ class AutonomousLearningService:
             for item in tasks
             if item.created_at.date() == now.date()
         }
-        candidates = (
+        candidates = self._candidate_topics(day)
+        return next((candidate for candidate in candidates if candidate not in used), None)
+
+    def _candidate_topics(self, day: str) -> list[str]:
+        focus = [
             f"{domain}: {lens} ({day})"
             for lens in self._lenses
-            for domain in self._domains
-        )
-        return next((candidate for candidate in candidates if candidate not in used), None)
+            for domain in self._eck_domains
+        ]
+        general = [
+            f"{domain}: {lens} ({day})"
+            for lens in self._lenses
+            for domain in self._general_domains
+        ]
+        focus_slots = max(1, round(self.settings.autonomous_eck_focus_percent / 10))
+        general_slots = max(0, 10 - focus_slots)
+        merged: list[str] = []
+        while focus or general:
+            merged.extend(focus[:focus_slots])
+            del focus[:focus_slots]
+            if general_slots:
+                merged.extend(general[:general_slots])
+                del general[:general_slots]
+            elif not focus:
+                merged.extend(general)
+                general.clear()
+        return merged
 
     def _autonomous_tasks(self) -> list[TaskRecord]:
         return [

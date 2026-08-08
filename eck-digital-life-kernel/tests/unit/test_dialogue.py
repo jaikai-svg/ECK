@@ -147,3 +147,26 @@ async def test_dialogue_executes_and_returns_verified_image(application, monkeyp
     assert result["artifacts"][0]["url"] == "/artifacts/dog.png"
     assert result["inference"] == {"eval_count": 32}
     assert "已通過檔案、尺寸與雜湊驗證" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_dialogue_returns_video_resource_block_without_http_failure(
+    application, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        application.video_generation,
+        "status",
+        lambda: {
+            "available": False,
+            "checks": {"python": True, "model": True},
+            "resources": {"detail": "System RAM is below the verified minimum."},
+        },
+    )
+
+    result = await DialogueService(application).respond("生成一段狗狗玩球的影片", [])
+
+    assert result["tool"] == "video.generate"
+    assert result["blocked"] is True
+    assert result["pending"] is False
+    assert result["artifacts"] == []
+    assert "不會建立虛假成果" in result["answer"]

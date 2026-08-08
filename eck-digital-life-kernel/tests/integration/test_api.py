@@ -41,6 +41,9 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert image_status.status_code == 200
         assert image_status.json()["quality"]["steps"] == 36
         assert "background_removal" in image_status.json()
+        community_sources = client.get("/v1/learning/community-sources")
+        assert community_sources.status_code == 200
+        assert community_sources.json()["source_count"] == 8
 
         roadmap = client.get("/v1/roadmap")
         assert roadmap.status_code == 200

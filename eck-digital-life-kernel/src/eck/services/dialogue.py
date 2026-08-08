@@ -424,7 +424,20 @@ class DialogueService:
                 str(resources.get("detail", "")) if isinstance(resources, dict) else ""
             )
             detail = "缺少：" + ", ".join(missing) if missing else resource_detail
-            raise RuntimeError("本機 FramePack 影片環境尚未就緒；" + detail)
+            return {
+                "answer": (
+                    "目前無法在本機安全生成影片。FramePack 模型已保留，但資源閘門未通過；"
+                    f"{detail}。這不是任務成功，ECK 不會建立虛假成果。"
+                ),
+                "model": "local-video-engine",
+                "tool": "video.generate",
+                "blocked": True,
+                "pending": False,
+                "artifacts": [],
+                "inference": {},
+                "capability_status": engine_status,
+                "context": self._memory_counts(),
+            }
         seconds = self.application.settings.video_default_seconds
         create = TaskCreate(
             goal=f"Generate a verified local video for: {message[:500]}",

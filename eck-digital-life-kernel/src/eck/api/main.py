@@ -337,6 +337,10 @@ def create_api(
     async def autonomous_learning_status(app: AppDependency) -> dict[str, Any]:
         return app.autonomous_learning.status()
 
+    @api.get("/v1/learning/community-sources")
+    async def community_learning_sources(app: AppDependency) -> dict[str, Any]:
+        return app.community_sources.status()
+
     @api.post("/v1/portability/bundles", status_code=201)
     async def export_cognitive_bundle(
         request: CognitiveBundleRequest,

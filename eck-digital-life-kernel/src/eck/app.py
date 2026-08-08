@@ -38,6 +38,7 @@ from eck.research.discovery import (
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.challenges import ChallengeService
+from eck.services.community_sources import CommunitySourceCatalog
 from eck.services.evaluations import EvaluationService
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
@@ -62,6 +63,7 @@ class Application:
     tasks: TaskService
     supervisor: SupervisorService
     autonomous_learning: AutonomousLearningService
+    community_sources: CommunitySourceCatalog
     challenges: ChallengeService
     missions: MissionService
     versions: VersionService
@@ -171,6 +173,7 @@ def build_application(settings: Settings | None = None) -> Application:
         versions,
     )
     autonomy_gate = AutonomyGate()
+    community_sources = CommunitySourceCatalog(settings.community_source_catalog_path)
     supervisor_service = SupervisorService(
         settings,
         store,
@@ -185,6 +188,7 @@ def build_application(settings: Settings | None = None) -> Application:
         store,
         events,
         task_service,
+        community_sources,
     )
     async def observe_verified_skill(_: EventRecord) -> None:
         await versions.observe_verified_skills()
@@ -211,6 +215,7 @@ def build_application(settings: Settings | None = None) -> Application:
         tasks=task_service,
         supervisor=supervisor_service,
         autonomous_learning=autonomous_learning,
+        community_sources=community_sources,
         challenges=challenge_service,
         missions=mission_service,
         versions=versions,

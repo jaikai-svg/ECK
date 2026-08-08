@@ -1,0 +1,85 @@
+{
+  "schema_version": "eck-community-sources.v1",
+  "sources": [
+    {
+      "source_id": "agent-skills-spec",
+      "name": "Agent Skills Specification",
+      "url": "https://agentskills.io/specification",
+      "owner": "Agent Skills",
+      "trust_tier": "official-specification",
+      "license": "specification-reference-only",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["agent skill", "reusable tool", "skill manifest", "progressive disclosure"]
+    },
+    {
+      "source_id": "model-context-protocol",
+      "name": "Model Context Protocol Architecture",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/architecture",
+      "owner": "Model Context Protocol",
+      "trust_tier": "official-specification",
+      "license": "specification-reference-only",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["model context protocol", "tool interface", "capability isolation", "security"]
+    },
+    {
+      "source_id": "langgraph",
+      "name": "LangGraph",
+      "url": "https://github.com/langchain-ai/langgraph",
+      "owner": "langchain-ai",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["durable execution", "checkpoint recovery", "workflow orchestration", "human in the loop"]
+    },
+    {
+      "source_id": "openhands-extensions",
+      "name": "OpenHands Extensions",
+      "url": "https://github.com/openhands/extensions",
+      "owner": "OpenHands",
+      "trust_tier": "official-maintainer",
+      "license": "review-per-extension",
+      "adoption_mode": "research-only",
+      "topics": ["agent skill", "software agent", "skill registry", "sandbox"]
+    },
+    {
+      "source_id": "minimax-skills",
+      "name": "MiniMax Agent Skills",
+      "url": "https://github.com/MiniMax-AI/skills",
+      "owner": "MiniMax-AI",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "research-only",
+      "topics": ["agent skill", "workflow automation", "frontend development", "multimedia workflow"]
+    },
+    {
+      "source_id": "openhands",
+      "name": "OpenHands",
+      "url": "https://github.com/All-Hands-AI/OpenHands",
+      "owner": "All-Hands-AI",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["sandboxed code execution", "software agent", "task repair", "developer agent"]
+    },
+    {
+      "source_id": "autogen",
+      "name": "Microsoft AutoGen",
+      "url": "https://github.com/microsoft/autogen",
+      "owner": "Microsoft",
+      "trust_tier": "official-maintainer",
+      "license": "CC-BY-4.0-and-code-specific",
+      "adoption_mode": "research-only",
+      "topics": ["multi-agent", "agent orchestration", "tool use", "supervisor design"]
+    },
+    {
+      "source_id": "openai-agents-python",
+      "name": "OpenAI Agents SDK",
+      "url": "https://github.com/openai/openai-agents-python",
+      "owner": "OpenAI",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["agent workflow", "handoff", "guardrail", "trace evaluation"]
+    }
+  ]
+}
