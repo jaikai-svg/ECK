@@ -8,6 +8,7 @@ from eck.config import Settings
 from eck.domain.enums import KernelPhase, TaskStatus
 from eck.domain.models import KernelStatus, SupervisorReviewRecord, TaskRecord
 from eck.events.bus import EventBus
+from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
 from eck.storage.sqlite import SQLiteStore
@@ -21,16 +22,19 @@ class LifeKernel:
         events: EventBus,
         tasks: TaskService,
         supervisor: SupervisorService,
+        autonomous_learning: AutonomousLearningService,
     ) -> None:
         self.settings = settings
         self.store = store
         self.events = events
         self.tasks = tasks
         self.supervisor = supervisor
+        self.autonomous_learning = autonomous_learning
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
         self._execution_task: asyncio.Task[TaskRecord] | None = None
         self._supervision_task: asyncio.Task[SupervisorReviewRecord | None] | None = None
+        self._curriculum_task: asyncio.Task[TaskRecord | None] | None = None
         self._stop = asyncio.Event()
         self._sleep_requested = asyncio.Event()
         self._sleep_lock = asyncio.Lock()
@@ -103,6 +107,11 @@ class LifeKernel:
             with suppress(asyncio.CancelledError):
                 await self._supervision_task
             self._supervision_task = None
+        if self._curriculum_task:
+            self._curriculum_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._curriculum_task
+            self._curriculum_task = None
         await self.events.publish(
             "KernelStopped",
             self.settings.identity,
@@ -174,8 +183,15 @@ class LifeKernel:
                     await self._supervision_task
                     self._supervision_task = None
                     next_supervision = loop.time() + self.settings.supervisor_review_seconds
+                if self._curriculum_task and self._curriculum_task.done():
+                    await self._curriculum_task
+                    self._curriculum_task = None
                 if self.phase is KernelPhase.RUNNING:
-                    if self._execution_task is None and self._supervision_task is None:
+                    if (
+                        self._execution_task is None
+                        and self._supervision_task is None
+                        and self._curriculum_task is None
+                    ):
                         prefer_challenge = (
                             self._schedule_cursor >= self.settings.autonomous_learning_percent
                         )
@@ -190,6 +206,11 @@ class LifeKernel:
                             self._supervision_task = asyncio.create_task(
                                 self.supervisor.review_if_idle(),
                                 name="eck-supervisor-review",
+                            )
+                        elif self.settings.autonomous_curriculum_enabled:
+                            self._curriculum_task = asyncio.create_task(
+                                self.autonomous_learning.enqueue_if_idle(),
+                                name="eck-autonomous-curriculum",
                             )
                     if self._sleep_requested.is_set() or loop.time() >= next_sleep:
                         await self.run_sleep_cycle()

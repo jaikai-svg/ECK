@@ -1,4 +1,5 @@
 import mimetypes
+import zipfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,6 +61,10 @@ class CriticalResearchRequest(BaseModel):
     )
 
 
+class CognitiveBundleRequest(BaseModel):
+    include_artifacts: bool = False
+
+
 def create_api(
     settings: Settings | None = None,
     application: Application | None = None,
@@ -94,6 +99,11 @@ def create_api(
         "/artifacts",
         StaticFiles(directory=application.settings.image_output_dir),
         name="artifacts",
+    )
+    api.mount(
+        "/video-artifacts",
+        StaticFiles(directory=application.settings.video_output_dir),
+        name="video-artifacts",
     )
 
     def get_application() -> Application:
@@ -153,6 +163,7 @@ def create_api(
             "brain": brain.model_dump(mode="json"),
             "image_generation": app.image_generation.status(),
             "image_background_removal": app.image_background_removal.status(),
+            "video_generation": app.video_generation.status(),
             "event_chain": {
                 "valid": chain_valid,
                 "failed_sequence": failed_sequence,
@@ -199,6 +210,7 @@ def create_api(
                 "benchmark_runs": len(app.store.list_benchmark_runs(limit=10000)),
             },
             "supervisor": app.supervisor.status(),
+            "autonomous_learning": app.autonomous_learning.status(),
             "runtime_version": app.versions.status().model_dump(mode="json"),
             "scheduler": {
                 "autonomous_learning_percent": app.settings.autonomous_learning_percent,
@@ -243,6 +255,10 @@ def create_api(
             "background_removal": app.image_background_removal.status(),
         }
 
+    @api.get("/v1/video/status")
+    async def video_generation_status(app: AppDependency) -> dict[str, Any]:
+        return app.video_generation.status()
+
     @api.get("/v1/roadmap")
     async def roadmap(app: AppDependency) -> dict[str, Any]:
         verified_capabilities = [item["name"] for item in app.registry.list()]
@@ -267,6 +283,7 @@ def create_api(
                 "active_runtime_skills": len(runtime_skills),
                 "local_image_stack": app.image_generation.status(),
                 "background_removal": app.image_background_removal.status(),
+                "local_video_stack": app.video_generation.status(),
                 "event_chain_valid": app.store.verify_event_chain()[0],
             },
             "targets": [
@@ -315,6 +332,41 @@ def create_api(
     @api.get("/v1/supervisor/status")
     async def supervisor_status(app: AppDependency) -> dict[str, Any]:
         return app.supervisor.status()
+
+    @api.get("/v1/learning/autonomous/status")
+    async def autonomous_learning_status(app: AppDependency) -> dict[str, Any]:
+        return app.autonomous_learning.status()
+
+    @api.post("/v1/portability/bundles", status_code=201)
+    async def export_cognitive_bundle(
+        request: CognitiveBundleRequest,
+        app: AppDependency,
+    ) -> dict[str, Any]:
+        return await app.portability.export(include_artifacts=request.include_artifacts)
+
+    @api.get("/v1/portability/bundles/{archive_name}")
+    async def download_cognitive_bundle(
+        archive_name: str,
+        app: AppDependency,
+    ) -> FileResponse:
+        try:
+            return FileResponse(
+                app.portability.bundle_path(archive_name),
+                media_type="application/zip",
+                filename=archive_name,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.get("/v1/portability/bundles/{archive_name}/verify")
+    async def verify_cognitive_bundle(
+        archive_name: str,
+        app: AppDependency,
+    ) -> dict[str, Any]:
+        try:
+            return app.portability.verify(archive_name)
+        except (FileNotFoundError, ValueError, zipfile.BadZipFile) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @api.get("/v1/runtime/status")
     async def runtime_status(app: AppDependency) -> dict[str, Any]:

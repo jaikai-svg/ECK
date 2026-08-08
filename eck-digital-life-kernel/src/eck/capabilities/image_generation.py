@@ -60,6 +60,8 @@ class ImageGenerationCapability(Capability):
         self._engine_lock = asyncio.Lock()
         self._forge_lock = asyncio.Lock()
         self._forge_api_ready = False
+        self._activity_stage = "idle"
+        self._activity_started_at: str | None = None
 
     def status(self) -> dict[str, Any]:
         if self.settings.image_backend == "forge":
@@ -123,6 +125,7 @@ class ImageGenerationCapability(Capability):
                 "scheduler": "DPM++ 2M Karras",
                 "adetailer": self.settings.image_adetailer_enabled,
             },
+            "activity": self._activity_status(),
         }
 
     def _forge_runtime_status(self) -> tuple[bool, str]:
@@ -173,6 +176,7 @@ class ImageGenerationCapability(Capability):
                 "scheduler": "DPM++ Karras",
                 "adetailer": False,
             },
+            "activity": self._activity_status(),
         }
 
     async def execute(self, action: ActionProposal) -> CapabilityResult:
@@ -188,12 +192,16 @@ class ImageGenerationCapability(Capability):
         model_alias = str(action.payload.get("model", "")).strip()
         use_adetailer = bool(action.payload.get("use_adetailer", False))
         try:
+            self._set_activity("planning_prompt")
             user_request = str(action.payload.get("user_request", "")).strip()
             adult_request = self._validate_request_policy(user_request)
             if user_request:
                 requested_model_alias = self._requested_model_alias(user_request)
                 plan, plan_response = await self._plan_user_request(user_request)
-                prompt = self._quality_prompt(str(plan["prompt"]), adult=adult_request)
+                planned_prompt = str(plan["prompt"])
+                if not requested_model_alias:
+                    planned_prompt = self._strip_model_selection_artifacts(planned_prompt)
+                prompt = self._quality_prompt(planned_prompt, adult=adult_request)
                 negative_prompt = self._negative_prompt(
                     str(plan.get("negative_prompt", "")), adult=adult_request
                 )
@@ -207,7 +215,7 @@ class ImageGenerationCapability(Capability):
                         "use_adetailer",
                         plan.get("use_adetailer", self._prompt_depicts_people(prompt)),
                     )
-                )
+                ) and self._prompt_depicts_people(user_request)
                 planner_model = plan_response.model
                 planner_inference = self._inference_metrics(plan_response.raw)
             else:
@@ -272,13 +280,20 @@ class ImageGenerationCapability(Capability):
             "adult_request": adult_request,
         }
         try:
-            await self._release_ollama_vram()
+            self._set_activity("releasing_brain_vram")
+            await asyncio.wait_for(self._release_ollama_vram(), timeout=45)
+            self._set_activity("generating_image")
             if self.settings.image_backend == "forge":
                 report = await self._run_forge(request, output_path)
             else:
                 report = await self._run_diffusers(request, output_path)
+            self._set_activity("verifying_artifact")
+        except TimeoutError:
+            return self._failure(action, started, "The local image pipeline timed out.")
         except (OSError, RuntimeError, ValueError, httpx.HTTPError) as exc:
             return self._failure(action, started, str(exc))
+        finally:
+            self._set_activity("idle")
 
         if not report.get("success") or not output_path.is_file():
             detail = str(report.get("detail") or "Image generation did not produce an artifact.")
@@ -368,7 +383,9 @@ class ImageGenerationCapability(Capability):
                     "or sexual violence. Select realistic_vision for balanced realism, "
                     "chilloutmix for East Asian editorial portraits, or cyberrealistic for "
                     "extreme realism, materials, and outdoor light. Enable ADetailer when a "
-                    "human face is visible. Return only the requested JSON fields."
+                    "human face is visible. Do not put checkpoint names, ADetailer, or model "
+                    "selection explanations inside the image prompt. Return only the requested "
+                    "JSON fields."
                 ),
             },
             {"role": "user", "content": user_request},
@@ -470,6 +487,25 @@ class ImageGenerationCapability(Capability):
         return ""
 
     @staticmethod
+    def _strip_model_selection_artifacts(prompt: str) -> str:
+        selection_terms = (
+            "realistic vision",
+            "realistic_vision",
+            "chilloutmix",
+            "chillout mix",
+            "cyberrealistic",
+            "cyber realistic",
+            "adetailer",
+        )
+        clauses = [part.strip() for part in prompt.split(",")]
+        filtered = [
+            clause
+            for clause in clauses
+            if clause and not any(term in clause.casefold() for term in selection_terms)
+        ]
+        return ", ".join(filtered) or prompt.strip()
+
+    @staticmethod
     def _prompt_schema() -> dict[str, Any]:
         return {
             "type": "object",
@@ -503,7 +539,8 @@ class ImageGenerationCapability(Capability):
     def _prompt_depicts_people(prompt: str) -> bool:
         return bool(
             re.search(
-                r"\b(person|people|woman|women|man|men|girl|boy|face|portrait|model|human)\b",
+                r"\b(person|people|woman|women|man|men|girl|boy|face|portrait|model|human)\b|"
+                r"人物|人像|女性|女人|男人|男性|女孩|男孩|臉部|面孔|模特兒",
                 prompt,
                 re.IGNORECASE,
             )
@@ -542,8 +579,14 @@ class ImageGenerationCapability(Capability):
     async def _run_forge(
         self, request: dict[str, Any], output_path: Path
     ) -> dict[str, Any]:
-        async with self._forge_lock:
+        try:
+            await asyncio.wait_for(self._forge_lock.acquire(), timeout=10)
+        except TimeoutError as exc:
+            raise RuntimeError("Another Forge request held the generation lock too long.") from exc
+        try:
+            self._set_activity("starting_forge")
             await self._ensure_forge_api()
+            self._set_activity("generating_image")
             timeout = httpx.Timeout(self.settings.image_generation_timeout_seconds)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 base_url = self.settings.forge_base_url.rstrip("/")
@@ -575,6 +618,8 @@ class ImageGenerationCapability(Capability):
                 response = await client.post(f"{base_url}/sdapi/v1/txt2img", json=payload)
                 response.raise_for_status()
                 data = response.json()
+        finally:
+            self._forge_lock.release()
         images = data.get("images", [])
         if not images:
             raise RuntimeError("Forge returned no generated image.")
@@ -697,26 +742,34 @@ class ImageGenerationCapability(Capability):
             "Bypass",
             "-File",
             str(self.settings.forge_start_script.resolve()),
-            "-Wait",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=environment,
         )
+        launcher_returned = True
         try:
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
-                timeout=self.settings.forge_startup_timeout_seconds,
+                timeout=60,
             )
-        except TimeoutError as exc:
+        except TimeoutError:
+            launcher_returned = False
             process.kill()
             await process.wait()
-            raise RuntimeError("Forge startup timed out.") from exc
-        if process.returncode != 0 or not await self._forge_health():
+            stdout, stderr = b"", b""
+        if launcher_returned and process.returncode != 0:
             detail = stderr.decode(errors="replace").strip() or stdout.decode(
                 errors="replace"
             ).strip()
             raise RuntimeError(f"Forge startup failed: {detail[-2000:]}")
-        self._forge_api_ready = True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.settings.forge_startup_timeout_seconds
+        while loop.time() < deadline:
+            if await self._forge_health():
+                self._forge_api_ready = True
+                return
+            await asyncio.sleep(2)
+        raise RuntimeError("Forge API did not become ready before its startup deadline.")
 
     async def _forge_health(self) -> bool:
         try:
@@ -801,6 +854,41 @@ class ImageGenerationCapability(Capability):
     async def close(self) -> None:
         async with self._engine_lock:
             await self._stop_engine_process(graceful=True)
+
+    async def stop_forge(self) -> None:
+        if self.settings.image_backend != "forge" or not await self._forge_health():
+            return
+        process = await asyncio.create_subprocess_exec(
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(self.settings.forge_stop_script.resolve()),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=45)
+        if process.returncode != 0:
+            detail = stderr.decode(errors="replace").strip() or stdout.decode(
+                errors="replace"
+            ).strip()
+            raise RuntimeError(f"Forge shutdown failed: {detail[-1000:]}")
+        self._forge_api_ready = False
+
+    def _set_activity(self, stage: str) -> None:
+        if stage != self._activity_stage:
+            self._activity_stage = stage
+            self._activity_started_at = (
+                None if stage == "idle" else utc_now().isoformat()
+            )
+
+    def _activity_status(self) -> dict[str, Any]:
+        return {
+            "stage": self._activity_stage,
+            "started_at": self._activity_started_at,
+            "busy": self._activity_stage != "idle",
+        }
 
     async def _ensure_engine_process(self) -> asyncio.subprocess.Process:
         if self._engine_process and self._engine_process.returncode is None:

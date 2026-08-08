@@ -45,6 +45,16 @@ def test_explicit_model_name_takes_priority_and_adult_negative_is_preserved() ->
     assert "minor" in negative
 
 
+def test_image_prompt_removes_planner_model_notes_and_detects_people() -> None:
+    prompt = ImageGenerationCapability._strip_model_selection_artifacts(
+        "A dog playing with a ball, Realistic Vision, ADetailer, sunny park"
+    )
+
+    assert prompt == "A dog playing with a ball, sunny park"
+    assert not ImageGenerationCapability._prompt_depicts_people("一隻狗狗在公園玩球")
+    assert ImageGenerationCapability._prompt_depicts_people("一位成年女性的全身照片")
+
+
 def test_legal_adult_content_is_enabled_but_abusive_content_is_blocked(
     application,
 ) -> None:

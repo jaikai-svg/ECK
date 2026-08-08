@@ -74,7 +74,10 @@ def build_research_task(
         require_reproducible=False,
         reversible_exploration_only=True,
     )
-    label = "human-guided" if source == "human" else "supervisor-assigned"
+    label = {
+        "human": "human-guided",
+        "autonomous": "autonomous-curriculum",
+    }.get(source, "supervisor-assigned")
     return TaskCreate(
         goal=f"建立「{topic}」學術研究課程，第 {cycle}/{total_cycles} 輪。",
         success_contract=contract,
@@ -149,7 +152,10 @@ def build_critical_research_task(
         require_reproducible=False,
         reversible_exploration_only=True,
     )
-    label = "human-guided" if source == "human" else "supervisor-assigned"
+    label = {
+        "human": "human-guided",
+        "autonomous": "autonomous-curriculum",
+    }.get(source, "supervisor-assigned")
     payload: dict[str, object] = {"topic": topic, "source": source}
     if url:
         payload["url"] = url

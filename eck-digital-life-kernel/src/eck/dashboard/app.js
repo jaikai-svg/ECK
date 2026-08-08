@@ -212,7 +212,7 @@ function setPresence(mood, activity, supervisor) {
       : "監督者未啟用";
 }
 
-function renderActivity(kernel, tasks, missions, supervisor) {
+function renderActivity(kernel, tasks, missions, supervisor, autonomousLearning) {
   const activeTask = tasks.find((task) => ["queued", "running", "waiting_approval"].includes(task.status));
   const latestTask = tasks[0];
   const indicator = $("#activity-indicator");
@@ -220,14 +220,15 @@ function renderActivity(kernel, tasks, missions, supervisor) {
 
   if (activeTask) {
     const topic = activeTask.action.payload?.topic;
-    const activity = activeTask.action.capability === "academic.research"
+    const isResearch = ["academic.research", "web.critical_research"].includes(activeTask.action.capability);
+    const activity = isResearch
       ? activeTask.status === "running"
-        ? `正在學習「${topic}」，搜尋並比較高相關學術來源`
+        ? `正在學習「${topic}」，搜尋、質疑並交叉查證公開來源`
         : activeTask.status === "queued"
           ? `準備研究「${topic}」並建立可驗證問題`
           : `「${topic}」研究正在等待安全核准`
       : `${taskStatusLabel(activeTask.status)}：${activeTask.goal}`;
-    $("#current-activity").textContent = activeTask.action.capability === "academic.research"
+    $("#current-activity").textContent = isResearch
       ? `正在研究${topic ? `「${topic}」` : "與整理來源"}`
       : "正在執行任務";
     $("#activity-detail").textContent = activeTask.goal;
@@ -264,11 +265,11 @@ function renderActivity(kernel, tasks, missions, supervisor) {
     setPresence(supervisor.mood, supervisor.activity_text, supervisor);
   }
 
-  $("#current-activity").textContent = kernel.phase === "running" ? "待命中" : `核心狀態：${kernel.phase}`;
+  $("#current-activity").textContent = kernel.phase === "running" ? "整理學習結果" : `核心狀態：${kernel.phase}`;
   $("#activity-detail").textContent = kernel.phase === "running"
-    ? "目前沒有排隊中的工作；課題不會阻塞自主學習。"
+    ? (autonomousLearning?.activity_text || "自主課程器正在準備下一個可驗證主題。")
     : "核心目前不接受新的執行工作。";
-  state.textContent = kernel.phase === "running" ? "等待任務" : kernel.phase;
+  state.textContent = kernel.phase === "running" ? "學習間隔" : kernel.phase;
   state.className = "pill";
   indicator.className = "activity-indicator idle";
 }
@@ -288,8 +289,9 @@ function renderThoughtFeed(tasks, missions, reflections, events, experiences, su
     const evidenceCount = focusTask.result?.evidence?.length || 0;
     items.push(["目標", focusTask.goal]);
     items.push(["動作", `${taskStatusLabel(focusTask.status)} · ${focusTask.action.capability}`]);
-    if (focusTask.action.capability === "academic.research" && output.synthesis) {
-      items.push(["研究", output.synthesis]);
+    if (["academic.research", "web.critical_research"].includes(focusTask.action.capability)) {
+      const researchSummary = output.synthesis || output.conclusion || output.report?.conclusion;
+      if (researchSummary) items.push(["研究", researchSummary]);
     }
     if (focusTask.result) {
       items.push(["證據", `${evidenceCount} 筆工具證據 · ${focusTask.verification?.reason || taskStatusLabel(focusTask.status)}`]);
@@ -610,7 +612,7 @@ async function refresh() {
     $("#heartbeat-time").textContent = formatTime(kernel.last_heartbeat_at, true);
     $("#event-count").textContent = `${formatCount(kernel.event_count)} events`;
 
-    renderActivity(kernel, tasks.items, missions.items, supervisor);
+    renderActivity(kernel, tasks.items, missions.items, supervisor, health.autonomous_learning);
     renderThoughtFeed(tasks.items, missions.items, reflections.items, events.items, experiences.items, supervisor);
     renderSupervisor(supervisor);
     renderHomeSummary(health, experiences.items, skills.items, missions.items, reflections.items, runtime);
@@ -656,7 +658,8 @@ function renderChat() {
   $("#chat-messages").innerHTML = messages.map((item) => {
     const artifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
     const artifactMarkup = artifacts.map((artifact) => {
-      if (artifact.type !== "image" || !String(artifact.url || "").startsWith("/artifacts/")) return "";
+      const artifactUrl = String(artifact.url || "");
+      if (!artifactUrl.startsWith("/artifacts/") && !artifactUrl.startsWith("/video-artifacts/")) return "";
       const metadata = artifact.metadata || {};
       const details = [
         metadata.model,
@@ -666,10 +669,19 @@ function renderChat() {
           : (metadata.elapsed_seconds !== undefined ? `${metadata.elapsed_seconds}s` : ""),
         metadata.peak_vram_mb !== undefined ? `${metadata.peak_vram_mb} MB VRAM` : "",
       ].filter(Boolean).join(" · ");
+      if (artifact.type === "video") {
+        return `
+        <figure class="chat-artifact">
+          <video class="chat-artifact-video" src="${escapeHtml(artifactUrl)}" controls preload="metadata"></video>
+          <figcaption>${escapeHtml(details)}</figcaption>
+        </figure>
+        `;
+      }
+      if (artifact.type !== "image") return "";
       return `
         <figure class="chat-artifact">
-          <a href="${escapeHtml(artifact.url)}" target="_blank" rel="noopener">
-            <img class="chat-artifact-image" src="${escapeHtml(artifact.url)}" alt="ECK 生成圖片" loading="lazy">
+          <a href="${escapeHtml(artifactUrl)}" target="_blank" rel="noopener">
+            <img class="chat-artifact-image" src="${escapeHtml(artifactUrl)}" alt="ECK 生成圖片" loading="lazy">
           </a>
           <figcaption>${escapeHtml(details)}</figcaption>
         </figure>
@@ -678,12 +690,66 @@ function renderChat() {
     return `
     <div class="chat-message ${escapeHtml(item.role)}">
       <span class="chat-role">${item.role === "user" ? "YOU" : "ECK"}</span>
-      <div class="chat-content">${escapeHtml(item.content)}</div>
+      <div class="chat-content">${escapeHtml(item.content)}${item.pending ? " · 生成中" : ""}</div>
       ${artifactMarkup}
     </div>
   `;
   }).join("");
   $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
+}
+
+const watchedTasks = new Set();
+
+function artifactFromTask(task) {
+  const output = task?.result?.output || {};
+  if (!output.artifact_url) return null;
+  return {
+    type: String(output.artifact || "").toLowerCase().endsWith(".mp4") ? "video" : "image",
+    url: output.artifact_url,
+    path: output.artifact_path,
+    name: output.artifact,
+    metadata: output.metadata || {},
+  };
+}
+
+async function watchPendingTask(taskId) {
+  if (!taskId || watchedTasks.has(taskId)) return;
+  watchedTasks.add(taskId);
+  const terminal = new Set(["verified_success", "verified_failure", "unverifiable", "constraint_violation", "blocked"]);
+  try {
+    for (let attempt = 0; attempt < 360; attempt += 1) {
+      const task = await request(`/v1/tasks/${encodeURIComponent(taskId)}`);
+      if (!terminal.has(task.status)) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        continue;
+      }
+      const message = chatHistory.find((item) => item.task_id === taskId);
+      if (!message) return;
+      message.pending = false;
+      if (task.status === "verified_success") {
+        const artifact = artifactFromTask(task);
+        message.content = artifact?.type === "video" ? "本機影片已完成並通過檔案驗證。" : "本機圖片已完成並通過檔案驗證。";
+        message.artifacts = artifact ? [artifact] : [];
+      } else {
+        const output = task?.result?.output || {};
+        message.content = `生成失敗：${output.error || output.detail || task.verification?.reason || task.status}`;
+      }
+      saveChatHistory();
+      renderChat();
+      return;
+    }
+    const message = chatHistory.find((item) => item.task_id === taskId);
+    if (message) {
+      message.pending = false;
+      message.content = "本機生成超過 30 分鐘，請查看任務時間線的錯誤證據。";
+      saveChatHistory();
+      renderChat();
+    }
+  } catch (error) {
+    console.error(error);
+  } finally {
+    watchedTasks.delete(taskId);
+  }
 }
 
 $("#chat-form").addEventListener("submit", async (event) => {
@@ -701,6 +767,8 @@ $("#chat-form").addEventListener("submit", async (event) => {
   button.textContent = "處理中…";
   $("#chat-context").textContent = /(移除|去除).{0,8}(背景|背影)|remove.{0,8}background/i.test(message)
     ? "正在使用本機 rembg 移除背景…"
+    : /(影片|視頻|動畫|短片|video|movie|animation|clip)/i.test(message)
+    ? "正在建立首幀並排入本機 FramePack 影片生成…"
     : /(圖片|圖像|照片|插畫|image|picture|photo)/i.test(message)
     ? "正在規劃模型並執行本機 Forge 圖像生成…"
     : "正在使用本機思考模型…";
@@ -713,9 +781,12 @@ $("#chat-form").addEventListener("submit", async (event) => {
       role: "assistant",
       content: result.answer,
       artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+      task_id: result.task_id || null,
+      pending: Boolean(result.pending),
     });
     saveChatHistory();
     renderChat();
+    if (result.pending && result.task_id) watchPendingTask(result.task_id);
     const tool = result.tool ? `${result.tool} · ` : "";
     $("#chat-context").textContent = `${tool}${result.context.verified_experiences} 經驗 · ${result.context.active_skills} 技能 · ${result.context.research_results} 研究`;
   } catch (error) {
@@ -888,6 +959,7 @@ $$('[data-action]').forEach((button) => {
 
 window.addEventListener("hashchange", showView);
 renderChat();
+chatHistory.filter((item) => item.pending && item.task_id).forEach((item) => watchPendingTask(item.task_id));
 showView();
 refresh();
 window.setInterval(refresh, 5000);

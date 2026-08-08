@@ -9,7 +9,12 @@ import pytest
 import eck.research.content as content_module
 import eck.research.discovery as discovery_module
 from eck.research.content import extract_document
-from eck.research.discovery import GDELTDiscoveryClient
+from eck.research.discovery import (
+    BingNewsRSSDiscoveryClient,
+    DiscoveryCandidate,
+    FallbackDiscoveryClient,
+    GDELTDiscoveryClient,
+)
 
 
 class _Response:
@@ -75,6 +80,41 @@ class _RetryClient(_Client):
         )
 
 
+class _RSSClient(_Client):
+    async def get(self, url: str, params: dict[str, str]) -> _Response:
+        assert url == "https://www.bing.com/news/search"
+        assert params == {"q": "economic evidence", "format": "rss"}
+        response = _Response({})
+        response.content = b"""<?xml version="1.0"?><rss><channel><item>
+            <title>Independent economic report</title>
+            <link>https://news.example/economic-report</link>
+            <pubDate>Sat, 08 Aug 2026 01:00:00 GMT</pubDate>
+        </item></channel></rss>"""
+        return response
+
+
+class _EmptyDiscovery:
+    async def search(
+        self, query: str, *, timespan: str, limit: int
+    ) -> list[DiscoveryCandidate]:
+        del query, timespan, limit
+        return []
+
+
+class _FixedDiscovery:
+    async def search(
+        self, query: str, *, timespan: str, limit: int
+    ) -> list[DiscoveryCandidate]:
+        del query, timespan, limit
+        return [
+            DiscoveryCandidate(
+                url="https://fallback.example/report",
+                title="Fallback report",
+                provider="fallback",
+            )
+        ]
+
+
 @pytest.mark.asyncio
 async def test_gdelt_discovery_normalizes_and_filters_candidates(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
@@ -120,6 +160,24 @@ async def test_gdelt_discovery_retries_rate_limits(monkeypatch) -> None:
 
     assert _RetryClient.calls == 2
     assert candidates[0].url == "https://news.example/recovered"
+
+
+@pytest.mark.asyncio
+async def test_bing_rss_and_fallback_discovery(monkeypatch) -> None:
+    monkeypatch.setattr(httpx, "AsyncClient", _RSSClient)
+    bing = BingNewsRSSDiscoveryClient()
+
+    candidates = await bing.search("economic evidence", timespan="7d", limit=5)
+    fallback = await FallbackDiscoveryClient(
+        _EmptyDiscovery(), _FixedDiscovery()
+    ).search("topic", timespan="7d", limit=5)
+
+    assert candidates[0].provider == "Bing News RSS"
+    assert candidates[0].url == "https://news.example/economic-report"
+    assert fallback[0].provider == "fallback"
+    assert BingNewsRSSDiscoveryClient._query_variants(
+        "business management and organizational effectiveness: current evidence"
+    )[0] == "organizational effectiveness"
 
 
 def test_content_extractor_supports_plain_text_and_trafilatura(monkeypatch) -> None:

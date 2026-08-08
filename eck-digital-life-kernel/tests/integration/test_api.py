@@ -36,7 +36,7 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert client.post("/v1/kernel/pause").json()["phase"] == "paused"
         assert client.post("/v1/kernel/resume").json()["phase"] == "running"
         assert client.post("/v1/kernel/sleep").json()["accepted"]
-        assert len(client.get("/v1/capabilities").json()["items"]) == 14
+        assert len(client.get("/v1/capabilities").json()["items"]) == 15
         image_status = client.get("/v1/image/status")
         assert image_status.status_code == 200
         assert image_status.json()["quality"]["steps"] == 36

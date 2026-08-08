@@ -35,6 +35,14 @@ class DialogueService:
         r"(背景|背影).{0,8}(透明|移除|去除)|remove.{0,20}background|background removal",
         re.IGNORECASE,
     )
+    _video_subject = re.compile(
+        r"(影片|視頻|動畫|短片|動態影像|video|movie|animation|clip)",
+        re.IGNORECASE,
+    )
+    _video_action = re.compile(
+        r"(生成|產生|製作|創作|做|建立|generate|create|make|produce)",
+        re.IGNORECASE,
+    )
     _research_intent = re.compile(
         r"(研究|論文|學術|文獻|引用|來源|doi|citation|paper|research)",
         re.IGNORECASE,
@@ -57,6 +65,8 @@ class DialogueService:
     ) -> dict[str, Any]:
         if self.is_background_removal_request(message):
             return await self._remove_background()
+        if self.is_video_request(message):
+            return await self._generate_video(message)
         if self.is_image_request(message):
             return await self._generate_image(message)
         return await self._general_response(message, history)
@@ -68,6 +78,10 @@ class DialogueService:
     @classmethod
     def is_background_removal_request(cls, message: str) -> bool:
         return bool(cls._background_removal.search(message))
+
+    @classmethod
+    def is_video_request(cls, message: str) -> bool:
+        return bool(cls._video_subject.search(message) and cls._video_action.search(message))
 
     async def _general_response(
         self,
@@ -228,6 +242,23 @@ class DialogueService:
             task = await self.application.tasks.execute(task.task_id)
         else:
             task = await self._wait_for_task(task.task_id)
+        if task.status not in self._terminal_statuses:
+            await self.application.events.publish(
+                "DialogueToolPending",
+                task.task_id,
+                {"tool": "image.generate", "status": task.status.value},
+                correlation_id=task.task_id,
+            )
+            return {
+                "answer": "圖片已交給本機 Forge 生成，完成後會自動顯示，不需要重新送出。",
+                "model": self.application.settings.ollama_model or "local-image-engine",
+                "tool": "image.generate",
+                "task_id": task.task_id,
+                "pending": True,
+                "artifacts": [],
+                "inference": {},
+                "context": self._memory_counts(),
+            }
         if task.status is not TaskStatus.VERIFIED_SUCCESS or task.result is None:
             detail = "圖像任務未通過驗證。"
             if task.result:
@@ -252,7 +283,7 @@ class DialogueService:
             f"透過 {metadata.get('backend', 'local engine')} 生成圖片"
             f"{'，並啟用 ADetailer 修復臉部細節' if metadata.get('adetailer') else ''}，"
             "已通過檔案、尺寸與雜湊驗證"
-            f"{timing}。這次成果不會自動列為學習；你可以給我修改建議或明確表示認可。"
+            f"{timing}。驗證結果已記入經驗；你仍可給我修改建議，作為下一輪明確需求。"
         )
         await self.application.events.publish(
             "DialogueImageGenerated",
@@ -384,15 +415,117 @@ class DialogueService:
             },
         }
 
+    async def _generate_video(self, message: str) -> dict[str, Any]:
+        engine_status = self.application.video_generation.status()
+        if not engine_status["available"]:
+            missing = [name for name, ready in engine_status["checks"].items() if not ready]
+            resources = engine_status.get("resources", {})
+            resource_detail = (
+                str(resources.get("detail", "")) if isinstance(resources, dict) else ""
+            )
+            detail = "缺少：" + ", ".join(missing) if missing else resource_detail
+            raise RuntimeError("本機 FramePack 影片環境尚未就緒；" + detail)
+        seconds = self.application.settings.video_default_seconds
+        create = TaskCreate(
+            goal=f"Generate a verified local video for: {message[:500]}",
+            success_contract=SuccessContract(
+                goal="Produce a readable local MP4 with tool evidence.",
+                checks=(
+                    VerificationCheck(
+                        name="MP4 artifact exists",
+                        path="artifact",
+                        operator=ComparisonOperator.TRUTHY,
+                    ),
+                    VerificationCheck(
+                        name="Video duration is recorded",
+                        path="metrics.seconds",
+                        operator=ComparisonOperator.GTE,
+                        expected=1.0,
+                    ),
+                ),
+                required_evidence=(EvidenceSource.TOOL,),
+                require_reproducible=False,
+                max_cost_units=20000,
+            ),
+            action=ActionProposal(
+                capability="video.generate",
+                operation="generate",
+                payload={"user_request": message, "seconds": seconds},
+                declared_risk=RiskLevel.MEDIUM,
+                reversible=True,
+                estimated_cost_units=600,
+            ),
+            labels=("human-guided", "priority:urgent", "video-generation"),
+        )
+        task = await self.application.tasks.submit(create)
+        await self.application.events.publish(
+            "DialogueToolSelected",
+            task.task_id,
+            {"tool": "video.generate", "request_chars": len(message)},
+            correlation_id=task.task_id,
+        )
+        if self.application.kernel.phase is not KernelPhase.RUNNING:
+            task = await self.application.tasks.execute(task.task_id)
+            if task.status is TaskStatus.VERIFIED_SUCCESS and task.result is not None:
+                output = task.result.output
+                return {
+                    "answer": "本機 FramePack 影片已生成並通過 MP4 檔案驗證。",
+                    "model": "lllyasviel/FramePackI2V_HY",
+                    "tool": "video.generate",
+                    "artifacts": [
+                        {
+                            "type": "video",
+                            "url": output["artifact_url"],
+                            "path": output["artifact_path"],
+                            "name": output["artifact"],
+                            "metadata": output.get("metadata", {}),
+                        }
+                    ],
+                    "inference": {},
+                    "context": self._memory_counts(),
+                }
+        return {
+            "answer": "影片任務已排入本機 FramePack；首幀與影片完成後會自動顯示。",
+            "model": "lllyasviel/FramePackI2V_HY",
+            "tool": "video.generate",
+            "task_id": task.task_id,
+            "pending": True,
+            "artifacts": [],
+            "inference": {},
+            "context": self._memory_counts(),
+        }
+
     async def _wait_for_task(self, task_id: str) -> Any:
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.application.settings.image_generation_timeout_seconds + 45
+        deadline = loop.time() + self.application.settings.dialogue_tool_wait_seconds
         while loop.time() < deadline:
             task = self.application.store.get_task(task_id)
             if task.status in self._terminal_statuses:
                 return task
             await asyncio.sleep(0.25)
-        raise RuntimeError("等待本機圖像任務完成逾時。")
+        return self.application.store.get_task(task_id)
+
+    def _memory_counts(self) -> dict[str, int]:
+        return {
+            "verified_experiences": self.application.store.count_experiences(
+                admitted=True
+            ),
+            "active_skills": len(
+                [
+                    item
+                    for item in self.application.store.list_skills(limit=100)
+                    if item.active
+                ]
+            ),
+            "runtime_skills": len(
+                [
+                    item
+                    for item in self.application.store.list_runtime_skills(limit=100)
+                    if item.status.value == "active"
+                ]
+            ),
+            "research_results": 0,
+        }
 
     def _research_results(self) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []

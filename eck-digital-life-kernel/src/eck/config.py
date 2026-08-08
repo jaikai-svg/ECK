@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     identity: str = "eck-local"
     data_dir: Path = Path("data")
     workspace_dir: Path = Path("workspace")
+    export_dir: Path = Path("workspace/exports")
     database_path: Path | None = None
 
     bind_host: str = "127.0.0.1"
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
     critical_research_gdelt_base_url: str = (
         "https://api.gdeltproject.org/api/v2/doc/doc"
     )
+    critical_research_bing_rss_url: str = "https://www.bing.com/news/search"
     critical_research_timeout_seconds: float = Field(default=30.0, ge=5, le=120)
     critical_research_max_sources: int = Field(default=8, ge=3, le=20)
     critical_research_max_claims: int = Field(default=5, ge=1, le=12)
@@ -69,7 +71,9 @@ class Settings(BaseSettings):
     image_engine_script: Path = Path("scripts/run_image_engine.py")
     image_model_dir: Path = Path("workspace/models/stable-diffusion-v1-5")
     image_output_dir: Path = Path("workspace/generated_images")
+    video_output_dir: Path = Path("workspace/generated_videos")
     image_generation_timeout_seconds: float = Field(default=300.0, ge=30, le=1800)
+    dialogue_tool_wait_seconds: float = Field(default=120.0, ge=5, le=1800)
     image_generation_steps: int = Field(default=36, ge=20, le=50)
     image_generation_guidance_scale: float = Field(default=7.5, ge=1, le=12)
     image_adult_content_enabled: bool = True
@@ -81,12 +85,26 @@ class Settings(BaseSettings):
     forge_checkpoint: str = "realisticVisionV60B1_v60B1VAE.safetensors"
     forge_auto_start: bool = True
     forge_start_script: Path = Path("scripts/start-forge.ps1")
+    forge_stop_script: Path = Path("scripts/stop-forge.ps1")
     forge_startup_timeout_seconds: float = Field(default=900.0, ge=30, le=1800)
     rembg_enabled: bool = True
     rembg_python: Path = Path("workspace/rembg/.venv/Scripts/python.exe")
     rembg_script: Path = Path("scripts/run_rembg.py")
     rembg_model_dir: Path = Path("workspace/rembg/models")
     rembg_model: str = "birefnet-general"
+    video_generation_enabled: bool = True
+    video_engine_python: Path = Path(
+        "workspace/framepack/framepack_cu126_torch26/system/python/python.exe"
+    )
+    video_engine_script: Path = Path("scripts/run_framepack_engine.py")
+    framepack_source_dir: Path = Path("workspace/framepack/source")
+    video_generation_timeout_seconds: float = Field(default=14400.0, ge=300, le=86400)
+    video_default_seconds: float = Field(default=3.0, ge=1, le=10)
+    video_generation_steps: int = Field(default=25, ge=10, le=50)
+    video_teacache_enabled: bool = False
+    video_adult_content_enabled: bool = True
+    video_min_system_ram_gb: float = Field(default=24, ge=8, le=256)
+    video_min_available_ram_gb: float = Field(default=12, ge=2, le=128)
     supervisor_enabled: bool = True
     supervisor_model: str | None = None
     supervisor_initial_delay_seconds: float = Field(default=30.0, ge=1, le=3600)
@@ -97,6 +115,9 @@ class Settings(BaseSettings):
     supervisor_context_window: int = Field(default=4096, ge=1024, le=131072)
     supervisor_num_gpu_layers: int | None = Field(default=12, ge=0, le=256)
     learning_stall_minutes: int = Field(default=30, ge=5, le=1440)
+    autonomous_curriculum_enabled: bool = True
+    autonomous_curriculum_interval_seconds: float = Field(default=300.0, ge=30, le=86400)
+    autonomous_curriculum_max_runs_per_day: int = Field(default=144, ge=1, le=1000)
 
     skill_worker_enabled: bool = True
     skill_worker_image: str = "eck-skill-worker:0.1.0"
@@ -134,16 +155,22 @@ class Settings(BaseSettings):
     @field_validator(
         "data_dir",
         "workspace_dir",
+        "export_dir",
         "image_engine_python",
         "image_engine_script",
         "image_model_dir",
         "image_output_dir",
+        "video_output_dir",
         "image_model_catalog_path",
         "forge_root",
         "forge_start_script",
+        "forge_stop_script",
         "rembg_python",
         "rembg_script",
         "rembg_model_dir",
+        "video_engine_python",
+        "video_engine_script",
+        "framepack_source_dir",
         mode="before",
     )
     @classmethod
@@ -172,11 +199,14 @@ class Settings(BaseSettings):
             raise ValueError("Autonomous learning and challenge percentages must total 100.")
         try:
             self.image_output_dir.resolve().relative_to(self.workspace_dir.resolve())
+            self.video_output_dir.resolve().relative_to(self.workspace_dir.resolve())
+            self.export_dir.resolve().relative_to(self.workspace_dir.resolve())
         except ValueError as exc:
             raise ValueError("Image output must stay inside the ECK workspace.") from exc
         try:
             self.forge_root.resolve().relative_to(self.workspace_dir.resolve())
             self.rembg_model_dir.resolve().relative_to(self.workspace_dir.resolve())
+            self.framepack_source_dir.resolve().relative_to(self.workspace_dir.resolve())
         except ValueError as exc:
             raise ValueError("Local image workers must stay inside the ECK workspace.") from exc
         forge_url = urlparse(self.forge_base_url)
@@ -191,12 +221,17 @@ class Settings(BaseSettings):
             "api.gdeltproject.org"
         ):
             raise ValueError("Critical research discovery must use the free GDELT HTTPS API.")
+        fallback_url = urlparse(self.critical_research_bing_rss_url)
+        if fallback_url.scheme != "https" or fallback_url.hostname != "www.bing.com":
+            raise ValueError("Critical research fallback must use Bing News HTTPS RSS.")
         return self
 
     def prepare_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.image_output_dir.mkdir(parents=True, exist_ok=True)
+        self.video_output_dir.mkdir(parents=True, exist_ok=True)
+        self.export_dir.mkdir(parents=True, exist_ok=True)
         self.rembg_model_dir.mkdir(parents=True, exist_ok=True)
         assert self.database_path is not None
         self.database_path.parent.mkdir(parents=True, exist_ok=True)

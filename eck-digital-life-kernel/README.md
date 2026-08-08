@@ -141,6 +141,11 @@ GET  /v1/research/quality
 This milestone improves ECK's research procedure and evidence memory; it does not train
 the Qwen weights or prove AGI. See `docs/16-current-information-critical-learning.md`.
 
+The deterministic autonomous curriculum now fills idle learning slots without requiring
+an expensive supervisor inference first. Its status is available at
+`GET /v1/learning/autonomous/status`. Learning throughput is bounded and still requires
+external evidence; continuous GPU saturation is not treated as progress.
+
 ## Safety boundary
 
 v0.1 defaults:
@@ -262,6 +267,32 @@ Forge and ADetailer are AGPL-3.0 software; `rembg` is MIT software. Checkpoint t
 separate. The installed ChilloutMix release does not grant commercial use in its Civitai
 metadata, and Realistic Vision requires attribution; review the recorded model source
 before public or commercial distribution.
+
+## Local video generation
+
+The `video.generate` capability uses the official FramePack implementation and model
+weights locally. The selected low-VRAM path supports RTX 30-series GPUs, but a 6 GB RTX
+3060 Laptop remains substantially slower than high-end desktop hardware. ECK serializes
+media workers and stops Forge before FramePack starts to reduce VRAM contention.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-framepack.ps1
+```
+
+The setup keeps the large Hugging Face cache outside the Git worktree and creates a local
+junction for FramePack. No paid API is used. ECK does not implement a jailbreak or a
+safeguard-bypass mode; legal adult-content configuration never permits minors,
+non-consensual content, sexual violence, bestiality, or illegal use.
+
+## Cognitive portability
+
+`POST /v1/portability/bundles` exports a checksum-verified cognitive bundle containing a
+consistent database backup, runtime configuration, dependency locks, generated hot-skill
+source, and model catalog. Large model weights and secrets are excluded by default and
+must be restored from their licensed sources before a clean-machine regression test.
+
+See `docs/17-autonomous-learning-portability-media.md` for the learning validation,
+transfer, and current AGI-gap criteria.
 
 ## Capability evaluation
 

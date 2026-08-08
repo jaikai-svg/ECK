@@ -1,5 +1,15 @@
 """Evidence-grounded current-information research helpers."""
 
-from eck.research.discovery import DiscoveryCandidate, GDELTDiscoveryClient
+from eck.research.discovery import (
+    BingNewsRSSDiscoveryClient,
+    DiscoveryCandidate,
+    FallbackDiscoveryClient,
+    GDELTDiscoveryClient,
+)
 
-__all__ = ["DiscoveryCandidate", "GDELTDiscoveryClient"]
+__all__ = [
+    "BingNewsRSSDiscoveryClient",
+    "DiscoveryCandidate",
+    "FallbackDiscoveryClient",
+    "GDELTDiscoveryClient",
+]

@@ -22,6 +22,7 @@ from eck.capabilities.image_generation import ImageGenerationCapability
 from eck.capabilities.registry import CapabilityRegistry
 from eck.capabilities.runtime_skill import RuntimeSkillCapability
 from eck.capabilities.safe_python import SafePythonExpressionCapability
+from eck.capabilities.video_generation import VideoGenerationCapability
 from eck.config import Settings
 from eck.domain.models import EventRecord
 from eck.events.bus import EventBus
@@ -29,11 +30,17 @@ from eck.kernel.runtime import LifeKernel
 from eck.memory.experience import ExperienceEngine
 from eck.policy.autonomy import AutonomyGate
 from eck.policy.gate import PolicyGate
-from eck.research.discovery import GDELTDiscoveryClient
+from eck.research.discovery import (
+    BingNewsRSSDiscoveryClient,
+    FallbackDiscoveryClient,
+    GDELTDiscoveryClient,
+)
 from eck.runtime.worker import DockerSkillWorker
+from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.challenges import ChallengeService
 from eck.services.evaluations import EvaluationService
 from eck.services.missions import MissionService
+from eck.services.portability import CognitiveBundleService
 from eck.services.skill_forge import SkillForgeService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
@@ -54,13 +61,16 @@ class Application:
     forge: SkillForgeService
     tasks: TaskService
     supervisor: SupervisorService
+    autonomous_learning: AutonomousLearningService
     challenges: ChallengeService
     missions: MissionService
     versions: VersionService
     evaluations: EvaluationService
+    portability: CognitiveBundleService
     autonomy: AutonomyGate
     image_generation: ImageGenerationCapability
     image_background_removal: ImageBackgroundRemovalCapability
+    video_generation: VideoGenerationCapability
     kernel: LifeKernel
 
 
@@ -107,6 +117,8 @@ def build_application(settings: Settings | None = None) -> Application:
     registry.register(image_generation)
     image_background_removal = ImageBackgroundRemovalCapability(settings)
     registry.register(image_background_removal)
+    video_generation = VideoGenerationCapability(settings, image_generation)
+    registry.register(video_generation)
     registry.register(
         AcademicResearchCapability(
             brain,
@@ -121,9 +133,15 @@ def build_application(settings: Settings | None = None) -> Application:
                 brain,
                 store,
                 public_web,
-                GDELTDiscoveryClient(
-                    timeout_seconds=settings.critical_research_timeout_seconds,
-                    base_url=settings.critical_research_gdelt_base_url,
+                FallbackDiscoveryClient(
+                    BingNewsRSSDiscoveryClient(
+                        timeout_seconds=settings.critical_research_timeout_seconds,
+                        base_url=settings.critical_research_bing_rss_url,
+                    ),
+                    GDELTDiscoveryClient(
+                        timeout_seconds=settings.critical_research_timeout_seconds,
+                        base_url=settings.critical_research_gdelt_base_url,
+                    ),
                 ),
             )
         )
@@ -145,6 +163,13 @@ def build_application(settings: Settings | None = None) -> Application:
         registry,
     )
     evaluation_service = EvaluationService(store, events)
+    portability_service = CognitiveBundleService(
+        settings,
+        store,
+        events,
+        registry,
+        versions,
+    )
     autonomy_gate = AutonomyGate()
     supervisor_service = SupervisorService(
         settings,
@@ -155,12 +180,25 @@ def build_application(settings: Settings | None = None) -> Application:
         forge,
         registry,
     )
+    autonomous_learning = AutonomousLearningService(
+        settings,
+        store,
+        events,
+        task_service,
+    )
     async def observe_verified_skill(_: EventRecord) -> None:
         await versions.observe_verified_skills()
 
     events.subscribe("SkillUpdated", observe_verified_skill)
     events.subscribe("TaskVerified", mission_service.handle_task_verified)
-    kernel = LifeKernel(settings, store, events, task_service, supervisor_service)
+    kernel = LifeKernel(
+        settings,
+        store,
+        events,
+        task_service,
+        supervisor_service,
+        autonomous_learning,
+    )
     return Application(
         settings=settings,
         store=store,
@@ -172,12 +210,15 @@ def build_application(settings: Settings | None = None) -> Application:
         forge=forge,
         tasks=task_service,
         supervisor=supervisor_service,
+        autonomous_learning=autonomous_learning,
         challenges=challenge_service,
         missions=mission_service,
         versions=versions,
         evaluations=evaluation_service,
+        portability=portability_service,
         autonomy=autonomy_gate,
         image_generation=image_generation,
         image_background_removal=image_background_removal,
+        video_generation=video_generation,
         kernel=kernel,
     )

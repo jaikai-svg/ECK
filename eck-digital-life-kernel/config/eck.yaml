@@ -4,6 +4,7 @@ environment: development
 identity: eck-local
 data_dir: data
 workspace_dir: workspace
+export_dir: workspace/exports
 
 bind_host: 127.0.0.1
 bind_port: 8420
@@ -31,6 +32,7 @@ academic_research_max_sources: 6
 academic_research_max_cycles: 3
 critical_research_enabled: true
 critical_research_gdelt_base_url: https://api.gdeltproject.org/api/v2/doc/doc
+critical_research_bing_rss_url: https://www.bing.com/news/search
 critical_research_timeout_seconds: 30
 critical_research_max_sources: 8
 critical_research_max_claims: 5
@@ -47,7 +49,9 @@ image_engine_python: workspace/image_engine/.venv/Scripts/python.exe
 image_engine_script: scripts/run_image_engine.py
 image_model_dir: workspace/models/stable-diffusion-v1-5
 image_output_dir: workspace/generated_images
+video_output_dir: workspace/generated_videos
 image_generation_timeout_seconds: 300
+dialogue_tool_wait_seconds: 120
 image_generation_steps: 36
 image_generation_guidance_scale: 7.5
 image_adult_content_enabled: true
@@ -59,12 +63,24 @@ forge_base_url: http://127.0.0.1:7861
 forge_checkpoint: realisticVisionV60B1_v60B1VAE.safetensors
 forge_auto_start: true
 forge_start_script: scripts/start-forge.ps1
+forge_stop_script: scripts/stop-forge.ps1
 forge_startup_timeout_seconds: 900
 rembg_enabled: true
 rembg_python: workspace/rembg/.venv/Scripts/python.exe
 rembg_script: scripts/run_rembg.py
 rembg_model_dir: workspace/rembg/models
 rembg_model: birefnet-general
+video_generation_enabled: true
+video_engine_python: workspace/framepack/framepack_cu126_torch26/system/python/python.exe
+video_engine_script: scripts/run_framepack_engine.py
+framepack_source_dir: workspace/framepack/source
+video_generation_timeout_seconds: 14400
+video_default_seconds: 3
+video_generation_steps: 25
+video_teacache_enabled: false
+video_adult_content_enabled: true
+video_min_system_ram_gb: 24
+video_min_available_ram_gb: 12
 
 supervisor_enabled: true
 supervisor_model:
@@ -76,6 +92,9 @@ supervisor_max_output_tokens: 512
 supervisor_context_window: 4096
 supervisor_num_gpu_layers: 12
 learning_stall_minutes: 30
+autonomous_curriculum_enabled: true
+autonomous_curriculum_interval_seconds: 300
+autonomous_curriculum_max_runs_per_day: 144
 
 skill_worker_enabled: true
 skill_worker_image: eck-skill-worker:0.1.0

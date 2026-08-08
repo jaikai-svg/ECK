@@ -134,6 +134,7 @@ textarea { resize: vertical; }
 .chat-artifact { width: min(100%, 512px); margin: .7rem 0 0; }
 .chat-artifact a { display: block; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: #030912; }
 .chat-artifact-image { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; }
+.chat-artifact-video { display: block; width: 100%; height: auto; max-height: 32rem; background: #000; }
 .chat-artifact figcaption { margin-top: .4rem; color: var(--subtle); font: .55rem/1.55 ui-monospace, monospace; overflow-wrap: anywhere; }
 .chat-form { margin-top: .65rem; }
 .chat-form textarea { min-height: 96px; }

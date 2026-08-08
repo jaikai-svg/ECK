@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -29,6 +30,144 @@ class SourceDiscovery(Protocol):
         timespan: str,
         limit: int,
     ) -> list[DiscoveryCandidate]: ...
+
+
+class FallbackDiscoveryClient:
+    def __init__(self, *providers: SourceDiscovery) -> None:
+        if not providers:
+            raise ValueError("At least one discovery provider is required.")
+        self.providers = providers
+
+    async def search(
+        self,
+        query: str,
+        *,
+        timespan: str,
+        limit: int,
+    ) -> list[DiscoveryCandidate]:
+        last_error: Exception | None = None
+        for provider in self.providers:
+            try:
+                candidates = await provider.search(
+                    query,
+                    timespan=timespan,
+                    limit=limit,
+                )
+            except (
+                httpx.HTTPError,
+                json.JSONDecodeError,
+                ET.ParseError,
+                OSError,
+                RuntimeError,
+                ValueError,
+            ) as exc:
+                last_error = exc
+                continue
+            if candidates:
+                return candidates
+        if last_error is not None:
+            raise last_error
+        return []
+
+
+class BingNewsRSSDiscoveryClient:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 30.0,
+        base_url: str = "https://www.bing.com/news/search",
+    ) -> None:
+        parsed = urlsplit(base_url)
+        if parsed.scheme != "https" or parsed.hostname != "www.bing.com":
+            raise ValueError("Bing News discovery is restricted to the public HTTPS RSS feed.")
+        self.timeout_seconds = timeout_seconds
+        self.base_url = base_url
+        self._request_lock = asyncio.Lock()
+        self._last_request_at = 0.0
+
+    async def search(
+        self,
+        query: str,
+        *,
+        timespan: str,
+        limit: int,
+    ) -> list[DiscoveryCandidate]:
+        del timespan
+        cleaned_query = GDELTDiscoveryClient._clean_query(query)
+        if len(cleaned_query) < 2:
+            return []
+        headers = {"User-Agent": "ECK-Digital-Life-Kernel/0.1 critical-research"}
+        async with self._request_lock:
+            for variant in self._query_variants(cleaned_query):
+                delay = max(0.0, 2.0 - (time.monotonic() - self._last_request_at))
+                if delay:
+                    await asyncio.sleep(delay)
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_seconds,
+                    follow_redirects=False,
+                    headers=headers,
+                ) as client:
+                    response = await client.get(
+                        self.base_url,
+                        params={"q": variant, "format": "rss"},
+                    )
+                self._last_request_at = time.monotonic()
+                response.raise_for_status()
+                candidates = self._parse_response(response.content, limit=limit)
+                if candidates:
+                    return candidates
+        return []
+
+    @staticmethod
+    def _parse_response(content: bytes, *, limit: int) -> list[DiscoveryCandidate]:
+        if len(content) > 2_000_000:
+            raise ValueError("Bing News RSS response exceeded the 2 MB safety limit.")
+        root = ET.fromstring(content)
+        candidates: list[DiscoveryCandidate] = []
+        for item in root.findall(".//item"):
+            url = (item.findtext("link") or "").strip()
+            parsed = urlsplit(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                continue
+            candidates.append(
+                DiscoveryCandidate(
+                    url=url,
+                    title=" ".join((item.findtext("title") or "").split())[:500],
+                    provider="Bing News RSS",
+                    published_at=(item.findtext("pubDate") or "").strip() or None,
+                )
+            )
+        return candidates[: max(1, min(limit, 50))]
+
+    @staticmethod
+    def _query_variants(query: str) -> list[str]:
+        subject = query.split(":", 1)[0]
+        words = re.findall(r"[A-Za-z][A-Za-z-]*", subject)
+        ignored = {
+            "and",
+            "current",
+            "evidence",
+            "credibility",
+            "latest",
+            "recent",
+            "research",
+            "report",
+            "reports",
+            "study",
+            "studies",
+            "the",
+            "in",
+            "on",
+            "under",
+        }
+        meaningful = [word for word in words if word.casefold() not in ignored]
+        variants: list[str] = []
+        if len(meaningful) >= 4:
+            variants.extend((" ".join(meaningful[-2:]), " ".join(meaningful[:2])))
+        elif len(meaningful) >= 2:
+            variants.append(" ".join(meaningful))
+        variants.append(query)
+        return list(dict.fromkeys(variant for variant in variants if len(variant) >= 2))
 
 
 class GDELTDiscoveryClient:

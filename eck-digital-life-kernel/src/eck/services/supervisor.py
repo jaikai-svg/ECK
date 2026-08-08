@@ -186,6 +186,11 @@ class SupervisorService:
         ]
         prior_reviews = self.store.list_supervisor_reviews(limit=10000)
         prior_topics = [item.challenge_topic for item in prior_reviews if item.challenge_topic]
+        prior_research_topics = [
+            str(item.get("topic", ""))
+            for item in self.store.list_research_runs(limit=1000)
+            if str(item.get("topic", "")).strip()
+        ]
         runtime_skills = [
             {
                 "name": item.manifest.name,
@@ -249,6 +254,8 @@ class SupervisorService:
                 "skills": skills,
                 "recent_reflections": reflections,
                 "previous_challenge_topics": prior_topics[:100],
+                "recent_research_topics": prior_research_topics[:100],
+                "registered_capabilities": self.registry.list(),
                 "runtime_skills": runtime_skills,
                 "active_missions": missions,
                 "critical_research_quality": research_quality,
@@ -291,7 +298,10 @@ class SupervisorService:
         except Exception:
             parsed = {}
             model = self.settings.supervisor_model or self.settings.ollama_model or "unavailable"
-        return self._normalize_proposal(parsed, prior_reviews), model
+        return (
+            self._normalize_proposal(parsed, prior_reviews, prior_research_topics),
+            model,
+        )
 
     async def _assign_challenge(self, proposal: dict[str, Any]) -> str | None:
         if not self.settings.supervisor_auto_assign:
@@ -398,16 +408,11 @@ class SupervisorService:
         self,
         parsed: dict[str, Any],
         prior_reviews: list[SupervisorReviewRecord],
+        prior_research_topics: list[str] | None = None,
     ) -> dict[str, Any]:
         used_topics = [item.challenge_topic for item in prior_reviews if item.challenge_topic]
-        fallback_topic = next(
-            (
-                candidate
-                for candidate in self._fallback_topics
-                if not self._topic_is_used(candidate, used_topics)
-            ),
-            "",
-        )
+        used_topics.extend(prior_research_topics or [])
+        fallback_topic = self._next_fallback_topic(used_topics)
         mood = str(parsed.get("mood", "curious")).strip().lower()
         if mood not in self._moods:
             mood = "curious"
@@ -417,8 +422,8 @@ class SupervisorService:
             topic = fallback_topic
         skip_reason = ""
         if not topic:
-            topic = self._clean(str(parsed.get("challenge_topic", "")), 120) or "無可用新課題"
-            skip_reason = "候選主題與既有監督考驗重複，未建立新任務。"
+            sequence = len(used_topics) + 1
+            topic = f"自主學習品質與證據覆蓋改善（第 {sequence} 輪）"
         assessment = self._clean(str(parsed.get("assessment", "")), 800)
         if not assessment:
             assessment = "目前沒有待處理任務，適合用新的可驗證研究考驗補足知識廣度。"
@@ -475,6 +480,27 @@ class SupervisorService:
             item.created_at >= cutoff
             for item in self.store.list_supervisor_reviews(limit=10000)
         )
+
+    @classmethod
+    def _next_fallback_topic(cls, used_topics: list[str]) -> str:
+        for candidate in cls._fallback_topics:
+            if not cls._topic_is_used(candidate, used_topics):
+                return candidate
+        period = utc_now().strftime("%Y-%m")
+        used_keys = {cls._topic_key(item) for item in used_topics}
+        lenses = (
+            "最新證據更新",
+            "反例與失敗模式",
+            "方法比較與可重現性",
+            "跨領域應用與限制",
+            "未解問題與下一步驗證",
+        )
+        for lens in lenses:
+            for domain in cls._fallback_topics:
+                candidate = f"{domain}：{lens}（{period}）"
+                if cls._topic_key(candidate) not in used_keys:
+                    return candidate
+        return ""
 
     @classmethod
     def _topic_is_used(cls, topic: str, prior_topics: list[str]) -> bool:

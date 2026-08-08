@@ -27,6 +27,7 @@
 14. [v0.1.0 Completion Report](14-v0.1.0-completion-report.md)
 15. [v0.2.0 Development Specification](15-v0.2.0-development-specification.md)
 16. [Current Information Critical Learning](16-current-information-critical-learning.md)
+17. [Autonomous Learning, Portability & Local Media](17-autonomous-learning-portability-media.md)
 
 ## v0.2 開發規格下載
 
