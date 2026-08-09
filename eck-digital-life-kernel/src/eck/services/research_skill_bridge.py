@@ -113,6 +113,29 @@ class ResearchSkillBridgeService:
                 runtime_skill=result,
             )
 
+        repairable = next(
+            (
+                item
+                for item in generated
+                if item.status is RuntimeSkillStatus.FAILED
+                and self._repair_attempts(item) < self.settings.skill_forge_max_repair_attempts
+            ),
+            None,
+        )
+        if repairable is not None:
+            repaired = await self.forge.repair_failed_skill(repairable.runtime_skill_id)
+            return await self._record(
+                "skill_repaired_and_activated"
+                if repaired.status is RuntimeSkillStatus.ACTIVE
+                else "skill_repair_not_activated",
+                (
+                    "A failed generated skill was repaired, re-tested, and activated."
+                    if repaired.status is RuntimeSkillStatus.ACTIVE
+                    else "A bounded repair candidate was tested but did not pass activation."
+                ),
+                runtime_skill=repaired.model_dump(mode="json"),
+            )
+
         research = self._qualified_research_runs()
         if len(research) < self.settings.research_skill_bridge_min_research_runs:
             return await self._record(
@@ -259,6 +282,15 @@ class ResearchSkillBridgeService:
         except ValueError:
             return True
         return elapsed >= self.settings.research_skill_bridge_interval_seconds
+
+    def _repair_attempts(self, failed: RuntimeSkillRecord) -> int:
+        versions = [
+            item
+            for item in self.store.list_runtime_skills(limit=10000)
+            if item.source == "eck-generated"
+            and item.manifest.name == failed.manifest.name
+        ]
+        return max(0, len(versions) - 1)
 
     async def _record(self, status: str, message: str, **details: Any) -> dict[str, Any]:
         state = {

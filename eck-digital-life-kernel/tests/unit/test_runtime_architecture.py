@@ -221,6 +221,8 @@ async def test_generated_skill_is_scanned_tested_and_activated(application, monk
 
     assert skill.status is RuntimeSkillStatus.ACTIVE
     assert skill.manifest.generated
+    generated_tests = Path(skill.source_dir, "test_skill.py").read_text(encoding="utf-8")
+    assert generated_tests.startswith("from skill import execute")
     assert status["active"] >= 1
     assert application.forge._next_version([]) == "0.1.0"
     assert application.forge._next_version(["0.1.0"]) == "0.1.1"
@@ -228,6 +230,9 @@ async def test_generated_skill_is_scanned_tested_and_activated(application, monk
         application.forge._security_scan("import socket", ())
     with pytest.raises(ValueError, match="dynamic execution"):
         application.forge._security_scan("eval('1')", ())
+    assert application.forge._ensure_test_import(
+        "from skill import execute\n\ndef test_execute():\n    assert execute\n"
+    ).count("from skill import execute") == 1
 
 
 @pytest.mark.asyncio

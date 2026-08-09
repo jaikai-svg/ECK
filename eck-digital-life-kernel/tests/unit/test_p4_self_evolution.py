@@ -263,6 +263,51 @@ async def test_skill_bridge_activates_evidence_bound_skill(application, monkeypa
     assert result["runtime_skill"]["runtime_skill_id"] == activated.runtime_skill_id
 
 
+@pytest.mark.asyncio
+async def test_skill_bridge_repairs_failed_candidate_with_bounded_attempts(
+    application,
+    monkeypatch,
+) -> None:
+    async def available_worker() -> dict[str, object]:
+        return {"available": True, "detail": "ready"}
+
+    async def image_available() -> bool:
+        return True
+
+    failed = application.store.add_runtime_skill(
+        RuntimeSkillManifest(
+            name="research.failed_repair",
+            version="0.1.0",
+            description="A failed research-derived skill that needs one repair.",
+            category="research",
+            operations=("convert",),
+            generated=True,
+        ),
+        source_dir=str(application.settings.workspace_dir / "failed-repair"),
+        source="eck-generated",
+        status=RuntimeSkillStatus.FAILED,
+    )
+    repaired = application.store.add_runtime_skill(
+        failed.manifest.model_copy(update={"version": "0.1.1"}),
+        source_dir=str(application.settings.workspace_dir / "repaired"),
+        source="eck-generated",
+        status=RuntimeSkillStatus.ACTIVE,
+    )
+
+    async def repair(runtime_skill_id: str):
+        assert runtime_skill_id == failed.runtime_skill_id
+        return repaired
+
+    monkeypatch.setattr(application.worker, "health", available_worker)
+    monkeypatch.setattr(application.worker, "image_available", image_available)
+    monkeypatch.setattr(application.forge, "repair_failed_skill", repair)
+
+    result = await application.skill_bridge.run_if_needed(force=True)
+
+    assert result["status"] == "skill_repaired_and_activated"
+    assert result["runtime_skill"]["runtime_skill_id"] == repaired.runtime_skill_id
+
+
 def test_core_candidate_changes_are_confined_to_isolated_targets(
     application,
     tmp_path: Path,

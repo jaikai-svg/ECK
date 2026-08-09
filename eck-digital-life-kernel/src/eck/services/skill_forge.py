@@ -240,7 +240,9 @@ class SkillForgeService:
         )
         parsed = self._json_object(response.content)
         code = self._clean_code(str(parsed.get("code", "")))
-        tests = self._clean_code(str(parsed.get("tests", "")))
+        tests = self._ensure_test_import(
+            self._clean_code(str(parsed.get("tests", "")))
+        )
         if not code or not tests:
             raise ValueError("The model did not produce executable skill code and tests.")
         self._security_scan(code, request.permissions)
@@ -348,7 +350,9 @@ class SkillForgeService:
         )
         parsed = self._json_object(response.content)
         code = self._clean_code(str(parsed.get("code", "")))
-        tests = self._clean_code(str(parsed.get("tests", "")))
+        tests = self._ensure_test_import(
+            self._clean_code(str(parsed.get("tests", "")))
+        )
         if not code or not tests:
             raise ValueError("The model did not produce repaired skill code and tests.")
         self._security_scan(code, failed.manifest.permissions)
@@ -411,6 +415,19 @@ class SkillForgeService:
     @staticmethod
     def _clean_code(value: str) -> str:
         return re.sub(r"^```(?:python)?\s*|\s*```$", "", value.strip(), flags=re.I) + "\n"
+
+    @staticmethod
+    def _ensure_test_import(tests: str) -> str:
+        tree = ast.parse(tests)
+        imports_execute = any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "skill"
+            and any(alias.name == "execute" for alias in node.names)
+            for node in tree.body
+        )
+        if imports_execute:
+            return tests
+        return f"from skill import execute\n\n{tests}"
 
     @staticmethod
     def _security_scan(code: str, permissions: tuple[str, ...]) -> None:
