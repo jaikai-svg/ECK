@@ -116,16 +116,19 @@ class VideoGenerationCapability(Capability):
             "source": (self.settings.framepack_source_dir / "demo_gradio.py").is_file(),
             **{name: path.is_dir() for name, path in models.items()},
         }
-        memory_ready = (
+        total_memory_ready = (
             total_ram_gb is None
-            or available_ram_gb is None
-            or (
-                total_ram_gb >= self.settings.video_min_system_ram_gb
-                and available_ram_gb >= self.settings.video_min_available_ram_gb
-            )
+            or total_ram_gb >= self.settings.video_min_system_ram_gb
         )
+        ready_now = total_memory_ready and (
+            available_ram_gb is None
+            or available_ram_gb >= self.settings.video_min_available_ram_gb
+        )
+        cleanup_required = total_memory_ready and not ready_now
         installed = all(checks.values())
-        available = self.settings.video_generation_enabled and installed and memory_ready
+        available = (
+            self.settings.video_generation_enabled and installed and total_memory_ready
+        )
         return {
             "installed": installed,
             "available": available,
@@ -136,11 +139,16 @@ class VideoGenerationCapability(Capability):
                 "available_ram_gb": available_ram_gb,
                 "minimum_system_ram_gb": self.settings.video_min_system_ram_gb,
                 "minimum_available_ram_gb": self.settings.video_min_available_ram_gb,
-                "ready": memory_ready,
+                "ready": ready_now,
+                "ready_now": ready_now,
+                "total_memory_ready": total_memory_ready,
+                "cleanup_required": cleanup_required,
+                "recoverable": available and cleanup_required,
                 "detail": (
-                    "FramePack is installed, but this session does not have enough system "
-                    "memory for the verified local profile."
-                    if installed and not memory_ready
+                    "FramePack needs more installed system memory for its verified profile."
+                    if installed and not total_memory_ready
+                    else "FramePack can retry after releasing idle model workers."
+                    if installed and cleanup_required
                     else "Local resource gate passed."
                 ),
             },
@@ -169,19 +177,20 @@ class VideoGenerationCapability(Capability):
             "smoke_test": bool(report.get("verified")),
         }
         installed = all(value for name, value in checks.items() if name != "smoke_test")
-        memory_ready = (
+        total_memory_ready = (
             total_ram_gb is None
-            or available_ram_gb is None
-            or (
-                total_ram_gb >= self.settings.cogvideo_min_system_ram_gb
-                and available_ram_gb >= self.settings.cogvideo_min_available_ram_gb
-            )
+            or total_ram_gb >= self.settings.cogvideo_min_system_ram_gb
         )
+        ready_now = total_memory_ready and (
+            available_ram_gb is None
+            or available_ram_gb >= self.settings.cogvideo_min_available_ram_gb
+        )
+        cleanup_required = total_memory_ready and not ready_now
         available = (
             self.settings.video_generation_enabled
             and installed
             and checks["smoke_test"]
-            and memory_ready
+            and total_memory_ready
         )
         return {
             "installed": installed,
@@ -193,11 +202,16 @@ class VideoGenerationCapability(Capability):
                 "available_ram_gb": available_ram_gb,
                 "minimum_system_ram_gb": self.settings.cogvideo_min_system_ram_gb,
                 "minimum_available_ram_gb": self.settings.cogvideo_min_available_ram_gb,
-                "ready": memory_ready,
+                "ready": ready_now,
+                "ready_now": ready_now,
+                "total_memory_ready": total_memory_ready,
+                "cleanup_required": cleanup_required,
+                "recoverable": available and cleanup_required,
                 "detail": (
-                    "CogVideoX is installed but current free system memory is below "
-                    "the locally verified profile."
-                    if installed and not memory_ready
+                    "CogVideoX needs more installed system memory for its verified profile."
+                    if installed and not total_memory_ready
+                    else "CogVideoX will release idle model workers and recheck free memory."
+                    if installed and cleanup_required
                     else "Local low-memory CogVideoX profile passed."
                 ),
             },
@@ -370,6 +384,7 @@ class VideoGenerationCapability(Capability):
                     self._set_stage("releasing_gpu_workers")
                     await self.image_generation.stop_forge()
                     await self._release_ollama_gpu()
+                    await self._wait_for_available_memory(backend)
                     self._set_stage("generating_video")
                     video_id = new_id("video")
                     output_path = (
@@ -507,6 +522,36 @@ class VideoGenerationCapability(Capability):
                 )
         except httpx.HTTPError:
             return
+
+    async def _wait_for_available_memory(self, backend: str) -> None:
+        minimum_total = (
+            self.settings.cogvideo_min_system_ram_gb
+            if backend == "cogvideox"
+            else self.settings.video_min_system_ram_gb
+        )
+        minimum_available = (
+            self.settings.cogvideo_min_available_ram_gb
+            if backend == "cogvideox"
+            else self.settings.video_min_available_ram_gb
+        )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 30
+        latest_total: float | None = None
+        latest_available: float | None = None
+        while loop.time() < deadline:
+            latest_total, latest_available = self._memory_status_gb()
+            if latest_total is not None and latest_total < minimum_total:
+                raise RuntimeError(
+                    f"{backend} requires at least {minimum_total:g} GB installed system RAM; "
+                    f"this host reports {latest_total:g} GB."
+                )
+            if latest_available is None or latest_available >= minimum_available:
+                return
+            await asyncio.sleep(2)
+        raise RuntimeError(
+            f"{backend} released idle workers but only {latest_available or 0:g} GB system "
+            f"memory is free; at least {minimum_available:g} GB is required before generation."
+        )
 
     @staticmethod
     def _framing_prompt(prompt: str, width: int, height: int) -> str:

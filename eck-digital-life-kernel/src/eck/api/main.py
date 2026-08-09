@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 import zipfile
 from collections.abc import AsyncIterator
@@ -263,6 +264,31 @@ def create_api(
     async def video_generation_status(app: AppDependency) -> dict[str, Any]:
         return app.video_generation.status()
 
+    @api.get("/v1/system/resources")
+    async def system_resources(
+        app: AppDependency,
+        refresh: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        result = await asyncio.to_thread(
+            app.resources.snapshot,
+            include_project=True,
+            force_project=refresh,
+        )
+        result["workloads"] = {
+            "image_generation": app.image_generation.status(),
+            "video_generation": app.video_generation.status(),
+        }
+        result["notes"] = {
+            "project_size": (
+                "可讀檔案的邏輯總量；硬連結、稀疏檔案與無權限路徑可能使實際磁碟占用不同。"
+            ),
+            "disk_active_time": (
+                "此頁顯示容量而非工作管理員的 SSD 活動時間；"
+                "模型載入、CPU offload 與換頁會造成活動時間尖峰。"
+            ),
+        }
+        return result
+
     @api.get("/v1/roadmap")
     async def roadmap(app: AppDependency) -> dict[str, Any]:
         verified_capabilities = [item["name"] for item in app.registry.list()]
@@ -274,12 +300,14 @@ def create_api(
         return {
             "classification": "long_term_target",
             "mission": (
-                "建立一個能長期運行、主動發現未知、取得可靠來源、規劃並驗證行動、"
-                "持續累積可移植知識與技能，最終以高標準數位能力服務使用者並造福人類的自主學習核心。"
+                "建立一個可在本機長期運行、主動發現未知、取得可靠來源、規劃並驗證行動，"
+                "同時理解主機資源邊界、不以耗盡電腦為成長代價，持續累積可移植知識與技能，"
+                "最終以高標準數位能力服務使用者並造福人類的自主學習核心。"
             ),
             "current_truth": (
-                "ECK v0.1 是具生命週期、工具、記憶、驗證與監督架構的實驗性自主代理，"
-                "目前不是已證實的 AGI，也沒有證據顯示已超越人類知識水平。"
+                "ECK v0.1.0 已完成基礎核心與 P0～P2 工程整修，具生命週期、工具、記憶、"
+                "驗證、監督與資源保護架構；Qwen 權重尚未自我訓練，目前不是已證實的 AGI，"
+                "也沒有證據顯示已超越人類知識水平。"
             ),
             "verified_now": {
                 "registered_capabilities": verified_capabilities,
@@ -288,8 +316,41 @@ def create_api(
                 "local_image_stack": app.image_generation.status(),
                 "background_removal": app.image_background_removal.status(),
                 "local_video_stack": app.video_generation.status(),
+                "resource_protection": app.resources.quick_snapshot()["pressure"],
                 "event_chain_valid": app.store.verify_event_chain_incremental()[0],
             },
+            "milestones": [
+                {
+                    "version": "v0.1.0",
+                    "title": "可驗證數位生命核心",
+                    "state": "verified",
+                    "evidence": "生命週期、事件鏈、成功契約、記憶與能力註冊已有自動驗收。",
+                },
+                {
+                    "version": "P0",
+                    "title": "可靠性整修",
+                    "state": "verified",
+                    "evidence": "任務去重、逾時、重試與中斷恢復已納入測試。",
+                },
+                {
+                    "version": "P1",
+                    "title": "指令與媒體可靠性",
+                    "state": "verified",
+                    "evidence": "斜線指令、圖像品質契約與 CogVideoX 本機煙霧測試已通過。",
+                },
+                {
+                    "version": "P2",
+                    "title": "資源感知長期運行",
+                    "state": "verified",
+                    "evidence": "主機資源監控、工作區容量快取、背景節流與模型閒置釋放已接入。",
+                },
+                {
+                    "version": "Next",
+                    "title": "能力增益量化與安全自我改進",
+                    "state": "not_verified",
+                    "evidence": "需以固定基準、真實任務與回歸測試證明能力淨增益。",
+                },
+            ],
             "targets": [
                 {
                     "title": "持續生命週期",
@@ -305,6 +366,11 @@ def create_api(
                     "title": "持續技能成長",
                     "state": "in_progress",
                     "measure": "新技能必須通過隔離測試、證據驗證與回歸檢查後才能啟用。",
+                },
+                {
+                    "title": "資源可觀測與自我節流",
+                    "state": "verified",
+                    "measure": "顯示主機與專案用量；資源臨界時暫緩背景工作，保留緊急人類任務。",
                 },
                 {
                     "title": "複雜任務自治",

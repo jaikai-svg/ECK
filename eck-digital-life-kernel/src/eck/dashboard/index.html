@@ -287,14 +287,37 @@
           <div class="roadmap-list" id="roadmap-targets"></div>
           <p class="roadmap-claim-policy" id="roadmap-claim-policy"></p>
         </article>
+
+        <article class="panel roadmap-panel">
+          <div class="panel-head compact"><div><p class="eyebrow">ENGINEERING DELIVERY</p><h2>版本工程進度</h2></div><span class="count-label" id="roadmap-milestone-count">0 milestones</span></div>
+          <div class="milestone-list" id="roadmap-milestones"></div>
+        </article>
       </section>
 
       <section class="view" data-view="system" hidden>
         <header class="page-intro">
-          <div><p class="eyebrow">SYSTEM & AUDIT</p><p>模型、生命週期、安全邊界與事件稽核集中在這裡，不佔用首頁。</p></div>
+          <div><p class="eyebrow">SYSTEM & AUDIT</p><p>模型、專案容量、主機資源、生命週期與事件稽核集中在這裡。</p></div>
         </header>
 
         <div class="system-grid">
+          <article class="panel resource-panel">
+            <div class="panel-head compact">
+              <div><p class="eyebrow">HOST & PROJECT RESOURCES</p><h2>資源壓力與專案占用</h2></div>
+              <div class="panel-actions"><span class="pill" id="resource-state">讀取中</span><button id="refresh-resources" class="ghost compact-button" type="button">重新掃描</button></div>
+            </div>
+            <p class="subtle-copy" id="resource-pressure-detail">只在進入系統頁時掃描專案，結果會快取，避免監控本身造成磁碟負擔。</p>
+            <div class="resource-metrics">
+              <div><span>ECK 專案邏輯總量</span><b id="project-size">—</b><small id="project-files">—</small></div>
+              <div><span>ECK 核心程序記憶體</span><b id="process-memory">—</b><small>不含 Forge、Ollama 與影片子程序</small></div>
+              <div><span>系統記憶體</span><b id="system-memory">—</b><small id="system-memory-percent">—</small></div>
+              <div><span>Commit / 換頁壓力</span><b id="commit-memory">—</b><small>接近上限時 SSD 容易持續忙碌</small></div>
+              <div><span>專案磁碟容量</span><b id="disk-usage">—</b><small id="disk-free">—</small></div>
+              <div><span>專案掃描</span><b id="project-scan-age">—</b><small>邏輯檔案量不等同實際 size on disk</small></div>
+            </div>
+            <div class="resource-breakdown" id="resource-breakdown"><div class="empty">切換到系統資訊後開始讀取。</div></div>
+            <p class="resource-note" id="resource-note">Windows 工作管理員的 SSD 100% 是活動時間，不是容量用滿；本頁用記憶體與 Commit 壓力協助判斷是否正在換頁。</p>
+          </article>
+
           <article class="panel">
             <div class="panel-head compact"><div><p class="eyebrow">BRAIN</p><h2>本機模型</h2></div><span class="pill" id="brain-state">檢查中</span></div>
             <div class="model-name" id="model-name">—</div>
@@ -350,6 +373,21 @@
               <div><span>付費 API</span><b>無</b></div>
             </div>
           </article>
+
+          <article class="panel video-stack-panel">
+            <div class="panel-head compact"><div><p class="eyebrow">LOCAL VIDEO STACK</p><h2>本機影片能力</h2></div><span class="pill" id="video-stack-state">檢查中</span></div>
+            <div class="model-name" id="video-backend">—</div>
+            <p class="subtle-copy" id="video-resource-detail">讀取模型與記憶體條件。</p>
+            <div class="spec-list">
+              <div><span>模型</span><b id="video-model">—</b></div>
+              <div><span>系統 RAM</span><b id="video-total-ram">—</b></div>
+              <div><span>目前可用 RAM</span><b id="video-available-ram">—</b></div>
+              <div><span>啟動前最低可用</span><b id="video-min-ram">—</b></div>
+              <div><span>低記憶體設定</span><b id="video-profile">—</b></div>
+              <div><span>目前動作</span><b id="video-activity">—</b></div>
+              <div><span>實機驗證</span><b id="video-verification">—</b></div>
+            </div>
+          </article>
         </div>
 
         <article class="panel events-panel">
@@ -363,6 +401,6 @@
   </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=19"></script>
+  <script src="/static/app.js?v=20"></script>
 </body>
 </html>

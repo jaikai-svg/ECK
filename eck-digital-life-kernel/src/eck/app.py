@@ -36,6 +36,7 @@ from eck.research.discovery import (
     FallbackDiscoveryClient,
     GDELTDiscoveryClient,
 )
+from eck.runtime.resources import SystemResourceMonitor
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.challenges import ChallengeService
@@ -78,6 +79,7 @@ class Application:
     image_generation: ImageGenerationCapability
     image_background_removal: ImageBackgroundRemovalCapability
     video_generation: VideoGenerationCapability
+    resources: SystemResourceMonitor
     kernel: LifeKernel
 
 
@@ -88,6 +90,7 @@ def build_application(settings: Settings | None = None) -> Application:
     store = SQLiteStore(settings.database_path)
     store.initialize()
     events = EventBus(store)
+    resources = SystemResourceMonitor(settings)
 
     if settings.brain_provider == "mock":
         brain: BrainProvider = MockBrainProvider()
@@ -226,6 +229,7 @@ def build_application(settings: Settings | None = None) -> Application:
         task_service,
         supervisor_service,
         autonomous_learning,
+        resources,
     )
     return Application(
         settings=settings,
@@ -251,5 +255,6 @@ def build_application(settings: Settings | None = None) -> Application:
         image_generation=image_generation,
         image_background_removal=image_background_removal,
         video_generation=video_generation,
+        resources=resources,
         kernel=kernel,
     )

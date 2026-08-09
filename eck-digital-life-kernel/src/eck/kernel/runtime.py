@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from datetime import datetime
+from typing import Any
 
 from eck.config import Settings
 from eck.domain.enums import KernelPhase, TaskStatus
 from eck.domain.models import KernelStatus, SupervisorReviewRecord, TaskRecord
 from eck.events.bus import EventBus
+from eck.runtime.resources import SystemResourceMonitor
 from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
@@ -23,6 +25,7 @@ class LifeKernel:
         tasks: TaskService,
         supervisor: SupervisorService,
         autonomous_learning: AutonomousLearningService,
+        resources: SystemResourceMonitor,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -30,6 +33,7 @@ class LifeKernel:
         self.tasks = tasks
         self.supervisor = supervisor
         self.autonomous_learning = autonomous_learning
+        self.resources = resources
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
         self._execution_task: asyncio.Task[TaskRecord] | None = None
@@ -42,6 +46,7 @@ class LifeKernel:
         self._started_at: datetime | None = None
         self._last_heartbeat_at: datetime | None = None
         self._schedule_cursor = 0
+        self._last_resource_pressure_event = 0.0
 
     async def start(self) -> None:
         if self.phase not in {KernelPhase.STOPPED, KernelPhase.FAULTED}:
@@ -219,12 +224,22 @@ class LifeKernel:
                             self._schedule_cursor >= self.settings.autonomous_learning_percent
                         )
                         queued = self.tasks.next_queued(prefer_challenge=prefer_challenge)
-                        if queued:
+                        resource_allowed, pressure = self.resources.background_allowed()
+                        foreground_task = bool(
+                            queued
+                            and (
+                                "priority:urgent" in queued.labels
+                                or "human-guided" in queued.labels
+                            )
+                        )
+                        if queued and (resource_allowed or foreground_task):
                             self._schedule_cursor = (self._schedule_cursor + 1) % 100
                             self._execution_task = asyncio.create_task(
                                 self._execute_bounded(queued),
                                 name=f"eck-task-{queued.task_id}",
                             )
+                        elif not resource_allowed:
+                            await self._resource_pressure_throttled(pressure)
                         elif self.settings.supervisor_enabled and loop.time() >= next_supervision:
                             self._supervision_task = asyncio.create_task(
                                 self.supervisor.review_if_idle(),
@@ -260,6 +275,20 @@ class LifeKernel:
                 self.settings.identity,
                 {"type": type(exc).__name__, "detail": str(exc)},
             )
+
+    async def _resource_pressure_throttled(self, pressure: dict[str, Any]) -> None:
+        now = asyncio.get_running_loop().time()
+        if (
+            now - self._last_resource_pressure_event
+            < self.settings.resource_pressure_event_seconds
+        ):
+            return
+        self._last_resource_pressure_event = now
+        await self.events.publish(
+            "ResourcePressureThrottled",
+            self.settings.identity,
+            pressure,
+        )
 
     async def _execute_bounded(self, task: TaskRecord) -> TaskRecord:
         timeout = self.tasks.execution_timeout(task)

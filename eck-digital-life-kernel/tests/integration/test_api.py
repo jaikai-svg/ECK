@@ -76,6 +76,24 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert roadmap.status_code == 200
         assert roadmap.json()["classification"] == "long_term_target"
         assert "不是已證實的 AGI" in roadmap.json()["current_truth"]
+        assert any(
+            item["version"] == "P2" and item["state"] == "verified"
+            for item in roadmap.json()["milestones"]
+        )
+
+        resources = client.get("/v1/system/resources")
+        assert resources.status_code == 200
+        assert resources.json()["project"]["measurement"] == (
+            "logical_readable_file_size"
+        )
+        assert resources.json()["host"]["memory"]["total_bytes"] >= 0
+        assert resources.json()["pressure"]["level"] in {
+            "normal",
+            "moderate",
+            "high",
+            "critical",
+        }
+        assert "video_generation" in resources.json()["workloads"]
 
         code = client.post("/v1/demos/safe-code")
         assert code.status_code == 200

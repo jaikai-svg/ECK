@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     forge_start_script: Path = Path("scripts/start-forge.ps1")
     forge_stop_script: Path = Path("scripts/stop-forge.ps1")
     forge_startup_timeout_seconds: float = Field(default=900.0, ge=30, le=1800)
+    forge_idle_shutdown_seconds: float = Field(default=180.0, ge=0, le=86400)
     rembg_enabled: bool = True
     rembg_python: Path = Path("workspace/rembg/.venv/Scripts/python.exe")
     rembg_script: Path = Path("scripts/run_rembg.py")
@@ -147,6 +148,12 @@ class Settings(BaseSettings):
     task_retry_backoff_max_seconds: float = Field(default=900, ge=1, le=86400)
     brain_health_cache_seconds: float = Field(default=15, ge=1, le=300)
     max_events_page_size: int = Field(default=500, ge=10, le=5000)
+    resource_monitor_enabled: bool = True
+    resource_sample_seconds: float = Field(default=5.0, ge=1, le=300)
+    resource_project_scan_seconds: float = Field(default=1800.0, ge=60, le=86400)
+    resource_background_min_available_ram_gb: float = Field(default=2.0, ge=0.5, le=64)
+    resource_background_min_disk_free_gb: float = Field(default=10.0, ge=1, le=1024)
+    resource_pressure_event_seconds: float = Field(default=300.0, ge=30, le=86400)
 
     @classmethod
     def settings_customise_sources(

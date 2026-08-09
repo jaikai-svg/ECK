@@ -19,6 +19,8 @@ Learning Efficiency =
 
 能力增益必須由未見過的評測或保留集證明。
 
+長期使命同時包含主機責任：ECK必須能在本機長期運行、理解資源邊界、保留人類前景任務，且不得把耗盡RAM、SSD或造成持續換頁誤認為高效學習。
+
 ## 2. 已完成M0–M1
 
 ### M0 Architecture Freeze
@@ -39,6 +41,14 @@ Learning Efficiency =
 -CLI/API/Dashboard；
 -三項驗收；
 -Docker與CI。
+
+### v0.1.0工程整修P0–P2
+
+- **P0可靠性：** 任務去重、逾時、重試、中斷恢復與錯誤證據；
+- **P1媒體可靠性：** 斜線指令、圖像品質契約、影片提示保真與CogVideoX實機煙霧測試；
+- **P2資源感知：** 主機記憶體、Commit、磁碟容量、專案邏輯大小、背景節流與大型模型閒置釋放。
+
+這些是工程能力，不是AGI證明。Qwen權重本身仍未透過ECK自動訓練。
 
 ## 3. M2 — Contract-Guided Brain
 

@@ -5,6 +5,8 @@ let kernelStartedAt = null;
 let skillTreeLastLoaded = 0;
 let skillTreeRevision = "";
 let refreshInFlight = false;
+let systemResourcesInFlight = false;
+let systemResourcesLastLoaded = 0;
 let slashCommands = [];
 let slashMatches = [];
 let slashSelection = 0;
@@ -46,6 +48,19 @@ function formatTime(value, includeDate = false) {
 
 function formatCount(value) {
   return new Intl.NumberFormat("zh-TW").format(Number(value || 0));
+}
+
+function formatBytes(value, digits = 1) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size.toFixed(unit >= 3 ? digits : 0)} ${units[unit]}`;
 }
 
 function formatDuration(value) {
@@ -155,6 +170,7 @@ function eventLabel(value) {
     RuntimeSkillTested: "技能測試已完成",
     RuntimeSkillActivated: "技能已熱啟用",
     RuntimeVersionChanged: "核心版本已更新",
+    ResourcePressureThrottled: "資源保護已暫緩背景工作",
     LearningThemeCreated: "長期學習主題已建立",
     LearningThemeUpdated: "長期學習主題已更新",
     LearningThemeDeleted: "長期學習主題已移除",
@@ -199,6 +215,7 @@ function showView() {
   });
   $("#page-title").textContent = pageTitles[viewName];
   if (viewName === "skill-tree") loadSkillTree();
+  if (viewName === "system") loadSystemResources();
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 
@@ -552,6 +569,7 @@ function renderRoadmap(data) {
   const verified = data.verified_now || {};
   const capabilities = verified.registered_capabilities || [];
   const targets = data.targets || [];
+  const milestones = data.milestones || [];
   const stateLabels = {
     in_progress: "建設中",
     not_verified: "尚未驗證",
@@ -572,6 +590,14 @@ function renderRoadmap(data) {
     </article>
   `).join("");
   $("#roadmap-claim-policy").textContent = data.claim_policy || "";
+  $("#roadmap-milestone-count").textContent = `${formatCount(milestones.length)} milestones`;
+  $("#roadmap-milestones").innerHTML = milestones.map((item) => `
+    <article class="milestone-item ${escapeHtml(item.state || "not_verified")}">
+      <span>${escapeHtml(item.version || "—")}</span>
+      <div><b>${escapeHtml(item.title)}</b><p>${escapeHtml(item.evidence)}</p></div>
+      <i>${escapeHtml(stateLabels[item.state] || item.state)}</i>
+    </article>
+  `).join("") || '<div class="empty">尚無工程里程碑。</div>';
 }
 
 function renderImageStack(health) {
@@ -589,6 +615,94 @@ function renderImageStack(health) {
   $("#image-content-mode").textContent = generation.content_policy?.legal_adult_content
     ? "合法成人內容已開啟"
     : "已限制";
+}
+
+function renderVideoStack(health) {
+  const generation = health.video_generation || {};
+  const resources = generation.resources || {};
+  const verification = generation.verification || {};
+  const activity = generation.activity || {};
+  const readyNow = resources.ready_now ?? resources.ready;
+  const state = generation.available
+    ? readyNow ? "READY" : "釋放資源後可執行"
+    : generation.installed ? "硬體條件不足" : "NOT READY";
+  $("#video-stack-state").textContent = state;
+  $("#video-stack-state").className = generation.available
+    ? readyNow ? "pill success" : "pill warning"
+    : "pill danger";
+  $("#video-backend").textContent = String(generation.backend || "local").toUpperCase();
+  $("#video-model").textContent = generation.model || "未安裝";
+  $("#video-resource-detail").textContent = resources.detail || "尚無資源判定。";
+  $("#video-total-ram").textContent = resources.system_ram_gb == null
+    ? "未知" : `${resources.system_ram_gb} GB`;
+  $("#video-available-ram").textContent = resources.available_ram_gb == null
+    ? "未知" : `${resources.available_ram_gb} GB`;
+  $("#video-min-ram").textContent = resources.minimum_available_ram_gb == null
+    ? "—" : `${resources.minimum_available_ram_gb} GB`;
+  $("#video-profile").textContent = generation.quality?.offload === "sequential_cpu"
+    ? "FP16 · 循序 CPU offload" : generation.quality?.teacache ? "TeaCache" : "標準";
+  $("#video-activity").textContent = activity.busy ? activity.stage : "閒置";
+  $("#video-verification").textContent = verification.verified
+    ? `已通過 · ${verification.seconds || 1} 秒煙霧測試`
+    : "尚未通過實機煙霧測試";
+}
+
+function renderSystemResources(data) {
+  const project = data.project || {};
+  const memory = data.host?.memory || {};
+  const disk = data.host?.disk || {};
+  const process = data.process || {};
+  const pressure = data.pressure || {};
+  const levelLabels = {
+    normal: "NORMAL",
+    moderate: "偏高",
+    high: "HIGH",
+    critical: "CRITICAL",
+  };
+  $("#resource-state").textContent = levelLabels[pressure.level] || "未知";
+  $("#resource-state").className = pressure.level === "critical"
+    ? "pill danger"
+    : ["high", "moderate"].includes(pressure.level) ? "pill warning" : "pill success";
+  $("#resource-pressure-detail").textContent = pressure.detail || "尚無資源壓力資料。";
+  $("#project-size").textContent = formatBytes(project.logical_bytes, 2);
+  $("#project-files").textContent = `${formatCount(project.file_count)} 檔案 · ${formatCount(project.scan_errors)} 個無法讀取路徑`;
+  $("#process-memory").textContent = formatBytes(process.working_set_bytes);
+  $("#system-memory").textContent = `${formatBytes(memory.used_bytes)} / ${formatBytes(memory.total_bytes)}`;
+  $("#system-memory-percent").textContent = `${Number(memory.used_percent || 0).toFixed(1)}% 使用中 · 可用 ${formatBytes(memory.available_bytes)}`;
+  $("#commit-memory").textContent = memory.commit_used_bytes == null
+    ? "—" : `${formatBytes(memory.commit_used_bytes)} / ${formatBytes(memory.commit_limit_bytes)}`;
+  $("#disk-usage").textContent = `${formatBytes(disk.used_bytes)} / ${formatBytes(disk.total_bytes)}`;
+  $("#disk-free").textContent = `${Number(disk.used_percent || 0).toFixed(1)}% 容量 · 尚餘 ${formatBytes(disk.free_bytes)}`;
+  $("#project-scan-age").textContent = project.scanned_at
+    ? `${formatTime(project.scanned_at, true)} · ${project.cached ? "快取" : "新掃描"}` : "尚未掃描";
+  const breakdown = project.workspace_breakdown || project.breakdown || [];
+  $("#resource-breakdown").innerHTML = breakdown.slice(0, 10).map((item) => `
+    <div class="resource-breakdown-item">
+      <span>${escapeHtml(item.name)}</span>
+      <b>${formatBytes(item.logical_bytes, 2)}</b>
+      <small>${formatCount(item.file_count)} files</small>
+    </div>
+  `).join("") || '<div class="empty">沒有可讀取的專案檔案。</div>';
+  $("#resource-note").textContent = `${data.notes?.project_size || ""} ${data.notes?.disk_active_time || ""}`.trim();
+}
+
+async function loadSystemResources(force = false) {
+  if (systemResourcesInFlight) return;
+  if (!force && Date.now() - systemResourcesLastLoaded < 15000) return;
+  systemResourcesInFlight = true;
+  const button = $("#refresh-resources");
+  if (button) button.disabled = true;
+  try {
+    const data = await request(`/v1/system/resources${force ? "?refresh=true" : ""}`);
+    renderSystemResources(data);
+    renderVideoStack({ video_generation: data.workloads?.video_generation || {} });
+    systemResourcesLastLoaded = Date.now();
+  } catch (error) {
+    $("#resource-pressure-detail").textContent = `資源資料讀取失敗：${error.message}`;
+  } finally {
+    systemResourcesInFlight = false;
+    if (button) button.disabled = false;
+  }
 }
 
 function renderEvents(items) {
@@ -780,6 +894,7 @@ async function refresh() {
     renderBenchmarks(evaluations);
     renderRoadmap(roadmap);
     renderImageStack(health);
+    renderVideoStack(health);
     renderEvents(events.items);
     updateSafety(health);
     $("#capability-tags").innerHTML = capabilities.items.map((item) =>
@@ -797,6 +912,9 @@ async function refresh() {
         runtimeSkills.failed,
       ].join(":");
       loadSkillTree(false, revision);
+    }
+    if ((window.location.hash || "#home") === "#system") {
+      loadSystemResources();
     }
   } catch (error) {
     setConnection(false);
@@ -1281,6 +1399,8 @@ $("#skill-tree-search").addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+$("#refresh-resources").addEventListener("click", () => loadSystemResources(true));
 
 $$('[data-action]').forEach((button) => {
   button.addEventListener("click", async () => {

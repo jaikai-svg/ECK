@@ -30,6 +30,12 @@ task_retry_backoff_seconds: 15
 task_retry_backoff_max_seconds: 900
 brain_health_cache_seconds: 15
 max_events_page_size: 500
+resource_monitor_enabled: true
+resource_sample_seconds: 5
+resource_project_scan_seconds: 1800
+resource_background_min_available_ram_gb: 2
+resource_background_min_disk_free_gb: 10
+resource_pressure_event_seconds: 300
 
 academic_research_timeout_seconds: 30
 academic_research_max_sources: 6
@@ -69,6 +75,7 @@ forge_auto_start: true
 forge_start_script: scripts/start-forge.ps1
 forge_stop_script: scripts/stop-forge.ps1
 forge_startup_timeout_seconds: 900
+forge_idle_shutdown_seconds: 180
 rembg_enabled: true
 rembg_python: workspace/rembg/.venv/Scripts/python.exe
 rembg_script: scripts/run_rembg.py

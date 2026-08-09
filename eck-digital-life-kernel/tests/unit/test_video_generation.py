@@ -45,6 +45,9 @@ async def test_video_generation_verifies_local_mp4_artifact(
     async def stop_forge() -> None:
         return None
 
+    async def wait_for_memory(_backend) -> None:
+        return None
+
     async def run_worker(request, output_path):
         output_path.write_bytes(b"verified-mp4-artifact")
         return {
@@ -58,6 +61,7 @@ async def test_video_generation_verifies_local_mp4_artifact(
         }
 
     monkeypatch.setattr(capability.image_generation, "stop_forge", stop_forge)
+    monkeypatch.setattr(capability, "_wait_for_available_memory", wait_for_memory)
     monkeypatch.setattr(capability, "_run_worker", run_worker)
 
     result = await capability.execute(
@@ -134,6 +138,9 @@ async def test_cogvideo_translates_user_request_and_preserves_subject(
     async def release_ollama() -> None:
         return None
 
+    async def wait_for_memory(_backend) -> None:
+        return None
+
     async def run_worker(request, output_path):
         captured.update(request)
         output_path.write_bytes(b"verified-cogvideo")
@@ -150,6 +157,7 @@ async def test_cogvideo_translates_user_request_and_preserves_subject(
     monkeypatch.setattr(capability, "_plan_user_request", plan)
     monkeypatch.setattr(capability.image_generation, "stop_forge", stop_forge)
     monkeypatch.setattr(capability, "_release_ollama_gpu", release_ollama)
+    monkeypatch.setattr(capability, "_wait_for_available_memory", wait_for_memory)
     monkeypatch.setattr(capability, "_run_worker", run_worker)
 
     result = await capability.execute(
@@ -170,6 +178,37 @@ async def test_cogvideo_translates_user_request_and_preserves_subject(
     assert captured["height"] == 480
     assert "safe margins" in captured["prompt"]
     assert result.output["metadata"]["user_request"] == "生成美女在公園散步的影片"
+
+
+def test_cogvideo_low_free_memory_is_recoverable_after_worker_cleanup(
+    application,
+) -> None:
+    settings = application.settings
+    settings.cogvideo_python.parent.mkdir(parents=True)
+    settings.cogvideo_python.write_bytes(b"python")
+    settings.cogvideo_script.parent.mkdir(parents=True, exist_ok=True)
+    settings.cogvideo_script.write_text("worker", encoding="utf-8")
+    for relative in (
+        "model_index.json",
+        "text_encoder/config.json",
+        "transformer/config.json",
+        "vae/config.json",
+    ):
+        path = settings.cogvideo_model_dir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    settings.cogvideo_smoke_report.parent.mkdir(parents=True, exist_ok=True)
+    settings.cogvideo_smoke_report.write_text(
+        '{"model":"zai-org/CogVideoX-2b","verified":true}',
+        encoding="utf-8",
+    )
+
+    status = application.video_generation._cogvideo_status(16.0, 1.0)
+
+    assert status["available"] is True
+    assert status["resources"]["ready_now"] is False
+    assert status["resources"]["cleanup_required"] is True
+    assert status["resources"]["recoverable"] is True
 
 
 def test_cogvideo_portrait_prompt_protects_center_crop() -> None:

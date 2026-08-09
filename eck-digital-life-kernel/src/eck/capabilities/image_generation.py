@@ -7,6 +7,7 @@ import json
 import os
 import re
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -62,6 +63,7 @@ class ImageGenerationCapability(Capability):
         self._forge_api_ready = False
         self._forge_runtime_checked_at = 0.0
         self._forge_runtime_cached = (False, settings.forge_checkpoint)
+        self._forge_idle_task: asyncio.Task[None] | None = None
         self._activity_stage = "idle"
         self._activity_started_at: str | None = None
 
@@ -772,6 +774,7 @@ class ImageGenerationCapability(Capability):
     async def _run_forge(
         self, request: dict[str, Any], output_path: Path
     ) -> dict[str, Any]:
+        self._cancel_forge_idle_shutdown()
         try:
             await asyncio.wait_for(self._forge_lock.acquire(), timeout=10)
         except TimeoutError as exc:
@@ -813,6 +816,7 @@ class ImageGenerationCapability(Capability):
                 data = response.json()
         finally:
             self._forge_lock.release()
+            self._schedule_forge_idle_shutdown()
         images = data.get("images", [])
         if not images:
             raise RuntimeError("Forge returned no generated image.")
@@ -1047,10 +1051,17 @@ class ImageGenerationCapability(Capability):
         return report
 
     async def close(self) -> None:
+        self._cancel_forge_idle_shutdown()
         async with self._engine_lock:
             await self._stop_engine_process(graceful=True)
+        with suppress(OSError, RuntimeError, TimeoutError):
+            await self.stop_forge()
 
     async def stop_forge(self) -> None:
+        idle_task = self._forge_idle_task
+        if idle_task and idle_task is not asyncio.current_task():
+            idle_task.cancel()
+            self._forge_idle_task = None
         if self.settings.image_backend != "forge" or not await self._forge_health():
             return
         process = await asyncio.create_subprocess_exec(
@@ -1072,6 +1083,33 @@ class ImageGenerationCapability(Capability):
         self._forge_api_ready = False
         self._forge_runtime_checked_at = time.monotonic()
         self._forge_runtime_cached = (False, self.settings.forge_checkpoint)
+
+    def _cancel_forge_idle_shutdown(self) -> None:
+        task = self._forge_idle_task
+        if task and not task.done():
+            task.cancel()
+        self._forge_idle_task = None
+
+    def _schedule_forge_idle_shutdown(self) -> None:
+        self._cancel_forge_idle_shutdown()
+        if self.settings.forge_idle_shutdown_seconds <= 0:
+            return
+        self._forge_idle_task = asyncio.create_task(
+            self._stop_forge_after_idle(),
+            name="eck-forge-idle-shutdown",
+        )
+
+    async def _stop_forge_after_idle(self) -> None:
+        try:
+            await asyncio.sleep(self.settings.forge_idle_shutdown_seconds)
+            await self.stop_forge()
+        except asyncio.CancelledError:
+            raise
+        except (OSError, RuntimeError, TimeoutError):
+            return
+        finally:
+            if self._forge_idle_task is asyncio.current_task():
+                self._forge_idle_task = None
 
     def _set_activity(self, stage: str) -> None:
         if stage != self._activity_stage:

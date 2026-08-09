@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,13 @@ from eck.brain.mock import MockBrainProvider
 from eck.capabilities.image_background import ImageBackgroundRemovalCapability
 from eck.capabilities.image_generation import ImageGenerationCapability
 from eck.domain.models import ActionProposal
+
+
+class FakeForgeStopProcess:
+    returncode = 0
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return b"stopped", b""
 
 
 class ImagePlanningBrain(BrainProvider):
@@ -449,3 +457,55 @@ async def test_background_worker_protocol_latest_selection_and_failures(
         )
     )
     assert failed.output["error"] == "rembg failed"
+
+
+@pytest.mark.asyncio
+async def test_stop_forge_cancels_idle_reaper_and_resets_runtime(
+    application, monkeypatch
+) -> None:
+    capability = application.image_generation
+    capability.settings.image_backend = "forge"
+    capability._forge_api_ready = True
+    capability._forge_runtime_cached = (True, "loaded-checkpoint")
+    idle_task = asyncio.create_task(asyncio.sleep(60))
+    capability._forge_idle_task = idle_task
+
+    async def forge_health() -> bool:
+        return True
+
+    async def create_process(*_args, **_kwargs):
+        return FakeForgeStopProcess()
+
+    monkeypatch.setattr(capability, "_forge_health", forge_health)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+
+    await capability.stop_forge()
+    await asyncio.sleep(0)
+
+    assert idle_task.cancelled()
+    assert capability._forge_idle_task is None
+    assert capability._forge_api_ready is False
+    assert capability._forge_runtime_cached[0] is False
+
+
+@pytest.mark.asyncio
+async def test_forge_idle_reaper_runs_after_configured_delay(
+    application, monkeypatch
+) -> None:
+    capability = application.image_generation
+    capability.settings.forge_idle_shutdown_seconds = 0.01
+    stopped = asyncio.Event()
+
+    async def stop_forge() -> None:
+        stopped.set()
+
+    monkeypatch.setattr(capability, "stop_forge", stop_forge)
+    capability._schedule_forge_idle_shutdown()
+
+    await asyncio.wait_for(stopped.wait(), timeout=1)
+    await asyncio.sleep(0)
+    assert capability._forge_idle_task is None
+
+    capability.settings.forge_idle_shutdown_seconds = 0
+    capability._schedule_forge_idle_shutdown()
+    assert capability._forge_idle_task is None
