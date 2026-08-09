@@ -59,18 +59,41 @@ class DockerSkillWorker:
         return value
 
     async def image_available(self) -> bool:
+        return bool((await self.image_status())["available"])
+
+    async def image_status(self) -> dict[str, Any]:
         executable = shutil.which("docker")
         if executable is None:
-            return False
-        process = await asyncio.create_subprocess_exec(
-            executable,
-            "image",
-            "inspect",
-            self.settings.skill_worker_image,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        return await process.wait() == 0
+            return {
+                "available": False,
+                "image": self.settings.skill_worker_image,
+                "detail": "Docker CLI is not installed or not present on PATH.",
+            }
+        try:
+            process = await asyncio.create_subprocess_exec(
+                executable,
+                "image",
+                "inspect",
+                self.settings.skill_worker_image,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        except (OSError, TimeoutError) as exc:
+            return {
+                "available": False,
+                "image": self.settings.skill_worker_image,
+                "executable": executable,
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
+        detail = (stderr or stdout).decode("utf-8", errors="replace").strip()
+        return {
+            "available": process.returncode == 0,
+            "image": self.settings.skill_worker_image,
+            "executable": executable,
+            "returncode": process.returncode,
+            "detail": detail[-2000:],
+        }
 
     async def build_image(self, project_root: Path) -> dict[str, Any]:
         executable = shutil.which("docker")

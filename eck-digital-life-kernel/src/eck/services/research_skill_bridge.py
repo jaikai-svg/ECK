@@ -62,6 +62,7 @@ class ResearchSkillBridgeService:
         ]
         state = self._read_state()
         worker = await self.forge.worker.health()
+        worker_image = await self.forge.worker.image_status()
         return {
             "enabled": self.settings.research_skill_bridge_enabled,
             "state": state,
@@ -71,6 +72,7 @@ class ResearchSkillBridgeService:
             "active_generated_skills": len(active),
             "pending_generated_skills": len(pending),
             "worker": worker,
+            "worker_image": worker_image,
             "conversion_verified": bool(active),
             "claim_policy": (
                 "Research is not executable learning. Conversion is counted only after an "

@@ -368,3 +368,29 @@ async def test_worker_reports_disabled_missing_image_and_unsupported_operation(
     report = await application.worker.validate(skill)
 
     assert report["worker_unavailable"]
+
+
+@pytest.mark.asyncio
+async def test_worker_image_status_preserves_docker_diagnostics(
+    application,
+    monkeypatch,
+) -> None:
+    class Process:
+        returncode = 1
+
+        async def communicate(self):
+            return b"", b"No such image: eck-skill-worker:0.1.0"
+
+    async def create_process(*args, **kwargs):
+        assert "inspect" in args
+        assert kwargs
+        return Process()
+
+    monkeypatch.setattr("eck.runtime.worker.shutil.which", lambda _: "docker")
+    monkeypatch.setattr("eck.runtime.worker.asyncio.create_subprocess_exec", create_process)
+
+    status = await application.worker.image_status()
+
+    assert status["available"] is False
+    assert status["returncode"] == 1
+    assert "No such image" in status["detail"]
