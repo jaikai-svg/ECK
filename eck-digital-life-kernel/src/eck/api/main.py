@@ -21,6 +21,7 @@ from eck.domain.models import (
     AutonomousActionContext,
     BenchmarkRunCreate,
     ChallengeDraftCreate,
+    CoreCandidateRequest,
     LearningThemeCreate,
     MissionCompletionCreate,
     MissionCreate,
@@ -293,6 +294,10 @@ def create_api(
     @api.get("/v1/roadmap")
     async def roadmap(app: AppDependency) -> dict[str, Any]:
         verified_capabilities = [item["name"] for item in app.registry.list()]
+        soul = app.identity_service.status()
+        self_model = app.self_model.status()
+        skill_bridge = await app.skill_bridge.status()
+        core_lab = app.core_lab.status()
         runtime_skills = [
             item
             for item in app.store.list_runtime_skills(limit=1000)
@@ -319,6 +324,13 @@ def create_api(
                 "local_video_stack": app.video_generation.status(),
                 "resource_protection": app.resources.quick_snapshot()["pressure"],
                 "event_chain_valid": app.store.verify_event_chain_incremental()[0],
+                "soul_integrity": soul["integrity_valid"],
+                "soul_revision": soul["revision"],
+                "repository_self_model": bool(self_model.get("initialized")),
+                "research_skill_conversion": skill_bridge["conversion_verified"],
+                "active_generated_skills": skill_bridge["active_generated_skills"],
+                "core_candidate_count": core_lab["candidate_count"],
+                "live_core_mutation": core_lab["live_core_mutation"],
             },
             "milestones": [
                 {
@@ -350,6 +362,15 @@ def create_api(
                     "title": "客觀能力評估",
                     "state": "verified",
                     "evidence": "固定本機診斷、模型雜湊、重現率、同條件比較與學習產率稽核已接入。",
+                },
+                {
+                    "version": "P4",
+                    "title": "可稽核自我認知與隔離演化",
+                    "state": "verified",
+                    "evidence": (
+                        "SOUL 身分、雜湊程式庫自我模型、研究轉技能閘門、隔離核心候選與"
+                        "固定回歸測試已接入；結構更新仍須人工核准。"
+                    ),
                 },
                 {
                     "version": "Next",
@@ -479,6 +500,60 @@ def create_api(
     @api.get("/v1/evolution/status")
     async def evolution_status(app: AppDependency) -> dict[str, Any]:
         return await app.evolution.status()
+
+    @api.get("/v1/identity/soul")
+    async def identity_soul(app: AppDependency) -> dict[str, Any]:
+        return app.identity_service.status()
+
+    @api.get("/v1/self-model")
+    async def repository_self_model(app: AppDependency) -> dict[str, Any]:
+        return app.self_model.status()
+
+    @api.post("/v1/self-model/refresh")
+    async def refresh_repository_self_model(app: AppDependency) -> dict[str, Any]:
+        return app.self_model.refresh()
+
+    @api.get("/v1/evolution/skill-bridge")
+    async def research_skill_bridge_status(app: AppDependency) -> dict[str, Any]:
+        return await app.skill_bridge.status()
+
+    @api.post("/v1/evolution/skill-bridge/run", status_code=202)
+    async def run_research_skill_bridge(app: AppDependency) -> dict[str, Any]:
+        try:
+            return await app.skill_bridge.run_if_needed(force=True)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @api.get("/v1/evolution/core-candidates")
+    async def list_core_candidates(app: AppDependency) -> dict[str, Any]:
+        return {"status": app.core_lab.status(), "items": app.core_lab.list_candidates()}
+
+    @api.get("/v1/evolution/core-candidates/{candidate_id}")
+    async def get_core_candidate(candidate_id: str, app: AppDependency) -> dict[str, Any]:
+        try:
+            return app.core_lab.get_candidate(candidate_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/v1/evolution/core-candidates", status_code=201)
+    async def create_core_candidate(
+        request: CoreCandidateRequest,
+        app: AppDependency,
+    ) -> dict[str, Any]:
+        try:
+            return await app.core_lab.create_candidate(request)
+        except (FileNotFoundError, OSError, RuntimeError, SyntaxError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @api.post("/v1/evolution/core-candidates/{candidate_id}/validate")
+    async def validate_core_candidate(
+        candidate_id: str,
+        app: AppDependency,
+    ) -> dict[str, Any]:
+        try:
+            return await app.core_lab.validate_candidate(candidate_id)
+        except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @api.post("/v1/portability/bundles", status_code=201)
     async def export_cognitive_bundle(

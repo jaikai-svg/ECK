@@ -35,6 +35,8 @@
 22. [P0 Reliability Hardening](22-p0-reliability-hardening.md)
 23. [P1 Command and Media Reliability](23-p1-command-and-media-reliability.md)
 24. [P2 Resource-Aware Runtime](24-p2-resource-aware-runtime.md)
+25. [P3 Objective Evaluation](25-p3-objective-evaluation.md)
+26. [P4 Auditable Self-Model and Evolution](26-p4-auditable-self-model-and-evolution.md)
 
 ## v0.2 開發規格下載
 

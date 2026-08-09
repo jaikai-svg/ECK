@@ -23,6 +23,7 @@ from eck.capabilities.image_generation import ImageGenerationCapability
 from eck.capabilities.registry import CapabilityRegistry
 from eck.capabilities.runtime_skill import RuntimeSkillCapability
 from eck.capabilities.safe_python import SafePythonExpressionCapability
+from eck.capabilities.self_inspect import SelfInspectCapability
 from eck.capabilities.video_generation import VideoGenerationCapability
 from eck.config import Settings
 from eck.domain.models import EventRecord
@@ -41,10 +42,14 @@ from eck.runtime.worker import DockerSkillWorker
 from eck.services.autonomous_learning import AutonomousLearningService
 from eck.services.challenges import ChallengeService
 from eck.services.community_sources import CommunitySourceCatalog
+from eck.services.core_evolution import CoreEvolutionLabService
 from eck.services.evaluations import EvaluationService
 from eck.services.evolution import EvolutionAuditService
+from eck.services.identity import IdentityService
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
+from eck.services.research_skill_bridge import ResearchSkillBridgeService
+from eck.services.self_model import RepositorySelfModelService
 from eck.services.skill_forge import SkillForgeService
 from eck.services.skill_graph import SkillKnowledgeGraphService
 from eck.services.supervisor import SupervisorService
@@ -64,6 +69,10 @@ class Application:
     supervisor_brain: BrainProvider
     worker: DockerSkillWorker
     forge: SkillForgeService
+    identity_service: IdentityService
+    self_model: RepositorySelfModelService
+    skill_bridge: ResearchSkillBridgeService
+    core_lab: CoreEvolutionLabService
     tasks: TaskService
     supervisor: SupervisorService
     autonomous_learning: AutonomousLearningService
@@ -91,6 +100,10 @@ def build_application(settings: Settings | None = None) -> Application:
     store.initialize()
     events = EventBus(store)
     resources = SystemResourceMonitor(settings)
+    identity_service = IdentityService(settings)
+    self_model = RepositorySelfModelService(settings)
+    if settings.repository_self_model_enabled and settings.environment != "test":
+        self_model.ensure()
 
     if settings.brain_provider == "mock":
         brain: BrainProvider = MockBrainProvider()
@@ -130,6 +143,7 @@ def build_application(settings: Settings | None = None) -> Application:
     registry.register(GitWorkspaceCapability(settings.workspace_dir))
     registry.register(TaskPlanningCapability(brain))
     registry.register(RuntimeSkillCapability(settings, store, worker))
+    registry.register(SelfInspectCapability(self_model))
     image_generation = ImageGenerationCapability(settings, brain)
     registry.register(image_generation)
     image_background_removal = ImageBackgroundRemovalCapability(settings)
@@ -185,7 +199,28 @@ def build_application(settings: Settings | None = None) -> Application:
         registry,
     )
     evaluation_service = EvaluationService(store, events, brain, resources)
-    evolution_service = EvolutionAuditService(settings, store, worker)
+    skill_bridge = ResearchSkillBridgeService(
+        settings,
+        store,
+        events,
+        brain,
+        forge,
+        self_model,
+    )
+    core_lab = CoreEvolutionLabService(
+        settings,
+        events,
+        brain,
+        self_model,
+    )
+    evolution_service = EvolutionAuditService(
+        settings,
+        store,
+        worker,
+        self_model,
+        skill_bridge,
+        core_lab,
+    )
     portability_service = CognitiveBundleService(
         settings,
         store,
@@ -229,6 +264,7 @@ def build_application(settings: Settings | None = None) -> Application:
         task_service,
         supervisor_service,
         autonomous_learning,
+        skill_bridge,
         resources,
     )
     return Application(
@@ -240,6 +276,10 @@ def build_application(settings: Settings | None = None) -> Application:
         supervisor_brain=supervisor_brain,
         worker=worker,
         forge=forge,
+        identity_service=identity_service,
+        self_model=self_model,
+        skill_bridge=skill_bridge,
+        core_lab=core_lab,
         tasks=task_service,
         supervisor=supervisor_service,
         autonomous_learning=autonomous_learning,

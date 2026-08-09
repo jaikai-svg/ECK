@@ -6,6 +6,9 @@ from typing import Any
 from eck.config import Settings
 from eck.domain.enums import RuntimeSkillStatus
 from eck.runtime.worker import DockerSkillWorker
+from eck.services.core_evolution import CoreEvolutionLabService
+from eck.services.research_skill_bridge import ResearchSkillBridgeService
+from eck.services.self_model import RepositorySelfModelService
 from eck.storage.sqlite import SQLiteStore
 
 
@@ -15,10 +18,16 @@ class EvolutionAuditService:
         settings: Settings,
         store: SQLiteStore,
         worker: DockerSkillWorker,
+        self_model: RepositorySelfModelService,
+        skill_bridge: ResearchSkillBridgeService,
+        core_lab: CoreEvolutionLabService,
     ) -> None:
         self.settings = settings
         self.store = store
         self.worker = worker
+        self.self_model = self_model
+        self.skill_bridge = skill_bridge
+        self.core_lab = core_lab
         self.project_root = Path(__file__).resolve().parents[3]
 
     async def status(self) -> dict[str, Any]:
@@ -31,13 +40,16 @@ class EvolutionAuditService:
             item for item in generated if item.status is RuntimeSkillStatus.FAILED
         ]
         worker = await self.worker.health()
+        self_model = self.self_model.status()
+        bridge = await self.skill_bridge.status()
+        core_lab = self.core_lab.status()
         verifier = self.project_root / "scripts" / "verify_release.py"
         return {
-            "classification": "partial_self_improvement_not_recursive_agi",
+            "classification": "verified_candidate_self_improvement_not_recursive_agi",
             "current_truth": (
-                "ECK can generate, test, automatically repair and hot-activate isolated skills. "
-                "It cannot yet autonomously patch or replace the structural kernel, and it does "
-                "not train its base-model weights."
+                "ECK can inspect a hashed repository map, generate and test isolated skills, and "
+                "draft structural changes in detached candidates. It cannot activate structural "
+                "core changes without human approval and does not train base-model weights."
             ),
             "verified_now": {
                 "skill_self_authoring": True,
@@ -50,10 +62,13 @@ class EvolutionAuditService:
                 "release_verifier_present": verifier.is_file(),
                 "active_generated_skills": len(active_generated),
                 "failed_generated_skills": len(failed_generated),
+                "repository_self_model": bool(self_model.get("initialized")),
+                "research_skill_bridge": bridge,
+                "isolated_core_candidate_lab": core_lab,
             },
             "not_yet_verified": {
-                "automatic_structural_core_patch": True,
-                "shadow_replay_of_core_candidates": True,
+                "automatic_structural_core_activation": True,
+                "held_out_core_candidate_evaluation": True,
                 "dual_kernel_zero_downtime_handoff": True,
                 "automatic_model_weight_training": True,
                 "recursive_open_ended_self_improvement": True,
@@ -69,14 +84,14 @@ class EvolutionAuditService:
                 {
                     "stage": 1,
                     "name": "Core patch candidate laboratory",
-                    "state": "proposed",
+                    "state": "verified",
                     "result": "Create versioned patch candidates outside the live kernel.",
                 },
                 {
                     "stage": 2,
                     "name": "Regression and shadow replay gate",
-                    "state": "proposed",
-                    "result": "Compare fixed benchmarks, failures, safety and resource cost.",
+                    "state": "partial",
+                    "result": "Fixed lint, type and regression gates exist; held-out tasks remain.",
                 },
                 {
                     "stage": 3,
@@ -102,9 +117,14 @@ class EvolutionAuditService:
                     "adopt": "external feedback and episodic repair memory",
                 },
                 {
-                    "title": "SWE-agent",
-                    "url": "https://arxiv.org/abs/2405.15793",
-                    "adopt": "repository interface and test-driven software repair",
+                    "title": "SWE-rebench",
+                    "url": "https://arxiv.org/abs/2505.20411",
+                    "adopt": "fresh software tasks and contamination-resistant evaluation",
+                },
+                {
+                    "title": "Red Queen Gödel Machine",
+                    "url": "https://arxiv.org/abs/2606.26294",
+                    "adopt": "co-evolve agents and evaluators only across fixed epochs",
                 },
             ],
         }

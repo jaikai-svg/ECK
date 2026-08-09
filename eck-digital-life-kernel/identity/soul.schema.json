@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eck.local/schemas/eck-soul.v1.json",
+  "title": "ECK Soul Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "soul_id",
+    "identity",
+    "born_at",
+    "updated_at",
+    "revision",
+    "content_sha256",
+    "lineage"
+  ],
+  "properties": {
+    "schema_version": {"const": "eck-soul.v1"},
+    "soul_id": {"type": "string", "pattern": "^soul_[a-f0-9]{32}$"},
+    "identity": {"type": "string", "minLength": 1},
+    "born_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "revision": {"type": "integer", "minimum": 1},
+    "content_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "previous_content_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "lineage": {
+      "type": "object",
+      "required": ["parent_soul_id", "generation"],
+      "properties": {
+        "parent_soul_id": {"type": ["string", "null"]},
+        "generation": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

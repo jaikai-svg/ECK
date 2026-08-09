@@ -503,6 +503,12 @@ class SkillForgeRequest(FrozenModel):
     dependencies: tuple[str, ...] = ()
 
 
+class CoreCandidateRequest(FrozenModel):
+    objective: str = Field(min_length=20, max_length=4000)
+    target_files: tuple[str, ...] = Field(min_length=1, max_length=3)
+    allow_new_files: bool = False
+
+
 class RuntimeVersionRecord(FrozenModel):
     version: str
     major: int = Field(ge=0)

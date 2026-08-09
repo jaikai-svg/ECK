@@ -660,6 +660,18 @@ function renderRoadmap(data) {
   $("#roadmap-experience-count").textContent = formatCount(verified.verified_experiences);
   $("#roadmap-runtime-skill-count").textContent = formatCount(verified.active_runtime_skills);
   $("#roadmap-chain-state").textContent = verified.event_chain_valid ? "有效" : "異常";
+  $("#roadmap-soul-state").textContent = verified.soul_integrity
+    ? `有效 · r${formatCount(verified.soul_revision)}`
+    : "異常";
+  $("#roadmap-self-model-state").textContent = verified.repository_self_model
+    ? "已建立"
+    : "待建立";
+  $("#roadmap-skill-conversion-state").textContent = verified.research_skill_conversion
+    ? `${formatCount(verified.active_generated_skills)} 已啟用`
+    : "尚未驗證";
+  $("#roadmap-core-candidate-count").textContent = verified.live_core_mutation
+    ? "警告：正式核心已變更"
+    : `${formatCount(verified.core_candidate_count)} · 隔離`;
   $("#roadmap-target-count").textContent = `${formatCount(targets.length)} targets`;
   $("#roadmap-targets").innerHTML = targets.map((target, index) => `
     <article class="roadmap-item">

@@ -125,3 +125,11 @@ skill_forge_auto_enable: true
 skill_forge_max_repair_attempts: 2
 autonomous_learning_percent: 90
 challenge_execution_percent: 10
+
+repository_self_model_enabled: true
+research_skill_bridge_enabled: true
+research_skill_bridge_initial_delay_seconds: 600
+research_skill_bridge_interval_seconds: 21600
+research_skill_bridge_min_research_runs: 12
+core_evolution_enabled: true
+core_evolution_timeout_seconds: 900

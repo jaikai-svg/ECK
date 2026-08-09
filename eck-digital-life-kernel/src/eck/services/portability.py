@@ -41,6 +41,8 @@ class CognitiveBundleService:
         try:
             self._backup_database(stage / "data" / "eck.db")
             self._copy_generated_skills(stage / "runtime_skills")
+            self._copy_cognitive_identity(stage / "identity")
+            self._copy_evolution_metadata(stage / "evolution")
             self._copy_project_metadata(stage / "project")
             if include_artifacts:
                 self._copy_artifacts(stage / "artifacts")
@@ -124,6 +126,22 @@ class CognitiveBundleService:
         if source.is_dir():
             shutil.copytree(source, target)
 
+    def _copy_cognitive_identity(self, target: Path) -> None:
+        target.mkdir(parents=True, exist_ok=True)
+        if self.settings.identity_dir.is_dir():
+            shutil.copytree(self.settings.identity_dir, target / "soul")
+        for source in (
+            self.settings.self_model_path,
+            self.settings.research_skill_bridge_state_path,
+        ):
+            if source.is_file():
+                shutil.copy2(source, target / source.name)
+
+    def _copy_evolution_metadata(self, target: Path) -> None:
+        source = self.settings.evolution_dir / "core_candidates"
+        if source.is_dir():
+            shutil.copytree(source, target / "core_candidates")
+
     def _copy_project_metadata(self, target: Path) -> None:
         project_root = Path(__file__).resolve().parents[3]
         target.mkdir(parents=True, exist_ok=True)
@@ -159,7 +177,7 @@ class CognitiveBundleService:
             if path.is_file()
         }
         return {
-            "format": "eck-cognitive-bundle.v1",
+            "format": "eck-cognitive-bundle.v2",
             "created_at": utc_now().isoformat(),
             "eck_version": __version__,
             "runtime_version": self.versions.status().model_dump(mode="json"),
@@ -177,6 +195,8 @@ class CognitiveBundleService:
                 "runtime_skills": len(self.store.list_runtime_skills(limit=10000)),
                 "learning_themes": len(self.store.list_learning_themes(limit=10000)),
                 "skill_graph_rebuildable": True,
+                "soul_and_lineage": True,
+                "repository_self_model": self.settings.self_model_path.is_file(),
             },
             "event_chain": {
                 "valid": chain_valid,
@@ -186,6 +206,8 @@ class CognitiveBundleService:
             "included": {
                 "database": True,
                 "generated_skill_source": True,
+                "identity_and_lineage": True,
+                "evolution_candidate_metadata": True,
                 "artifacts": include_artifacts,
                 "model_weights": False,
                 "secrets": False,

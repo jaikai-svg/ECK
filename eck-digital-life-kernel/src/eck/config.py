@@ -139,6 +139,14 @@ class Settings(BaseSettings):
     autonomous_learning_percent: int = Field(default=90, ge=50, le=100)
     challenge_execution_percent: int = Field(default=10, ge=0, le=50)
 
+    repository_self_model_enabled: bool = True
+    research_skill_bridge_enabled: bool = True
+    research_skill_bridge_initial_delay_seconds: float = Field(default=600, ge=30, le=86400)
+    research_skill_bridge_interval_seconds: float = Field(default=21600, ge=300, le=604800)
+    research_skill_bridge_min_research_runs: int = Field(default=12, ge=3, le=100)
+    core_evolution_enabled: bool = True
+    core_evolution_timeout_seconds: float = Field(default=900, ge=60, le=3600)
+
     network_enabled: bool = False
     system_file_mutation_enabled: bool = False
     require_approval_for_medium_risk: bool = False
@@ -261,5 +269,23 @@ class Settings(BaseSettings):
         self.video_output_dir.mkdir(parents=True, exist_ok=True)
         self.export_dir.mkdir(parents=True, exist_ok=True)
         self.rembg_model_dir.mkdir(parents=True, exist_ok=True)
+        self.identity_dir.mkdir(parents=True, exist_ok=True)
+        self.evolution_dir.mkdir(parents=True, exist_ok=True)
         assert self.database_path is not None
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def identity_dir(self) -> Path:
+        return self.data_dir / "identity"
+
+    @property
+    def self_model_path(self) -> Path:
+        return self.data_dir / "repository-self-model.json"
+
+    @property
+    def research_skill_bridge_state_path(self) -> Path:
+        return self.data_dir / "research-skill-bridge.json"
+
+    @property
+    def evolution_dir(self) -> Path:
+        return self.workspace_dir / "evolution"

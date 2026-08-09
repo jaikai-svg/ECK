@@ -41,7 +41,9 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert client.post("/v1/kernel/pause").json()["phase"] == "paused"
         assert client.post("/v1/kernel/resume").json()["phase"] == "running"
         assert client.post("/v1/kernel/sleep").json()["accepted"]
-        assert len(client.get("/v1/capabilities").json()["items"]) == 15
+        capabilities = client.get("/v1/capabilities").json()["items"]
+        assert len(capabilities) == 16
+        assert any(item["name"] == "core.self_inspect" for item in capabilities)
         image_status = client.get("/v1/image/status")
         assert image_status.status_code == 200
         assert image_status.json()["quality"]["steps"] == 36
@@ -70,7 +72,19 @@ def test_health_dashboard_and_acceptance(application) -> None:
         evolution = client.get("/v1/evolution/status")
         assert evolution.status_code == 200
         assert evolution.json()["verified_now"]["skill_self_authoring"] is True
-        assert evolution.json()["not_yet_verified"]["automatic_structural_core_patch"]
+        assert evolution.json()["not_yet_verified"]["automatic_structural_core_activation"]
+        soul = client.get("/v1/identity/soul")
+        assert soul.status_code == 200
+        assert soul.json()["integrity_valid"] is True
+        self_model = client.post("/v1/self-model/refresh")
+        assert self_model.status_code == 200
+        assert self_model.json()["summary"]["python_modules"] > 0
+        bridge = client.get("/v1/evolution/skill-bridge")
+        assert bridge.status_code == 200
+        assert bridge.json()["conversion_verified"] is False
+        core_candidates = client.get("/v1/evolution/core-candidates")
+        assert core_candidates.status_code == 200
+        assert core_candidates.json()["status"]["live_core_mutation"] is False
 
         roadmap = client.get("/v1/roadmap")
         assert roadmap.status_code == 200
@@ -78,6 +92,10 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert "不是已證實的 AGI" in roadmap.json()["current_truth"]
         assert any(
             item["version"] == "P2" and item["state"] == "verified"
+            for item in roadmap.json()["milestones"]
+        )
+        assert any(
+            item["version"] == "P4" and item["state"] == "verified"
             for item in roadmap.json()["milestones"]
         )
 
