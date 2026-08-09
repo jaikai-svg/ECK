@@ -169,7 +169,10 @@ The autonomous project laboratory can turn conclusive research into a small loca
 run its tests in a networkless constrained Docker worker, preserve its source and evidence
 in portability bundles, and publish only verified projects through an authenticated GitHub
 CLI session. Publication is private by default, includes an AI/ECK disclosure, and never
-stores GitHub credentials in ECK.
+stores GitHub credentials in ECK. Multi-account installations resolve the token for the
+configured dedicated account without switching the operator's active GitHub CLI account.
+Supervisor topics also normalize cosmetic round counters before de-duplication and retain
+their cooldown across process restarts.
 
 ```text
 GET  /v1/self-model/impact?path=src/eck/services/project_lab.py

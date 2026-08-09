@@ -45,6 +45,7 @@ def settings(tmp_path: Path) -> Settings:
         supervisor_enabled=False,
         autonomous_curriculum_enabled=False,
         autonomous_project_lab_enabled=False,
+        github_account=None,
         skill_canary_delay_seconds=0,
         auto_start_kernel=False,
         heartbeat_seconds=0.2,

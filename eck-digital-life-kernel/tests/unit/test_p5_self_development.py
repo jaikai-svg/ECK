@@ -374,9 +374,11 @@ async def test_verified_project_publishes_only_after_ready_check(application, mo
     )
     monkeypatch.setattr(service, "_scan_secrets", lambda source: None)
     monkeypatch.setattr(service, "_initialize_git", lambda source: None)
+    monkeypatch.setattr(service, "_github_token", lambda executable, account: "unit-token")
 
     async def run_process(*args, **kwargs) -> dict[str, object]:
-        del args, kwargs
+        del args
+        assert kwargs["env"]["GH_TOKEN"] == "unit-token"
         return {"returncode": 0, "output_tail": "pushed"}
 
     monkeypatch.setattr(service, "_run_process", run_process)
@@ -466,20 +468,20 @@ def test_github_status_covers_install_auth_and_account_checks(application, monke
     assert unauthenticated["authenticated"] is False
     assert service.github_status() is unauthenticated
 
-    results = iter(
-        [
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
-            SimpleNamespace(returncode=0, stdout="existing-account\n", stderr=""),
-        ]
+    monkeypatch.setattr(
+        project_lab_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout="existing-account\n", stderr=""
+        ),
     )
-    monkeypatch.setattr(project_lab_module.subprocess, "run", lambda *args, **kwargs: next(results))
     unconfigured = service.github_status(force=True)
     assert unconfigured["ready"] is False
     assert "dedicated ECK account" in unconfigured["detail"]
 
     results = iter(
         [
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="unit-token\n", stderr=""),
             SimpleNamespace(returncode=0, stdout="different-account\n", stderr=""),
         ]
     )
@@ -491,7 +493,7 @@ def test_github_status_covers_install_auth_and_account_checks(application, monke
 
     results = iter(
         [
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="unit-token\n", stderr=""),
             SimpleNamespace(returncode=0, stdout="expected-account\n", stderr=""),
         ]
     )
@@ -499,6 +501,13 @@ def test_github_status_covers_install_auth_and_account_checks(application, monke
     ready = service.github_status(force=True)
     assert ready["ready"] is True
     assert ready["account"] == "expected-account"
+
+
+def test_github_environment_routes_only_the_dedicated_account_token(application) -> None:
+    environment = application.project_lab._github_environment("dedicated-token")
+
+    assert environment["GH_TOKEN"] == "dedicated-token"
+    assert environment["GH_HOST"] == "github.com"
 
 
 @pytest.mark.asyncio

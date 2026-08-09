@@ -116,7 +116,7 @@ async def test_supervisor_daily_limit_skips_model_inference(settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_zero_supervisor_limit_means_unlimited(settings) -> None:
+async def test_zero_supervisor_limit_means_unlimited(settings, monkeypatch) -> None:
     unlimited = settings.model_copy(
         update={
             "supervisor_enabled": True,
@@ -125,18 +125,64 @@ async def test_zero_supervisor_limit_means_unlimited(settings) -> None:
         }
     )
     application = build_application(unlimited)
-    application.store.add_supervisor_review(
-        model="test",
-        mood="waiting",
-        activity_text="先前檢查",
-        assessment="既有紀錄",
-        recommendations=("繼續",),
-        challenge_topic="既有主題",
-        challenge_goal="既有目標",
-        task_id=None,
-    )
+    monkeypatch.setattr(application.supervisor, "_reviews_last_24h", lambda: 10000)
 
     review = await application.supervisor.review_if_idle()
 
     assert review is not None
     assert application.supervisor.status()["max_reviews_per_day"] == 0
+
+
+def test_supervisor_round_numbers_do_not_create_new_topics(settings) -> None:
+    application = build_application(settings)
+    earlier = "自主學習品質與證據覆蓋改善（第 943 輪）"
+    later = "自主學習品質與證據覆蓋改善（第 946 輪）"
+
+    assert application.supervisor._topics_similar(earlier, later) is True
+    proposal = application.supervisor._normalize_proposal(
+        {"challenge_topic": later, "action_kind": "research"},
+        [],
+        [earlier],
+    )
+
+    assert proposal["challenge_topic"] != later
+    assert "第 946 輪" not in proposal["challenge_topic"]
+
+
+@pytest.mark.asyncio
+async def test_supervisor_respects_persisted_review_cooldown(settings) -> None:
+    enabled = settings.model_copy(update={"supervisor_enabled": True})
+    application = build_application(enabled)
+    application.store.add_supervisor_review(
+        model="test",
+        mood="waiting",
+        activity_text="等待下一輪",
+        assessment="近期已完成檢查。",
+        recommendations=("等待冷卻",),
+        challenge_topic="近期課題",
+        challenge_goal="避免重複推理。",
+        task_id=None,
+    )
+
+    review = await application.supervisor.review_if_idle()
+
+    assert review is None
+    assert len(application.store.list_supervisor_reviews()) == 1
+    assert "不重複啟動推理" in application.supervisor.status()["activity_text"]
+
+
+@pytest.mark.asyncio
+async def test_supervisor_skips_when_no_novel_fallback_exists(settings, monkeypatch) -> None:
+    application = build_application(settings)
+    monkeypatch.setattr(application.supervisor, "_next_fallback_topic", lambda topics: "")
+    proposal = application.supervisor._normalize_proposal(
+        {"challenge_topic": "重複題目", "action_kind": "research"},
+        [],
+        ["重複題目"],
+    )
+
+    task_id = await application.supervisor._assign_challenge(proposal)
+
+    assert task_id is None
+    assert proposal["skip_reason"]
+    assert application.store.count_tasks((TaskStatus.QUEUED, TaskStatus.RUNNING)) == 0

@@ -387,6 +387,12 @@ class AutonomousProjectLabService:
         repository = f"{account}/{manifest['name']}"
         visibility = str(manifest.get("visibility", "private"))
         executable = str(github["executable"])
+        token = self._github_token(executable, account)
+        if token is None:
+            return self._publish_deferred(
+                manifest,
+                f"GitHub credentials for the dedicated account {account!r} are unavailable.",
+            )
         result = await self._run_process(
             [
                 executable,
@@ -402,6 +408,7 @@ class AutonomousProjectLabService:
             ],
             cwd=source_dir,
             timeout=180,
+            env=self._github_environment(token),
         )
         manifest["github"] = {
             "published": result["returncode"] == 0,
@@ -435,30 +442,23 @@ class AutonomousProjectLabService:
                 "authenticated": False,
                 "detail": "GitHub CLI is not installed.",
             })
-        try:
-            status = subprocess.run(
-                [executable, "auth", "status"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            return self._cache_github(now, {
-                "ready": False,
-                "authenticated": False,
-                "executable": executable,
-                "detail": f"GitHub CLI check failed: {type(exc).__name__}: {exc}",
-            })
-        if status.returncode != 0:
-            return self._cache_github(now, {
-                "ready": False,
-                "authenticated": False,
-                "executable": executable,
-                "detail": "GitHub CLI is installed but no account is authenticated.",
-            })
+        expected = self.settings.github_account
+        token: str | None = None
+        environment: dict[str, str] | None = None
+        if expected:
+            token = self._github_token(executable, expected)
+            if token is None:
+                return self._cache_github(now, {
+                    "ready": False,
+                    "authenticated": False,
+                    "account": expected,
+                    "executable": executable,
+                    "detail": (
+                        f"GitHub CLI has no stored OAuth credential for the dedicated "
+                        f"ECK account {expected!r}."
+                    ),
+                })
+            environment = self._github_environment(token)
         try:
             account_result = subprocess.run(
                 [executable, "api", "user", "--jq", ".login"],
@@ -468,6 +468,7 @@ class AutonomousProjectLabService:
                 errors="replace",
                 timeout=15,
                 check=False,
+                env=environment,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             return self._cache_github(now, {
@@ -476,8 +477,15 @@ class AutonomousProjectLabService:
                 "executable": executable,
                 "detail": f"GitHub account lookup failed: {type(exc).__name__}: {exc}",
             })
+        if account_result.returncode != 0:
+            return self._cache_github(now, {
+                "ready": False,
+                "authenticated": False,
+                "account": expected,
+                "executable": executable,
+                "detail": "GitHub CLI is installed but the requested account is unavailable.",
+            })
         account = account_result.stdout.strip()
-        expected = self.settings.github_account
         if not expected:
             return self._cache_github(now, {
                 "ready": False,
@@ -513,6 +521,39 @@ class AutonomousProjectLabService:
         self._github_checked_at = checked_at
         self._github_cache = value
         return value
+
+    @staticmethod
+    def _github_token(executable: str, account: str) -> str | None:
+        try:
+            result = subprocess.run(
+                [
+                    executable,
+                    "auth",
+                    "token",
+                    "--hostname",
+                    "github.com",
+                    "--user",
+                    account,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        token = result.stdout.strip()
+        return token if result.returncode == 0 and token else None
+
+    @staticmethod
+    def _github_environment(token: str) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment.pop("GITHUB_TOKEN", None)
+        environment["GH_TOKEN"] = token
+        environment["GH_HOST"] = "github.com"
+        return environment
 
     async def _draft(
         self,
@@ -1265,12 +1306,14 @@ class AutonomousProjectLabService:
         *,
         cwd: Path,
         timeout: float,
+        env: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env=env,
         )
         try:
             stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)

@@ -79,6 +79,12 @@ gh auth login --hostname github.com --web
 
 Set `ECK_GITHUB_ACCOUNT` to the authenticated dedicated account. Leave `ECK_GITHUB_DEFAULT_VISIBILITY=private` until the operator intentionally chooses public publication.
 
+When GitHub CLI stores more than one account, ECK resolves the OAuth token for the exact configured account and injects it only into the publication child process. It does not switch the operator's active CLI account or persist the token in project files, manifests, logs, or environment files.
+
+## Supervisor Novelty Gate
+
+Supervisor topic comparison removes cosmetic round suffixes such as `（第 943 輪）` before semantic de-duplication. A restart also respects the timestamp of the latest persisted review, so it cannot bypass the configured review interval. If neither the model nor the fallback curriculum produces a novel topic, ECK records no new review or research task and waits for the next cycle.
+
 ## Portability
 
 The cognitive bundle now includes project manifests and project source, excluding nested `.git`, caches, model weights, and secrets. A transferred ECK can therefore retain the same verified project evidence and executable source while restoring licensed model weights separately.

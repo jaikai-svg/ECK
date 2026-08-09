@@ -111,6 +111,13 @@ class SupervisorService:
             self._mood = "waiting"
             self._activity_text = "監督者已達 24 小時檢查上限，暫停推理以降低資源負載。"
             return None
+        recent_reviews = self.store.list_supervisor_reviews(limit=1)
+        if recent_reviews:
+            elapsed = (utc_now() - recent_reviews[0].created_at).total_seconds()
+            if elapsed < self.settings.supervisor_review_seconds:
+                self._mood = "waiting"
+                self._activity_text = "監督者正在等待下一個檢查週期，不重複啟動推理。"
+                return None
 
         async with self._lock:
             if self._reviewing:
@@ -126,6 +133,10 @@ class SupervisorService:
             try:
                 proposal, model = await self._propose_review()
                 task_id = await self._assign_challenge(proposal)
+                if proposal.get("skip_reason"):
+                    self._mood = proposal["mood"]
+                    self._activity_text = proposal["activity_text"]
+                    return None
                 record = self.store.add_supervisor_review(
                     model=model,
                     mood=proposal["mood"],
@@ -421,12 +432,12 @@ class SupervisorService:
             mood = "curious"
         topic = self._clean(str(parsed.get("challenge_topic", "")), 120)
         duplicate_topic = len(topic) >= 2 and self._topic_is_used(topic, used_topics)
+        skip_reason = ""
         if len(topic) < 2 or duplicate_topic:
             topic = fallback_topic
-        skip_reason = ""
-        if not topic:
-            sequence = len(used_topics) + 1
-            topic = f"自主學習品質與證據覆蓋改善（第 {sequence} 輪）"
+            if not topic:
+                topic = "監督者暫無新的可驗證課題"
+                skip_reason = "所有候選題目都與既有研究重複，本輪不建立任務。"
         assessment = self._clean(str(parsed.get("assessment", "")), 800)
         if not assessment:
             assessment = "目前沒有待處理任務，適合用新的可驗證研究考驗補足知識廣度。"
@@ -540,6 +551,12 @@ class SupervisorService:
     @staticmethod
     def _topic_key(value: str) -> str:
         normalized = unicodedata.normalize("NFKC", value).casefold()
+        normalized = re.sub(
+            r"\s*(?:\(|\[)?\s*(?:\u7b2c\s*\d+\s*[\u8f2a\u8f6e]|(?:round|cycle)\s*#?\s*\d+)\s*(?:\)|\])?\s*$",
+            "",
+            normalized,
+            flags=re.IGNORECASE,
+        )
         return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", normalized)
 
     @staticmethod
