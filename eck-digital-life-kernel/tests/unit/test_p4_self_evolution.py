@@ -308,6 +308,40 @@ async def test_skill_bridge_repairs_failed_candidate_with_bounded_attempts(
     assert result["runtime_skill"]["runtime_skill_id"] == repaired.runtime_skill_id
 
 
+def test_skill_bridge_does_not_count_byte_identical_repair_as_progress(
+    application,
+) -> None:
+    records = []
+    for version in ("0.1.0", "0.1.1"):
+        source = application.settings.workspace_dir / "identical" / version
+        source.mkdir(parents=True)
+        (source / "skill.py").write_text(
+            "def execute(*args):\n    return True\n",
+            encoding="utf-8",
+        )
+        (source / "test_skill.py").write_text(
+            "def test_skill():\n    assert True\n",
+            encoding="utf-8",
+        )
+        records.append(
+            application.store.add_runtime_skill(
+                RuntimeSkillManifest(
+                    name="research.identical_repair",
+                    version=version,
+                    description="Byte-identical generated repair candidate.",
+                    category="research",
+                    operations=("execute",),
+                    generated=True,
+                ),
+                source_dir=str(source),
+                source="eck-generated",
+                status=RuntimeSkillStatus.FAILED,
+            )
+        )
+
+    assert application.skill_bridge._repair_attempts(records[-1]) == 0
+
+
 def test_core_candidate_changes_are_confined_to_isolated_targets(
     application,
     tmp_path: Path,

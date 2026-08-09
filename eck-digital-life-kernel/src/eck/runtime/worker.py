@@ -86,13 +86,13 @@ class DockerSkillWorker:
                 "executable": executable,
                 "detail": f"{type(exc).__name__}: {exc}",
             }
-        detail = (stderr or stdout).decode("utf-8", errors="replace").strip()
+        detail = stderr.decode("utf-8", errors="replace").strip()
         return {
             "available": process.returncode == 0,
             "image": self.settings.skill_worker_image,
             "executable": executable,
             "returncode": process.returncode,
-            "detail": detail[-2000:],
+            "detail": detail[-2000:] if detail else "Image is available.",
         }
 
     async def build_image(self, project_root: Path) -> dict[str, Any]:

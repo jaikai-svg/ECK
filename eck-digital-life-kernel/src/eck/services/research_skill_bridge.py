@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -133,6 +134,12 @@ class ResearchSkillBridgeService:
                 return await self._record(
                     "repair_provider_unavailable",
                     f"The local brain did not complete the bounded repair: {type(exc).__name__}",
+                    runtime_skill_id=repairable.runtime_skill_id,
+                )
+            except ValueError as exc:
+                return await self._record(
+                    "repair_candidate_invalid",
+                    str(exc)[:1000],
                     runtime_skill_id=repairable.runtime_skill_id,
                 )
             return await self._record(
@@ -309,13 +316,40 @@ class ResearchSkillBridgeService:
         return elapsed >= self.settings.research_skill_bridge_interval_seconds
 
     def _repair_attempts(self, failed: RuntimeSkillRecord) -> int:
-        versions = [
-            item
-            for item in self.store.list_runtime_skills(limit=10000)
-            if item.source == "eck-generated"
-            and item.manifest.name == failed.manifest.name
-        ]
-        return max(0, len(versions) - 1)
+        versions = sorted(
+            [
+                item
+                for item in self.store.list_runtime_skills(limit=10000)
+                if item.source == "eck-generated"
+                and item.manifest.name == failed.manifest.name
+            ],
+            key=lambda item: tuple(
+                int(part) for part in item.manifest.version.split(".")
+            ),
+        )
+        return sum(
+            not self._same_skill_source(previous, current)
+            for previous, current in zip(versions, versions[1:], strict=False)
+        )
+
+    @staticmethod
+    def _same_skill_source(
+        previous: RuntimeSkillRecord,
+        current: RuntimeSkillRecord,
+    ) -> bool:
+        previous_dir = Path(previous.source_dir)
+        current_dir = Path(current.source_dir)
+        pairs = (
+            (
+                previous_dir / previous.manifest.entrypoint,
+                current_dir / current.manifest.entrypoint,
+            ),
+            (previous_dir / "test_skill.py", current_dir / "test_skill.py"),
+        )
+        try:
+            return all(left.read_bytes() == right.read_bytes() for left, right in pairs)
+        except OSError:
+            return False
 
     async def _record(self, status: str, message: str, **details: Any) -> dict[str, Any]:
         state = {

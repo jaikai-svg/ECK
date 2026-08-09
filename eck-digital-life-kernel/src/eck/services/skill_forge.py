@@ -344,6 +344,10 @@ class SkillForgeService:
                             "failed_test_report": failed.test_report,
                             "prior_code": prior_code,
                             "prior_tests": prior_tests,
+                            "repair_requirement": (
+                                "Implement the diagnosed change in code or tests. Returning "
+                                "byte-identical files with only a written explanation is invalid."
+                            ),
                         },
                         ensure_ascii=False,
                     ),
@@ -367,6 +371,10 @@ class SkillForgeService:
         )
         if not code or not tests:
             raise ValueError("The model did not produce repaired skill code and tests.")
+        if code == prior_code and tests == normalized_tests:
+            raise ValueError(
+                "The model described a repair but returned byte-identical code and tests."
+            )
         self._security_scan(code, failed.manifest.permissions)
         self._security_scan(tests, ())
         improvements = tuple(
