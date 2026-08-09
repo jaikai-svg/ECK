@@ -16,6 +16,7 @@ from eck.domain.models import (
     MissionCreate,
     MissionReviewDecision,
     MissionUpdate,
+    RuntimeSkillManifest,
     SkillForgeRequest,
 )
 
@@ -292,6 +293,53 @@ async def test_failed_generated_skill_repairs_and_retests_without_kernel_restart
         RuntimeSkillStatus.ACTIVE,
         RuntimeSkillStatus.FAILED,
     }
+
+
+@pytest.mark.asyncio
+async def test_missing_generated_test_import_is_repaired_without_model_call(
+    application,
+    monkeypatch,
+) -> None:
+    source_dir = application.settings.workspace_dir / "runtime_skills" / "missing-import" / "0.1.0"
+    source_dir.mkdir(parents=True)
+    manifest = RuntimeSkillManifest(
+        name="generated.missing_import",
+        version="0.1.0",
+        description="Generated skill with a missing test import.",
+        category="development",
+        operations=("execute",),
+        generated=True,
+    )
+    (source_dir / "skill.py").write_text(
+        "def execute(operation, payload, context):\n    return {'success': True}\n",
+        encoding="utf-8",
+    )
+    (source_dir / "test_skill.py").write_text(
+        "def test_execute():\n    assert execute('execute', {}, {})['success']\n",
+        encoding="utf-8",
+    )
+    failed = application.store.add_runtime_skill(
+        manifest,
+        source_dir=str(source_dir),
+        source="eck-generated",
+        status=RuntimeSkillStatus.FAILED,
+    )
+
+    async def chat(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("Deterministic import repair must run before the model.")
+
+    async def validate(skill):
+        tests = Path(skill.source_dir, "test_skill.py").read_text(encoding="utf-8")
+        return {"success": tests.startswith("from skill import execute")}
+
+    monkeypatch.setattr(application.forge.brain, "chat", chat)
+    monkeypatch.setattr(application.worker, "validate", validate)
+
+    repaired = await application.forge.repair_failed_skill(failed.runtime_skill_id)
+
+    assert repaired.status is RuntimeSkillStatus.ACTIVE
+    assert repaired.manifest.version == "0.1.1"
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+import httpx
+
 from eck.brain.base import BrainProvider
 from eck.config import Settings
 from eck.core.time import utc_now
@@ -90,7 +92,7 @@ class ResearchSkillBridgeService:
 
         generated = [
             item
-            for item in reversed(self.store.list_runtime_skills(limit=10000))
+            for item in self.store.list_runtime_skills(limit=10000)
             if item.source == "eck-generated"
         ]
         pending = next(
@@ -123,7 +125,14 @@ class ResearchSkillBridgeService:
             None,
         )
         if repairable is not None:
-            repaired = await self.forge.repair_failed_skill(repairable.runtime_skill_id)
+            try:
+                repaired = await self.forge.repair_failed_skill(repairable.runtime_skill_id)
+            except httpx.HTTPError as exc:
+                return await self._record(
+                    "repair_provider_unavailable",
+                    f"The local brain did not complete the bounded repair: {type(exc).__name__}",
+                    runtime_skill_id=repairable.runtime_skill_id,
+                )
             return await self._record(
                 "skill_repaired_and_activated"
                 if repaired.status is RuntimeSkillStatus.ACTIVE
@@ -143,14 +152,27 @@ class ResearchSkillBridgeService:
                 "Not enough completed, conclusive, multi-source research runs are available.",
                 qualified_research_runs=len(research),
             )
-        request, evidence_run_ids, reason = await self._propose(research[:12])
+        try:
+            request, evidence_run_ids, reason = await self._propose(research[:12])
+        except httpx.HTTPError as exc:
+            return await self._record(
+                "proposal_provider_unavailable",
+                f"The local brain did not complete skill-gap selection: {type(exc).__name__}",
+            )
         if request is None:
             return await self._record(
                 "no_valid_skill_gap",
                 reason or "The model did not identify a bounded executable skill gap.",
                 evidence_run_ids=evidence_run_ids,
             )
-        skill = await self.forge.forge(request)
+        try:
+            skill = await self.forge.forge(request)
+        except httpx.HTTPError as exc:
+            return await self._record(
+                "forge_provider_unavailable",
+                f"The local brain did not complete skill generation: {type(exc).__name__}",
+                evidence_run_ids=evidence_run_ids,
+            )
         return await self._record(
             "skill_activated"
             if skill.status is RuntimeSkillStatus.ACTIVE
@@ -227,6 +249,7 @@ class ResearchSkillBridgeService:
                 },
                 "required": ["decision", "reason", "evidence_run_ids"],
             },
+            options={"num_predict": 768, "think": False},
         )
         payload = self._json_object(response.content)
         reason = str(payload.get("reason", ""))[:2000]

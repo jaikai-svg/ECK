@@ -237,6 +237,7 @@ class SkillForgeService:
                 },
                 "required": ["code", "tests", "improvements"],
             },
+            options={"num_predict": 2048, "think": False},
         )
         parsed = self._json_object(response.content)
         code = self._clean_code(str(parsed.get("code", "")))
@@ -312,6 +313,16 @@ class SkillForgeService:
             if item.manifest.name == failed.manifest.name
         ]
         version = self._next_version(versions)
+        normalized_tests = self._ensure_test_import(prior_tests)
+        if normalized_tests != prior_tests:
+            return await self._persist_repair(
+                failed,
+                version,
+                prior_code,
+                normalized_tests,
+                ("Added the missing generated-skill test import before model repair.",),
+                generator="deterministic-framework-repair",
+            )
         response = await self.brain.chat(
             [
                 {
@@ -347,6 +358,7 @@ class SkillForgeService:
                 },
                 "required": ["code", "tests", "improvements"],
             },
+            options={"num_predict": 2048, "think": False},
         )
         parsed = self._json_object(response.content)
         code = self._clean_code(str(parsed.get("code", "")))
@@ -357,6 +369,30 @@ class SkillForgeService:
             raise ValueError("The model did not produce repaired skill code and tests.")
         self._security_scan(code, failed.manifest.permissions)
         self._security_scan(tests, ())
+        improvements = tuple(
+            str(item)[:500]
+            for item in parsed.get("improvements", [])
+            if str(item).strip()
+        ) or (f"Automatic repair of failed version {failed.manifest.version}.",)
+        return await self._persist_repair(
+            failed,
+            version,
+            code,
+            tests,
+            improvements,
+            generator=response.model,
+        )
+
+    async def _persist_repair(
+        self,
+        failed: RuntimeSkillRecord,
+        version: str,
+        code: str,
+        tests: str,
+        improvements: tuple[str, ...],
+        *,
+        generator: str,
+    ) -> RuntimeSkillRecord:
         manifest = failed.manifest.model_copy(update={"version": version})
         repaired_dir = self.generated_root / manifest.name / version
         repaired_dir.mkdir(parents=True, exist_ok=False)
@@ -365,11 +401,6 @@ class SkillForgeService:
         )
         (repaired_dir / manifest.entrypoint).write_text(code, encoding="utf-8")
         (repaired_dir / "test_skill.py").write_text(tests, encoding="utf-8")
-        improvements = tuple(
-            str(item)[:500]
-            for item in parsed.get("improvements", [])
-            if str(item).strip()
-        ) or (f"Automatic repair of failed version {failed.manifest.version}.",)
         repaired = self.store.add_runtime_skill(
             manifest,
             source_dir=str(repaired_dir),
@@ -384,7 +415,7 @@ class SkillForgeService:
                 "name": manifest.name,
                 "version": version,
                 "repaired_from": failed.runtime_skill_id,
-                "model": response.model,
+                "model": generator,
             },
             correlation_id=repaired.runtime_skill_id,
         )
