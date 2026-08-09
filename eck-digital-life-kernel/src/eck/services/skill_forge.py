@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -118,6 +119,7 @@ class SkillForgeService:
             "auto_enable": self.settings.skill_forge_auto_enable,
             "dependency_install": self.settings.skill_dependency_install_enabled,
             "automatic_repair_attempts": self.settings.skill_forge_max_repair_attempts,
+            "canary_replays": self.settings.skill_canary_replays,
             "active": sum(item.status is RuntimeSkillStatus.ACTIVE for item in skills),
             "testing": sum(item.status is RuntimeSkillStatus.TESTING for item in skills),
             "draft": sum(item.status is RuntimeSkillStatus.DRAFT for item in skills),
@@ -156,6 +158,35 @@ class SkillForgeService:
         report = await self.worker.validate(skill)
         unavailable = bool(report.get("worker_unavailable"))
         passed = bool(report.get("success"))
+        canary_reports = [report]
+        if passed and self.settings.skill_forge_auto_enable:
+            for _ in range(1, self.settings.skill_canary_replays):
+                if self.settings.skill_canary_delay_seconds:
+                    await asyncio.sleep(self.settings.skill_canary_delay_seconds)
+                replay = await self.worker.validate(skill)
+                canary_reports.append(replay)
+                unavailable = unavailable or bool(replay.get("worker_unavailable"))
+                if not replay.get("success"):
+                    passed = False
+                    break
+        report = {
+            **report,
+            "success": passed,
+            "canary": {
+                "required_replays": self.settings.skill_canary_replays,
+                "completed_replays": len(canary_reports),
+                "passed": passed and len(canary_reports) == self.settings.skill_canary_replays,
+                "reports": [
+                    {
+                        "success": bool(item.get("success")),
+                        "worker_unavailable": bool(item.get("worker_unavailable")),
+                        "detail": str(item.get("detail", ""))[-1000:],
+                        "test_output": str(item.get("test_output", ""))[-2000:],
+                    }
+                    for item in canary_reports
+                ],
+            },
+        }
         prior_active = self.store.find_active_runtime_skill(skill.manifest.name)
         status = (
             RuntimeSkillStatus.DRAFT

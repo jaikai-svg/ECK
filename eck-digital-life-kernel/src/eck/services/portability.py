@@ -43,6 +43,7 @@ class CognitiveBundleService:
             self._copy_generated_skills(stage / "runtime_skills")
             self._copy_cognitive_identity(stage / "identity")
             self._copy_evolution_metadata(stage / "evolution")
+            self._copy_autonomous_projects(stage / "projects")
             self._copy_project_metadata(stage / "project")
             if include_artifacts:
                 self._copy_artifacts(stage / "artifacts")
@@ -142,6 +143,17 @@ class CognitiveBundleService:
         if source.is_dir():
             shutil.copytree(source, target / "core_candidates")
 
+    def _copy_autonomous_projects(self, target: Path) -> None:
+        if self.settings.project_lab_dir.is_dir():
+            shutil.copytree(
+                self.settings.project_lab_dir,
+                target,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"),
+            )
+        if self.settings.project_lab_state_path.is_file():
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.settings.project_lab_state_path, target / "cycle-state.json")
+
     def _copy_project_metadata(self, target: Path) -> None:
         project_root = Path(__file__).resolve().parents[3]
         target.mkdir(parents=True, exist_ok=True)
@@ -208,6 +220,7 @@ class CognitiveBundleService:
                 "generated_skill_source": True,
                 "identity_and_lineage": True,
                 "evolution_candidate_metadata": True,
+                "autonomous_project_sources": True,
                 "artifacts": include_artifacts,
                 "model_weights": False,
                 "secrets": False,

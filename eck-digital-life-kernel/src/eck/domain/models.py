@@ -509,6 +509,14 @@ class CoreCandidateRequest(FrozenModel):
     allow_new_files: bool = False
 
 
+class DevelopmentProjectRequest(FrozenModel):
+    objective: str = Field(min_length=20, max_length=4000)
+    name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{2,63}$")
+    research_run_ids: tuple[str, ...] = Field(default=(), max_length=20)
+    visibility: Literal["private", "public"] | None = None
+    publish_when_verified: bool = True
+
+
 class RuntimeVersionRecord(FrozenModel):
     version: str
     major: int = Field(ge=0)

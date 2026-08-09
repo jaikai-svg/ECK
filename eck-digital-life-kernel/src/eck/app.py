@@ -48,6 +48,7 @@ from eck.services.evolution import EvolutionAuditService
 from eck.services.identity import IdentityService
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
+from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.self_model import RepositorySelfModelService
 from eck.services.skill_forge import SkillForgeService
@@ -66,6 +67,7 @@ class Application:
     events: EventBus
     registry: CapabilityRegistry
     brain: BrainProvider
+    coder_brain: BrainProvider
     supervisor_brain: BrainProvider
     worker: DockerSkillWorker
     forge: SkillForgeService
@@ -73,6 +75,7 @@ class Application:
     self_model: RepositorySelfModelService
     skill_bridge: ResearchSkillBridgeService
     core_lab: CoreEvolutionLabService
+    project_lab: AutonomousProjectLabService
     tasks: TaskService
     supervisor: SupervisorService
     autonomous_learning: AutonomousLearningService
@@ -107,6 +110,7 @@ def build_application(settings: Settings | None = None) -> Application:
 
     if settings.brain_provider == "mock":
         brain: BrainProvider = MockBrainProvider()
+        coder_brain: BrainProvider = brain
         supervisor_brain: BrainProvider = MockBrainProvider()
     else:
         inference_arbiter = InferenceArbiter()
@@ -126,10 +130,18 @@ def build_application(settings: Settings | None = None) -> Application:
             default_priority=100,
             health_cache_seconds=settings.brain_health_cache_seconds,
         )
+        coder_brain = OllamaBrainProvider(
+            settings.ollama_base_url,
+            settings.coder_model or settings.ollama_model,
+            settings.coder_timeout_seconds,
+            arbiter=inference_arbiter,
+            default_priority=40,
+            health_cache_seconds=settings.brain_health_cache_seconds,
+        )
 
     versions = VersionService(store, events)
     worker = DockerSkillWorker(settings)
-    forge = SkillForgeService(settings, store, events, brain, worker, versions)
+    forge = SkillForgeService(settings, store, events, coder_brain, worker, versions)
 
     registry = CapabilityRegistry()
     registry.register(SafePythonExpressionCapability())
@@ -203,15 +215,22 @@ def build_application(settings: Settings | None = None) -> Application:
         settings,
         store,
         events,
-        brain,
+        coder_brain,
         forge,
         self_model,
     )
     core_lab = CoreEvolutionLabService(
         settings,
         events,
-        brain,
+        coder_brain,
         self_model,
+    )
+    project_lab = AutonomousProjectLabService(
+        settings,
+        store,
+        events,
+        coder_brain,
+        worker,
     )
     evolution_service = EvolutionAuditService(
         settings,
@@ -220,6 +239,7 @@ def build_application(settings: Settings | None = None) -> Application:
         self_model,
         skill_bridge,
         core_lab,
+        project_lab,
     )
     portability_service = CognitiveBundleService(
         settings,
@@ -245,6 +265,7 @@ def build_application(settings: Settings | None = None) -> Application:
         events,
         task_service,
         community_sources,
+        self_model,
     )
     async def observe_verified_skill(_: EventRecord) -> None:
         await versions.observe_verified_skills()
@@ -265,6 +286,7 @@ def build_application(settings: Settings | None = None) -> Application:
         supervisor_service,
         autonomous_learning,
         skill_bridge,
+        project_lab,
         resources,
     )
     return Application(
@@ -273,6 +295,7 @@ def build_application(settings: Settings | None = None) -> Application:
         events=events,
         registry=registry,
         brain=brain,
+        coder_brain=coder_brain,
         supervisor_brain=supervisor_brain,
         worker=worker,
         forge=forge,
@@ -280,6 +303,7 @@ def build_application(settings: Settings | None = None) -> Application:
         self_model=self_model,
         skill_bridge=skill_bridge,
         core_lab=core_lab,
+        project_lab=project_lab,
         tasks=task_service,
         supervisor=supervisor_service,
         autonomous_learning=autonomous_learning,

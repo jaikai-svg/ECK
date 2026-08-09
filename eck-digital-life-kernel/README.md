@@ -152,6 +152,36 @@ self-modification safety. Trusted official specifications and maintainer reposit
 listed by `GET /v1/learning/community-sources`; catalog inclusion never authorizes direct
 code execution or bypasses the isolated skill and regression gates.
 
+## P5 verified self-development
+
+P5 prioritizes ECK's ability to inspect, test, and improve its own software without
+presenting unverified model output as progress. Autonomous learning slots are allocated
+50% to ECK self-development, 30% to current AI engineering, 15% to foundations, and 5%
+to operator themes and broad exploration.
+
+The repository self model now records definitions, imports, calls, API routes, and direct
+or one-hop test impact. Code drafting uses the separately configured local
+`qwen2.5-coder:7b` provider on the reference RTX 3060 Laptop profile. Generated runtime
+skills must pass isolated validation plus repeated Canary validation before activation.
+Structural core changes remain isolated and human-approved.
+
+The autonomous project laboratory can turn conclusive research into a small local project,
+run its tests in a networkless constrained Docker worker, preserve its source and evidence
+in portability bundles, and publish only verified projects through an authenticated GitHub
+CLI session. Publication is private by default, includes an AI/ECK disclosure, and never
+stores GitHub credentials in ECK.
+
+```text
+GET  /v1/self-model/impact?path=src/eck/services/project_lab.py
+GET  /v1/evolution/projects
+POST /v1/evolution/projects/run
+POST /v1/evolution/projects/{project_id}/publish
+```
+
+P5 is an auditable recursive software-development mechanism. It is not proof of AGI,
+world-class engineering ability, or autonomous base-model weight improvement. See
+`docs/27-p5-verified-recursive-self-development.md` for its gates and claim boundary.
+
 ## Safety boundary
 
 v0.1 defaults:
@@ -334,7 +364,7 @@ src/eck/
   kernel/          Digital Life lifecycle
   memory/          experience, knowledge, reflection, and skill admission
   policy/          graded "otherwise do nothing" gate
-  services/        application workflows
+  services/        workflows, self model, evolution, and autonomous project laboratory
   storage/         SQLite event/task/experience store
   verification/    external-evidence contract verifier
 docs/              13-volume v0.1 specification and completion report

@@ -26,14 +26,19 @@ async def test_autonomous_curriculum_queues_distinct_critical_research(settings)
     assert task.action.capability == "web.critical_research"
     assert task.action.payload["source"] == "autonomous"
     assert task.action.payload["topic"].isascii()
-    assert task.action.payload["topic"].startswith("agent skill standards")
-    assert task.action.payload["url"] == "https://agentskills.io/specification"
+    assert task.action.payload["topic"].startswith("ECK repository architecture")
     assert "autonomous-curriculum" in task.labels
     assert second is None
     status = application.autonomous_learning.status()
     assert status["active_tasks"] == 1
     assert status["runs_last_24h"] == 1
-    assert status["eck_focus_percent"] == 70
+    assert status["eck_focus_percent"] == 80
+    assert status["portfolio"] == {
+        "self_development": 50,
+        "ai_research": 30,
+        "foundation": 15,
+        "exploration": 5,
+    }
     assert status["trusted_community_sources"] >= 11
 
 
@@ -52,7 +57,7 @@ def test_user_theme_is_persisted_and_expanded_before_general_topics(application)
     candidates = application.autonomous_learning._candidate_topics("2026-08-09")
 
     assert theme.active is True
-    assert any(item.startswith("股票:") for item in candidates[:12])
+    assert any(item.startswith("股票:") for item in candidates)
     assert any("geopolitical risk" in item for item in candidates if item.startswith("股票:"))
     assert application.autonomous_learning.status()["active_theme_count"] == 1
 

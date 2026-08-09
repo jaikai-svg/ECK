@@ -7,6 +7,7 @@ from eck.config import Settings
 from eck.domain.enums import RuntimeSkillStatus
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.core_evolution import CoreEvolutionLabService
+from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.self_model import RepositorySelfModelService
 from eck.storage.sqlite import SQLiteStore
@@ -21,6 +22,7 @@ class EvolutionAuditService:
         self_model: RepositorySelfModelService,
         skill_bridge: ResearchSkillBridgeService,
         core_lab: CoreEvolutionLabService,
+        project_lab: AutonomousProjectLabService,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -28,6 +30,7 @@ class EvolutionAuditService:
         self.self_model = self_model
         self.skill_bridge = skill_bridge
         self.core_lab = core_lab
+        self.project_lab = project_lab
         self.project_root = Path(__file__).resolve().parents[3]
 
     async def status(self) -> dict[str, Any]:
@@ -43,6 +46,7 @@ class EvolutionAuditService:
         self_model = self.self_model.status()
         bridge = await self.skill_bridge.status()
         core_lab = self.core_lab.status()
+        project_lab = await self.project_lab.status()
         verifier = self.project_root / "scripts" / "verify_release.py"
         return {
             "classification": "verified_candidate_self_improvement_not_recursive_agi",
@@ -65,6 +69,7 @@ class EvolutionAuditService:
                 "repository_self_model": bool(self_model.get("initialized")),
                 "research_skill_bridge": bridge,
                 "isolated_core_candidate_lab": core_lab,
+                "autonomous_project_lab": project_lab,
             },
             "not_yet_verified": {
                 "automatic_structural_core_activation": True,
@@ -79,6 +84,7 @@ class EvolutionAuditService:
                 "structural_core_change_after_tests": "human_approval_required",
                 "unverified_candidate": "never_activate",
                 "rollback": "retain_prior_active_skill_version",
+                "non_structural_canary": "repeat isolated validation before hot activation",
             },
             "next_architecture": [
                 {

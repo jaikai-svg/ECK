@@ -204,7 +204,11 @@ async def test_generated_skill_is_scanned_tested_and_activated(application, monk
             raw={},
         )
 
+    validations = 0
+
     async def validate(skill):
+        nonlocal validations
+        validations += 1
         return {"success": True, "tests": 1}
 
     monkeypatch.setattr(application.forge.brain, "chat", chat)
@@ -225,6 +229,9 @@ async def test_generated_skill_is_scanned_tested_and_activated(application, monk
     generated_tests = Path(skill.source_dir, "test_skill.py").read_text(encoding="utf-8")
     assert generated_tests.startswith("from skill import execute")
     assert status["active"] >= 1
+    assert status["canary_replays"] == 2
+    assert validations == 2
+    assert skill.test_report["canary"]["passed"] is True
     assert application.forge._next_version([]) == "0.1.0"
     assert application.forge._next_version(["0.1.0"]) == "0.1.1"
     with pytest.raises(ValueError, match="Blocked import"):
@@ -257,7 +264,7 @@ async def test_failed_generated_skill_repairs_and_retests_without_kernel_restart
             },
         )
     )
-    validations = iter((False, True))
+    validations = iter((False, True, True))
 
     async def chat(*args, **kwargs):
         return BrainResponse(

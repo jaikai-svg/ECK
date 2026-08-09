@@ -19,7 +19,9 @@ task_poll_seconds: 0.5
 brain_provider: ollama
 ollama_base_url: http://127.0.0.1:11434
 ollama_model:
+coder_model: qwen2.5-coder:7b
 ollama_timeout_seconds: 120
+coder_timeout_seconds: 300
 
 network_enabled: true
 system_file_mutation_enabled: false
@@ -114,6 +116,10 @@ autonomous_curriculum_enabled: true
 autonomous_curriculum_interval_seconds: 300
 autonomous_curriculum_max_runs_per_day: 0
 autonomous_eck_focus_percent: 70
+p5_self_development_percent: 50
+p5_ai_research_percent: 30
+p5_foundation_percent: 15
+p5_exploration_percent: 5
 community_source_catalog_path: config/community-sources.json
 
 skill_worker_enabled: true
@@ -123,6 +129,8 @@ skill_worker_memory_mb: 1024
 skill_dependency_install_enabled: true
 skill_forge_auto_enable: true
 skill_forge_max_repair_attempts: 2
+skill_canary_replays: 2
+skill_canary_delay_seconds: 1
 autonomous_learning_percent: 90
 challenge_execution_percent: 10
 
@@ -133,3 +141,13 @@ research_skill_bridge_interval_seconds: 21600
 research_skill_bridge_min_research_runs: 12
 core_evolution_enabled: true
 core_evolution_timeout_seconds: 900
+autonomous_project_lab_enabled: true
+autonomous_project_initial_delay_seconds: 1800
+autonomous_project_interval_seconds: 86400
+autonomous_project_min_research_runs: 4
+autonomous_project_max_per_day: 1
+autonomous_project_draft_attempts: 3
+github_publish_enabled: true
+github_auto_publish_verified_projects: true
+github_account:
+github_default_visibility: private

@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     brain_provider: Literal["mock", "ollama"] = "ollama"
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str | None = None
+    coder_model: str | None = None
     ollama_timeout_seconds: float = Field(default=120.0, ge=1, le=1800)
+    coder_timeout_seconds: float = Field(default=300.0, ge=30, le=1800)
     academic_research_timeout_seconds: float = Field(default=30.0, ge=5, le=120)
     academic_research_max_sources: int = Field(default=6, ge=3, le=12)
     academic_research_max_cycles: int = Field(default=3, ge=1, le=8)
@@ -127,6 +129,10 @@ class Settings(BaseSettings):
     autonomous_curriculum_interval_seconds: float = Field(default=300.0, ge=30, le=86400)
     autonomous_curriculum_max_runs_per_day: int = Field(default=0, ge=0, le=1000)
     autonomous_eck_focus_percent: int = Field(default=70, ge=10, le=100)
+    p5_self_development_percent: int = Field(default=50, ge=0, le=100)
+    p5_ai_research_percent: int = Field(default=30, ge=0, le=100)
+    p5_foundation_percent: int = Field(default=15, ge=0, le=100)
+    p5_exploration_percent: int = Field(default=5, ge=0, le=100)
     community_source_catalog_path: Path = Path("config/community-sources.json")
 
     skill_worker_enabled: bool = True
@@ -136,6 +142,8 @@ class Settings(BaseSettings):
     skill_dependency_install_enabled: bool = True
     skill_forge_auto_enable: bool = True
     skill_forge_max_repair_attempts: int = Field(default=2, ge=0, le=5)
+    skill_canary_replays: int = Field(default=2, ge=1, le=5)
+    skill_canary_delay_seconds: float = Field(default=1.0, ge=0, le=60)
     autonomous_learning_percent: int = Field(default=90, ge=50, le=100)
     challenge_execution_percent: int = Field(default=10, ge=0, le=50)
 
@@ -146,6 +154,16 @@ class Settings(BaseSettings):
     research_skill_bridge_min_research_runs: int = Field(default=12, ge=3, le=100)
     core_evolution_enabled: bool = True
     core_evolution_timeout_seconds: float = Field(default=900, ge=60, le=3600)
+    autonomous_project_lab_enabled: bool = True
+    autonomous_project_initial_delay_seconds: float = Field(default=1800, ge=60, le=86400)
+    autonomous_project_interval_seconds: float = Field(default=86400, ge=900, le=604800)
+    autonomous_project_min_research_runs: int = Field(default=4, ge=2, le=20)
+    autonomous_project_max_per_day: int = Field(default=1, ge=0, le=20)
+    autonomous_project_draft_attempts: int = Field(default=3, ge=1, le=5)
+    github_publish_enabled: bool = True
+    github_auto_publish_verified_projects: bool = True
+    github_account: str | None = None
+    github_default_visibility: Literal["private", "public"] = "private"
 
     network_enabled: bool = False
     system_file_mutation_enabled: bool = False
@@ -212,7 +230,9 @@ class Settings(BaseSettings):
             return Path(value).expanduser()
         return value
 
-    @field_validator("ollama_model", "supervisor_model", mode="before")
+    @field_validator(
+        "ollama_model", "supervisor_model", "coder_model", "github_account", mode="before"
+    )
     @classmethod
     def empty_model_is_unconfigured(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
@@ -230,6 +250,14 @@ class Settings(BaseSettings):
             self.database_path = self.data_dir / "eck.db"
         if self.autonomous_learning_percent + self.challenge_execution_percent != 100:
             raise ValueError("Autonomous learning and challenge percentages must total 100.")
+        if (
+            self.p5_self_development_percent
+            + self.p5_ai_research_percent
+            + self.p5_foundation_percent
+            + self.p5_exploration_percent
+            != 100
+        ):
+            raise ValueError("P5 learning portfolio percentages must total 100.")
         try:
             self.image_output_dir.resolve().relative_to(self.workspace_dir.resolve())
             self.video_output_dir.resolve().relative_to(self.workspace_dir.resolve())
@@ -271,6 +299,7 @@ class Settings(BaseSettings):
         self.rembg_model_dir.mkdir(parents=True, exist_ok=True)
         self.identity_dir.mkdir(parents=True, exist_ok=True)
         self.evolution_dir.mkdir(parents=True, exist_ok=True)
+        self.project_lab_dir.mkdir(parents=True, exist_ok=True)
         assert self.database_path is not None
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -289,3 +318,11 @@ class Settings(BaseSettings):
     @property
     def evolution_dir(self) -> Path:
         return self.workspace_dir / "evolution"
+
+    @property
+    def project_lab_dir(self) -> Path:
+        return self.workspace_dir / "projects"
+
+    @property
+    def project_lab_state_path(self) -> Path:
+        return self.data_dir / "autonomous-project-lab.json"

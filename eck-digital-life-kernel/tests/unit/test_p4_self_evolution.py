@@ -46,6 +46,8 @@ async def test_repository_self_model_is_queryable_through_capability(application
 
     assert model["initialized"] is True
     assert model["summary"]["python_modules"] > 0
+    assert model["schema_version"] == "eck-repository-self-model.v2"
+    assert model["summary"]["calls"] > 0
     assert any(
         item["name"] == "services" for item in model["architecture"]["partitions"]
     )
@@ -62,6 +64,12 @@ async def test_repository_self_model_is_queryable_through_capability(application
     assert result.success is True
     assert result.output["matches"]
     assert result.output["metrics"]["completed"] is True
+
+    impact = application.self_model.impact("src/eck/services/skill_forge.py")
+    assert impact["module"] == "eck.services.skill_forge"
+    assert impact["definitions"]
+    assert impact["direct_tests"]
+    assert impact["risk"]["requires_full_regression"] is True
 
 
 def test_repository_self_model_refreshes_when_git_source_changes(

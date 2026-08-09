@@ -62,6 +62,20 @@ class DockerSkillWorker:
         return bool((await self.image_status())["available"])
 
     async def image_status(self) -> dict[str, Any]:
+        latest: dict[str, Any] = {
+            "available": False,
+            "image": self.settings.skill_worker_image,
+            "detail": "Docker image inspection was not attempted.",
+        }
+        for attempt in range(3):
+            latest = await self._inspect_image()
+            if latest["available"]:
+                return latest
+            if attempt < 2:
+                await asyncio.sleep(0.75 * (attempt + 1))
+        return latest
+
+    async def _inspect_image(self) -> dict[str, Any]:
         executable = shutil.which("docker")
         if executable is None:
             return {

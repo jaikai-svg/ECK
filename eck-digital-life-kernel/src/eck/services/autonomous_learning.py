@@ -10,11 +10,22 @@ from eck.domain.models import TaskRecord
 from eck.events.bus import EventBus
 from eck.services.community_sources import CommunitySourceCatalog
 from eck.services.research import build_critical_research_task
+from eck.services.self_model import RepositorySelfModelService
 from eck.services.tasks import TaskService
 from eck.storage.sqlite import SQLiteStore
 
 
 class AutonomousLearningService:
+    _self_development_domains = (
+        "ECK repository architecture and dependency impact",
+        "ECK failing generated skills and executable repair",
+        "ECK resource bottlenecks and background scheduling",
+        "ECK test coverage regression and failure localization",
+        "ECK capability gaps and reusable worker design",
+        "ECK memory retrieval and verified experience reuse",
+        "ECK prompt tool and model routing reliability",
+        "ECK portability rollback and version lineage",
+    )
     _eck_domains = (
         "agent skill standards and reusable tool interfaces",
         "LLM agent planning and hierarchical task decomposition",
@@ -67,6 +78,14 @@ class AutonomousLearningService:
         "negotiation strategy and cooperation mechanisms",
         "disaster risk and emergency response",
     )
+    _foundation_domains = (
+        "browser automation and public web evidence collection",
+        "document spreadsheet and presentation generation",
+        "data analysis visualization and reproducible reporting",
+        "software project planning testing and packaging",
+        "local multimedia generation and artifact verification",
+        "human computer interaction and usable interface design",
+    )
     _lenses = (
         "current evidence and credibility",
         "counterexamples and failure cases",
@@ -100,12 +119,14 @@ class AutonomousLearningService:
         events: EventBus,
         tasks: TaskService,
         community_sources: CommunitySourceCatalog,
+        self_model: RepositorySelfModelService,
     ) -> None:
         self.settings = settings
         self.store = store
         self.events = events
         self.tasks = tasks
         self.community_sources = community_sources
+        self.self_model = self_model
         self._activity_text = "自主課程器待命。"
         self._last_task_id: str | None = None
 
@@ -125,7 +146,10 @@ class AutonomousLearningService:
             "activity_text": self._activity_text,
             "interval_seconds": self.settings.autonomous_curriculum_interval_seconds,
             "max_runs_per_day": self.settings.autonomous_curriculum_max_runs_per_day,
-            "eck_focus_percent": self.settings.autonomous_eck_focus_percent,
+            "eck_focus_percent": (
+                self.settings.p5_self_development_percent
+                + self.settings.p5_ai_research_percent
+            ),
             "trusted_community_sources": self.community_sources.status()["source_count"],
             "runs_last_24h": len(recent),
             "verified_last_24h": len(verified),
@@ -133,7 +157,17 @@ class AutonomousLearningService:
             "last_task_id": self._last_task_id,
             "learning_themes": [item.model_dump(mode="json") for item in themes],
             "active_theme_count": sum(item.active for item in themes),
-            "theme_focus_percent": 100 - self.settings.autonomous_eck_focus_percent,
+            "theme_focus_percent": self.settings.p5_exploration_percent,
+            "portfolio": self.portfolio(),
+            "detected_gaps": self._detected_gaps(),
+        }
+
+    def portfolio(self) -> dict[str, int]:
+        return {
+            "self_development": self.settings.p5_self_development_percent,
+            "ai_research": self.settings.p5_ai_research_percent,
+            "foundation": self.settings.p5_foundation_percent,
+            "exploration": self.settings.p5_exploration_percent,
         }
 
     async def enqueue_if_idle(self) -> TaskRecord | None:
@@ -207,12 +241,22 @@ class AutonomousLearningService:
         return next((candidate for candidate in candidates if candidate not in used), None)
 
     def _candidate_topics(self, day: str) -> list[str]:
-        focus = [
+        self_development = [
+            f"{domain}: {lens} ({day})"
+            for lens in self._lenses
+            for domain in self._self_development_domains
+        ]
+        ai_research = [
             f"{domain}: {lens} ({day})"
             for lens in self._lenses
             for domain in self._eck_domains
         ]
-        general = [
+        foundation = [
+            f"{domain}: {lens} ({day})"
+            for lens in self._lenses
+            for domain in self._foundation_domains
+        ]
+        exploration = [
             f"{domain}: {lens} ({day})"
             for lens in self._lenses
             for domain in self._general_domains
@@ -222,20 +266,80 @@ class AutonomousLearningService:
             for lens in self._theme_lenses
             for theme in self.store.list_learning_themes(active_only=True, limit=100)
         ]
-        guided = themes + general
-        focus_slots = max(1, round(self.settings.autonomous_eck_focus_percent / 10))
-        general_slots = max(0, 10 - focus_slots)
+        exploration = themes + exploration
+        groups = (
+            (self_development, self.settings.p5_self_development_percent),
+            (ai_research, self.settings.p5_ai_research_percent),
+            (foundation, self.settings.p5_foundation_percent),
+            (exploration, self.settings.p5_exploration_percent),
+        )
         merged: list[str] = []
-        while focus or guided:
-            merged.extend(focus[:focus_slots])
-            del focus[:focus_slots]
-            if general_slots:
-                merged.extend(guided[:general_slots])
-                del guided[:general_slots]
-            elif not focus:
-                merged.extend(guided)
-                guided.clear()
+        while any(items for items, _ in groups):
+            for items, percent in groups:
+                slots = percent // 5
+                if not slots:
+                    continue
+                merged.extend(items[:slots])
+                del items[:slots]
         return merged
+
+    def _detected_gaps(self) -> list[dict[str, Any]]:
+        model = self.self_model.status()
+        gaps: list[dict[str, Any]] = []
+        if not model.get("initialized") or model.get("stale"):
+            gaps.append(
+                {
+                    "kind": "self_model",
+                    "priority": 100,
+                    "detail": "Repository self-model is missing or stale.",
+                }
+            )
+        failed_generated = [
+            item
+            for item in self.store.list_runtime_skills(limit=1000)
+            if item.source == "eck-generated" and item.status.value == "failed"
+        ]
+        if failed_generated:
+            gaps.append(
+                {
+                    "kind": "skill_repair",
+                    "priority": 90,
+                    "detail": f"{len(failed_generated)} generated skill versions remain failed.",
+                }
+            )
+        architecture = model.get("architecture", {})
+        test_targets = {
+            str(item.get("target", ""))
+            for item in architecture.get("test_edges", [])
+            if isinstance(item, dict)
+        }
+        core_modules = [
+            item
+            for item in model.get("python_modules", [])
+            if isinstance(item, dict) and item.get("kind") == "core"
+        ]
+        modules_without_direct_tests = sum(
+            not any(
+                target == self.self_model._module_name(str(item.get("path", "")))
+                or target.startswith(
+                    f"{self.self_model._module_name(str(item.get('path', '')))}."
+                )
+                for target in test_targets
+            )
+            for item in core_modules
+        )
+        if modules_without_direct_tests:
+            gaps.append(
+                {
+                    "kind": "test_mapping",
+                    "priority": 70,
+                    "detail": (
+                        f"{modules_without_direct_tests} core modules have no direct import edge "
+                        "from tests; dynamic coverage still requires measurement."
+                    ),
+                }
+            )
+        return sorted(gaps, key=lambda item: int(item["priority"]), reverse=True)
 
     def _autonomous_tasks(self) -> list[TaskRecord]:
         since = utc_now() - timedelta(days=1)

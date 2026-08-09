@@ -70,7 +70,7 @@ class RepositorySelfModelService:
     def status(self) -> dict[str, Any]:
         if not self.model_path.is_file():
             return {
-                "schema_version": "eck-repository-self-model.v1",
+                "schema_version": "eck-repository-self-model.v2",
                 "initialized": False,
                 "stale": True,
                 "path": str(self.model_path),
@@ -113,7 +113,7 @@ class RepositorySelfModelService:
                 modules.append(self._python_module(path, relative))
         architecture = self._architecture(modules)
         model = {
-            "schema_version": "eck-repository-self-model.v1",
+            "schema_version": "eck-repository-self-model.v2",
             "generated_at": utc_now().isoformat(),
             "project_root": str(self.project_root),
             "source_tree_sha256": digest.hexdigest(),
@@ -123,6 +123,8 @@ class RepositorySelfModelService:
                 "python_modules": len(modules),
                 "definitions": sum(len(item["definitions"]) for item in modules),
                 "imports": sum(len(item["imports"]) for item in modules),
+                "calls": sum(len(item["calls"]) for item in modules),
+                "api_routes": sum(len(item["api_routes"]) for item in modules),
                 "tests": sum(item["kind"] == "test" for item in inventory),
                 "source_bytes": total_bytes,
             },
@@ -175,6 +177,68 @@ class RepositorySelfModelService:
             "source_tree_sha256": model.get("source_tree_sha256"),
         }
 
+    def impact(self, relative_path: str) -> dict[str, Any]:
+        normalized = Path(relative_path.replace("\\", "/")).as_posix().lstrip("./")
+        model = self.ensure()
+        modules = [
+            item
+            for item in model.get("python_modules", [])
+            if isinstance(item, dict)
+        ]
+        target = next((item for item in modules if item.get("path") == normalized), None)
+        if target is None:
+            raise KeyError(f"Unknown Python module in repository self-model: {normalized}")
+        module_name = self._module_name(normalized)
+        inbound = []
+        tests = []
+        for item in modules:
+            imports = [str(value).lstrip(".") for value in item.get("imports", [])]
+            if not any(
+                value == module_name or value.startswith(f"{module_name}.")
+                for value in imports
+            ):
+                continue
+            path = str(item.get("path", ""))
+            if item.get("kind") == "test":
+                tests.append(path)
+            else:
+                inbound.append(path)
+        inbound_names = {
+            self._module_name(path)
+            for path in inbound
+            if path.startswith("src/") and path.endswith(".py")
+        }
+        for item in modules:
+            if item.get("kind") != "test":
+                continue
+            imports = [str(value).lstrip(".") for value in item.get("imports", [])]
+            if any(
+                value == inbound_name or value.startswith(f"{inbound_name}.")
+                for inbound_name in inbound_names
+                for value in imports
+            ):
+                tests.append(str(item.get("path", "")))
+        return {
+            "path": normalized,
+            "module": module_name,
+            "definitions": target.get("definitions", []),
+            "api_routes": target.get("api_routes", []),
+            "outbound_imports": [
+                value
+                for value in target.get("imports", [])
+                if str(value).lstrip(".").startswith("eck.")
+            ],
+            "inbound_modules": sorted(inbound),
+            "direct_tests": sorted(set(tests)),
+            "risk": {
+                "inbound_module_count": len(inbound),
+                "direct_test_count": len(set(tests)),
+                "public_definition_count": len(target.get("definitions", [])),
+                "requires_full_regression": True,
+            },
+            "source_tree_sha256": model.get("source_tree_sha256"),
+        }
+
     def _source_files(self) -> list[Path]:
         files = []
         for current, directories, names in os.walk(self.project_root):
@@ -204,11 +268,13 @@ class RepositorySelfModelService:
                 "kind": self._kind(relative),
                 "definitions": [],
                 "imports": [],
+                "calls": [],
+                "api_routes": [],
                 "syntax_error": f"{exc.msg}:{exc.lineno}",
             }
         definitions = []
         imports: list[str] = []
-        for node in tree.body:
+        for node in ast.walk(tree):
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 definitions.append(
                     {
@@ -217,18 +283,66 @@ class RepositorySelfModelService:
                         "line": node.lineno,
                     }
                 )
-            elif isinstance(node, ast.Import):
+            if isinstance(node, ast.Import):
                 imports.extend(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 imports.append("." * node.level + module)
+        calls = sorted(
+            {
+                name
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                if (name := self._call_name(node.func))
+            }
+        )
+        routes = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call) or not decorator.args:
+                    continue
+                if not isinstance(decorator.func, ast.Attribute):
+                    continue
+                method = decorator.func.attr.lower()
+                route = decorator.args[0]
+                if method not in {"delete", "get", "patch", "post", "put"}:
+                    continue
+                if isinstance(route, ast.Constant) and isinstance(route.value, str):
+                    routes.append(
+                        {
+                            "method": method.upper(),
+                            "path": route.value,
+                            "handler": node.name,
+                            "line": node.lineno,
+                        }
+                    )
         return {
             "path": relative,
             "kind": self._kind(relative),
             "definitions": definitions,
             "imports": sorted(set(imports)),
+            "calls": calls,
+            "api_routes": sorted(routes, key=lambda item: (item["path"], item["method"])),
             "lines": len(text.splitlines()),
         }
+
+    @staticmethod
+    def _call_name(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            prefix = RepositorySelfModelService._call_name(node.value)
+            return f"{prefix}.{node.attr}" if prefix else node.attr
+        return None
+
+    @staticmethod
+    def _module_name(relative: str) -> str:
+        if not relative.startswith("src/") or not relative.endswith(".py"):
+            return relative.replace("/", ".")
+        module = relative[4:-3].replace("/", ".")
+        return module.removesuffix(".__init__")
 
     @staticmethod
     def _kind(relative: str) -> str:
@@ -262,6 +376,16 @@ class RepositorySelfModelService:
                 target = normalized.split(".", 2)[1]
                 if target != source:
                     edges[(source, target)] += 1
+        test_edges = []
+        for module in modules:
+            if module.get("kind") != "test":
+                continue
+            for imported in module.get("imports", []):
+                normalized = str(imported).lstrip(".")
+                if normalized.startswith("eck."):
+                    test_edges.append(
+                        {"test": module["path"], "target": normalized}
+                    )
         return {
             "partitions": [
                 {"name": name, "python_modules": count}
@@ -271,6 +395,9 @@ class RepositorySelfModelService:
                 {"source": source, "target": target, "imports": count}
                 for (source, target), count in sorted(edges.items())
             ],
+            "test_edges": sorted(
+                test_edges, key=lambda item: (str(item["target"]), str(item["test"]))
+            ),
         }
 
     def _git_state(self) -> dict[str, Any]:

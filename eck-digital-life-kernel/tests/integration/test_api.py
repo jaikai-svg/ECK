@@ -56,7 +56,7 @@ def test_health_dashboard_and_acceptance(application) -> None:
         theme_id = theme.json()["theme_id"]
         themes = client.get("/v1/learning/themes")
         assert themes.json()["items"][0]["title"] == "股票"
-        assert themes.json()["theme_focus_percent"] == 30
+        assert themes.json()["theme_focus_percent"] == 5
         paused = client.patch(
             f"/v1/learning/themes/{theme_id}", json={"active": False}
         )

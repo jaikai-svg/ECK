@@ -11,6 +11,7 @@ from eck.domain.models import KernelStatus, SupervisorReviewRecord, TaskRecord
 from eck.events.bus import EventBus
 from eck.runtime.resources import SystemResourceMonitor
 from eck.services.autonomous_learning import AutonomousLearningService
+from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
@@ -27,6 +28,7 @@ class LifeKernel:
         supervisor: SupervisorService,
         autonomous_learning: AutonomousLearningService,
         skill_bridge: ResearchSkillBridgeService,
+        project_lab: AutonomousProjectLabService,
         resources: SystemResourceMonitor,
     ) -> None:
         self.settings = settings
@@ -36,6 +38,7 @@ class LifeKernel:
         self.supervisor = supervisor
         self.autonomous_learning = autonomous_learning
         self.skill_bridge = skill_bridge
+        self.project_lab = project_lab
         self.resources = resources
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
@@ -43,6 +46,7 @@ class LifeKernel:
         self._supervision_task: asyncio.Task[SupervisorReviewRecord | None] | None = None
         self._curriculum_task: asyncio.Task[TaskRecord | None] | None = None
         self._skill_bridge_task: asyncio.Task[dict[str, Any]] | None = None
+        self._project_lab_task: asyncio.Task[dict[str, Any]] | None = None
         self._stop = asyncio.Event()
         self._sleep_requested = asyncio.Event()
         self._sleep_lock = asyncio.Lock()
@@ -139,6 +143,11 @@ class LifeKernel:
             with suppress(asyncio.CancelledError):
                 await self._skill_bridge_task
             self._skill_bridge_task = None
+        if self._project_lab_task:
+            self._project_lab_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._project_lab_task
+            self._project_lab_task = None
         await self.events.publish(
             "KernelStopped",
             self.settings.identity,
@@ -186,6 +195,9 @@ class LifeKernel:
         next_curriculum = loop.time()
         next_skill_bridge = (
             loop.time() + self.settings.research_skill_bridge_initial_delay_seconds
+        )
+        next_project_lab = (
+            loop.time() + self.settings.autonomous_project_initial_delay_seconds
         )
         try:
             while not self._stop.is_set():
@@ -235,12 +247,22 @@ class LifeKernel:
                     next_skill_bridge = (
                         loop.time() + self.settings.research_skill_bridge_interval_seconds
                     )
+                if self._project_lab_task and self._project_lab_task.done():
+                    try:
+                        await self._project_lab_task
+                    except Exception as exc:
+                        await self._background_failure("autonomous_project_lab", exc)
+                    self._project_lab_task = None
+                    next_project_lab = (
+                        loop.time() + self.settings.autonomous_project_interval_seconds
+                    )
                 if self.phase is KernelPhase.RUNNING:
                     if (
                         self._execution_task is None
                         and self._supervision_task is None
                         and self._curriculum_task is None
                         and self._skill_bridge_task is None
+                        and self._project_lab_task is None
                     ):
                         prefer_challenge = (
                             self._schedule_cursor >= self.settings.autonomous_learning_percent
@@ -269,6 +291,14 @@ class LifeKernel:
                             self._skill_bridge_task = asyncio.create_task(
                                 self.skill_bridge.run_if_needed(),
                                 name="eck-research-skill-bridge",
+                            )
+                        elif (
+                            self.settings.autonomous_project_lab_enabled
+                            and loop.time() >= next_project_lab
+                        ):
+                            self._project_lab_task = asyncio.create_task(
+                                self.project_lab.run_if_needed(),
+                                name="eck-autonomous-project-lab",
                             )
                         elif self.settings.supervisor_enabled and loop.time() >= next_supervision:
                             self._supervision_task = asyncio.create_task(

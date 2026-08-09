@@ -541,7 +541,8 @@ function renderResearch(tasks, experiences) {
 
 function renderLearningThemes(data) {
   const themes = data.items || [];
-  $("#learning-theme-ratio").textContent = `${formatCount(data.eck_focus_percent)}% 核心 · ${formatCount(data.theme_focus_percent)}% 主題`;
+  const portfolio = data.portfolio || {};
+  $("#learning-theme-ratio").textContent = `${formatCount(portfolio.self_development)}% 自我 · ${formatCount(portfolio.ai_research)}% AI · ${formatCount(portfolio.foundation)}% 基礎 · ${formatCount(portfolio.exploration)}% 探索`;
   $("#learning-theme-list").innerHTML = themes.map((item) => `
     <div class="learning-theme-item ${item.active ? "" : "paused"}">
       <b>${escapeHtml(item.title)}</b>
@@ -660,6 +661,11 @@ function renderRoadmap(data) {
   $("#roadmap-experience-count").textContent = formatCount(verified.verified_experiences);
   $("#roadmap-runtime-skill-count").textContent = formatCount(verified.active_runtime_skills);
   $("#roadmap-chain-state").textContent = verified.event_chain_valid ? "有效" : "異常";
+  $("#roadmap-coder-state").textContent = verified.coder_ready
+    ? verified.coder_model || "READY"
+    : "尚未就緒";
+  $("#roadmap-project-count").textContent = `${formatCount(verified.autonomous_projects)} · ${formatCount(verified.published_projects)} 已發布`;
+  $("#roadmap-github-state").textContent = verified.github_ready ? "READY" : "等待登入";
   $("#roadmap-soul-state").textContent = verified.soul_integrity
     ? `有效 · r${formatCount(verified.soul_revision)}`
     : "異常";

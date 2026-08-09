@@ -22,6 +22,7 @@ from eck.domain.models import (
     BenchmarkRunCreate,
     ChallengeDraftCreate,
     CoreCandidateRequest,
+    DevelopmentProjectRequest,
     LearningThemeCreate,
     MissionCompletionCreate,
     MissionCreate,
@@ -126,6 +127,7 @@ def create_api(
     @api.get("/health")
     async def health(app: AppDependency) -> dict[str, object]:
         brain = await app.brain.health()
+        coder = await app.coder_brain.health()
         chain_valid, failed_sequence = app.store.verify_event_chain_incremental()
         status = app.kernel.status()
         latest_admitted = app.store.latest_experience(admitted=True)
@@ -168,6 +170,7 @@ def create_api(
             "version": __version__,
             "kernel": status.model_dump(mode="json"),
             "brain": brain.model_dump(mode="json"),
+            "coder": coder.model_dump(mode="json"),
             "image_generation": app.image_generation.status(),
             "image_background_removal": app.image_background_removal.status(),
             "video_generation": app.video_generation.status(),
@@ -298,6 +301,8 @@ def create_api(
         self_model = app.self_model.status()
         skill_bridge = await app.skill_bridge.status()
         core_lab = app.core_lab.status()
+        project_lab = await app.project_lab.status()
+        coder = await app.coder_brain.health()
         runtime_skills = [
             item
             for item in app.store.list_runtime_skills(limit=1000)
@@ -331,6 +336,12 @@ def create_api(
                 "active_generated_skills": skill_bridge["active_generated_skills"],
                 "core_candidate_count": core_lab["candidate_count"],
                 "live_core_mutation": core_lab["live_core_mutation"],
+                "coder_model": coder.model,
+                "coder_ready": coder.available,
+                "autonomous_projects": project_lab["project_count"],
+                "published_projects": project_lab["published_count"],
+                "github_ready": project_lab["github"]["ready"],
+                "learning_portfolio": app.autonomous_learning.portfolio(),
             },
             "milestones": [
                 {
@@ -370,6 +381,15 @@ def create_api(
                     "evidence": (
                         "SOUL 身分、雜湊程式庫自我模型、研究轉技能閘門、隔離核心候選與"
                         "固定回歸測試已接入；結構更新仍須人工核准。"
+                    ),
+                },
+                {
+                    "version": "P5",
+                    "title": "可驗證遞迴自我進化",
+                    "state": "verified",
+                    "evidence": (
+                        "程式專用模型路由、自我影響圖譜、50/30/15/5 自主課程、Skill "
+                        "Canary，以及研究驅動的隔離專案與 GitHub 發布閘門已接入。"
                     ),
                 },
                 {
@@ -444,7 +464,8 @@ def create_api(
         return {
             "items": app.store.list_learning_themes(limit=100),
             "eck_focus_percent": app.settings.autonomous_eck_focus_percent,
-            "theme_focus_percent": 100 - app.settings.autonomous_eck_focus_percent,
+            "theme_focus_percent": app.settings.p5_exploration_percent,
+            "portfolio": app.autonomous_learning.portfolio(),
         }
 
     @api.post("/v1/learning/themes", status_code=201)
@@ -513,6 +534,16 @@ def create_api(
     async def refresh_repository_self_model(app: AppDependency) -> dict[str, Any]:
         return app.self_model.refresh()
 
+    @api.get("/v1/self-model/impact")
+    async def repository_change_impact(
+        app: AppDependency,
+        path: str = Query(min_length=3, max_length=500),
+    ) -> dict[str, Any]:
+        try:
+            return app.self_model.impact(path)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @api.get("/v1/evolution/skill-bridge")
     async def research_skill_bridge_status(app: AppDependency) -> dict[str, Any]:
         return await app.skill_bridge.status()
@@ -553,6 +584,41 @@ def create_api(
         try:
             return await app.core_lab.validate_candidate(candidate_id)
         except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @api.get("/v1/evolution/projects")
+    async def list_autonomous_projects(app: AppDependency) -> dict[str, Any]:
+        return {"status": await app.project_lab.status(), "items": app.project_lab.list_projects()}
+
+    @api.get("/v1/evolution/projects/{project_id}")
+    async def get_autonomous_project(project_id: str, app: AppDependency) -> dict[str, Any]:
+        try:
+            return app.project_lab.get_project(project_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/v1/evolution/projects", status_code=201)
+    async def create_autonomous_project(
+        request: DevelopmentProjectRequest,
+        app: AppDependency,
+    ) -> dict[str, Any]:
+        try:
+            return await app.project_lab.create(request)
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @api.post("/v1/evolution/projects/run", status_code=202)
+    async def run_autonomous_project_cycle(app: AppDependency) -> dict[str, Any]:
+        try:
+            return await app.project_lab.run_if_needed(force=True)
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @api.post("/v1/evolution/projects/{project_id}/publish")
+    async def publish_autonomous_project(project_id: str, app: AppDependency) -> dict[str, Any]:
+        try:
+            return await app.project_lab.publish(project_id)
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @api.post("/v1/portability/bundles", status_code=201)
