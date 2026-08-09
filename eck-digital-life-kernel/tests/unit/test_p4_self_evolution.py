@@ -64,6 +64,44 @@ async def test_repository_self_model_is_queryable_through_capability(application
     assert result.output["metrics"]["completed"] is True
 
 
+def test_repository_self_model_refreshes_when_git_source_changes(
+    application,
+    monkeypatch,
+) -> None:
+    application.self_model.model_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-08-09T00:00:00+00:00",
+                "git": {
+                    "available": True,
+                    "commit": "old",
+                    "dirty": False,
+                    "changed_paths": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        application.self_model,
+        "_git_state",
+        lambda: {
+            "available": True,
+            "commit": "new",
+            "dirty": False,
+            "changed_paths": [],
+        },
+    )
+    refreshed = {
+        "initialized": True,
+        "git": {"commit": "new"},
+        "summary": {},
+    }
+    monkeypatch.setattr(application.self_model, "refresh", lambda: refreshed)
+
+    assert application.self_model.ensure() == refreshed
+
+
 @pytest.mark.asyncio
 async def test_skill_bridge_does_not_claim_growth_without_worker(application, monkeypatch) -> None:
     async def unavailable_worker() -> dict[str, object]:

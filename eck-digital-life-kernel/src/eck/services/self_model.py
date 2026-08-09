@@ -50,6 +50,21 @@ class RepositorySelfModelService:
     def ensure(self) -> dict[str, Any]:
         if not self.model_path.is_file():
             return self.refresh()
+        recorded = self._read()
+        current_git = self._git_state()
+        recorded_git = recorded.get("git", {})
+        if not isinstance(recorded_git, dict) or any(
+            recorded_git.get(key) != current_git.get(key)
+            for key in ("available", "commit", "dirty", "changed_paths")
+        ):
+            return self.refresh()
+        generated_at = str(recorded.get("generated_at", ""))
+        try:
+            stale = utc_now() - self._parse_time(generated_at) > timedelta(hours=24)
+        except ValueError:
+            stale = True
+        if stale:
+            return self.refresh()
         return self.status()
 
     def status(self) -> dict[str, Any]:
