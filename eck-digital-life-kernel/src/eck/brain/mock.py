@@ -10,7 +10,12 @@ class MockBrainProvider(BrainProvider):
     """Deterministic provider used by tests and offline demonstrations."""
 
     async def health(self) -> BrainHealth:
-        return BrainHealth(provider="mock", available=True, model="mock-deterministic")
+        return BrainHealth(
+            provider="mock",
+            available=True,
+            model="mock-deterministic",
+            artifact_hash="mock-deterministic-v1",
+        )
 
     async def chat(
         self,

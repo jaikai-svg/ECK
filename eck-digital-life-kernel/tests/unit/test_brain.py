@@ -48,7 +48,9 @@ class _FakeClient:
 
     async def get(self, url):
         type(self).get_count += 1
-        return _FakeResponse({"models": [{"name": "qwen:test"}]})
+        return _FakeResponse(
+            {"models": [{"name": "qwen:test", "digest": "sha256:qwen-test"}]}
+        )
 
     async def post(self, url, json):
         type(self).last_json = json
@@ -64,6 +66,7 @@ async def test_ollama_health_and_chat(monkeypatch) -> None:
     brain = OllamaBrainProvider("http://ollama", "qwen:test", 10)
     health = await brain.health()
     assert health.available
+    assert health.artifact_hash == "sha256:qwen-test"
     assert (await brain.health()).available
     assert _FakeClient.get_count == 1
     response = await brain.chat(

@@ -14,6 +14,7 @@ class BrainHealth(BaseModel):
     provider: str
     available: bool
     model: str | None = None
+    artifact_hash: str | None = None
     detail: str = ""
 
 

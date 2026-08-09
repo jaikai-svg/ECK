@@ -358,6 +358,10 @@ class BenchmarkRunRecord(BenchmarkRunCreate):
     created_at: datetime
 
 
+class ObjectiveEvaluationRequest(FrozenModel):
+    repetitions: int = Field(default=2, ge=1, le=3)
+
+
 class AutonomousActionContext(FrozenModel):
     action_type: str = Field(min_length=2, max_length=120)
     public_action: bool = False

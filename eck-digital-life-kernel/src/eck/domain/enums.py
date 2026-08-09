@@ -59,6 +59,7 @@ class BenchmarkSuite(StrEnum):
     GSM8K = "gsm8k"
     FRONTIER_SCIENCE = "frontier_science"
     REAL_TASKS = "real_tasks"
+    ECK_P3_OBJECTIVE = "eck_p3_objective"
 
 
 class RiskLevel(StrEnum):

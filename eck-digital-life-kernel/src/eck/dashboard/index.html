@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07111f">
   <title>ECK 數位生命核心</title>
-  <link rel="stylesheet" href="/static/styles.css?v=19">
+  <link rel="stylesheet" href="/static/styles.css?v=20">
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -23,8 +23,9 @@
         <a href="#challenges" data-view-link="challenges"><span>02</span>課題挑戰</a>
         <a href="#learning" data-view-link="learning"><span>03</span>學習成果</a>
         <a href="#skill-tree" data-view-link="skill-tree"><span>04</span>技能樹</a>
-        <a href="#roadmap" data-view-link="roadmap"><span>05</span>使命與路線圖</a>
-        <a href="#system" data-view-link="system"><span>06</span>系統資訊</a>
+        <a href="#evaluation" data-view-link="evaluation"><span>05</span>客觀評估</a>
+        <a href="#roadmap" data-view-link="roadmap"><span>06</span>使命與路線圖</a>
+        <a href="#system" data-view-link="system"><span>07</span>系統資訊</a>
       </nav>
 
       <div class="sidebar-status">
@@ -259,6 +260,46 @@
         </article>
       </section>
 
+      <section class="view" data-view="evaluation" hidden>
+        <header class="page-intro evaluation-intro">
+          <div>
+            <p class="eyebrow">P3 OBJECTIVE EVALUATION</p>
+            <p>固定題集、確定性評分與模型雜湊分開量測能力；研究次數不再等同技能成長。</p>
+          </div>
+          <button id="run-objective-evaluation" type="button">執行 2 輪本機評估</button>
+        </header>
+
+        <section class="learning-summary evaluation-summary">
+          <article><span>最新固定診斷</span><b id="objective-score">—</b></article>
+          <article><span>答案重現率</span><b id="objective-reproducibility">—</b></article>
+          <article><span>24h 研究准入</span><b id="growth-research-count">—</b></article>
+          <article><span>24h 新啟用技能</span><b id="growth-active-skill-count">—</b></article>
+        </section>
+
+        <article class="panel growth-audit-panel" id="growth-audit-panel">
+          <div class="panel-head compact">
+            <div><p class="eyebrow">HONEST GROWTH AUDIT</p><h2>能力成長稽核</h2></div>
+            <span class="pill" id="growth-audit-state">讀取中</span>
+          </div>
+          <p id="growth-audit-message">正在分開計算研究、記憶技能與可執行技能。</p>
+          <div class="growth-metrics" id="growth-metrics"></div>
+        </article>
+
+        <div class="evaluation-grid">
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">DIMENSIONS</p><h2>固定診斷構面</h2></div><span class="count-label" id="objective-case-count">20 cases</span></div>
+            <div class="evaluation-dimensions" id="evaluation-dimensions"><div class="empty">尚未建立本機基線。</div></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head compact"><div><p class="eyebrow">COMPARISON</p><h2>同條件比較</h2></div><span class="pill" id="objective-comparison-state">尚無基線</span></div>
+            <p class="subtle-copy" id="objective-comparison-message">只有題集版本、模型與模型雜湊相同時才比較增退。</p>
+            <div class="evaluation-history" id="evaluation-history"><div class="empty">尚未執行 P3 評估。</div></div>
+          </article>
+        </div>
+
+        <p class="roadmap-claim-policy" id="objective-claim-policy">公開本機診斷不是保留測試，不能單獨證明能力提升或 AGI。</p>
+      </section>
+
       <section class="view" data-view="roadmap" hidden>
         <header class="page-intro">
           <div><p class="eyebrow">MISSION & CAPABILITY ROADMAP</p><p>清楚分開長期願景、工程進度與已通過外部證據驗證的能力，避免把目標誤認為現況。</p></div>
@@ -401,6 +442,6 @@
   </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=20"></script>
+  <script src="/static/app.js?v=21"></script>
 </body>
 </html>

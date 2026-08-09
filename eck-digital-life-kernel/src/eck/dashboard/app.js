@@ -157,6 +157,7 @@ function eventLabel(value) {
     SocialPostObserved: "社群成效已觀察",
     UltimateChallengeSucceeded: "課題已成功",
     BenchmarkRecorded: "能力基準已記錄",
+    ObjectiveEvaluationCompleted: "P3 客觀評估已完成",
     LearningAdmissionRevoked: "錯誤學習已撤銷",
     SupervisorReviewStarted: "監督者開始檢查",
     SupervisorReviewCompleted: "監督者完成評估",
@@ -198,6 +199,7 @@ const pageTitles = {
   challenges: "課題挑戰",
   learning: "學習成果",
   "skill-tree": "技能樹",
+  evaluation: "客觀評估",
   roadmap: "使命與路線圖",
   system: "系統資訊",
 };
@@ -565,6 +567,82 @@ function renderBenchmarks(data) {
   }).join("");
 }
 
+function renderObjectiveEvaluation(data) {
+  const objective = data.objective || {};
+  const comparison = objective.comparison || {};
+  const latest = comparison.latest;
+  const protocol = latest?.protocol || {};
+  const audit = data.growth_audit || {};
+  const score = latest ? `${(Number(latest.score) * 100).toFixed(1)}%` : "—";
+  const reproducibility = Number.isFinite(Number(protocol.reproducibility_rate))
+    ? `${(Number(protocol.reproducibility_rate) * 100).toFixed(1)}%`
+    : "—";
+  $("#objective-score").textContent = score;
+  $("#objective-reproducibility").textContent = reproducibility;
+  $("#growth-research-count").textContent = formatCount(audit.research_admissions);
+  $("#growth-active-skill-count").textContent = formatCount(audit.activated_generated_skills);
+  $("#objective-case-count").textContent = `${formatCount(objective.case_count)} cases`;
+  $("#objective-claim-policy").textContent = data.claim_policy;
+
+  const auditStates = {
+    research_without_executable_skill_growth: ["研究未轉技能", "warning", "stalled"],
+    verified_executable_skill_growth: ["技能已驗證成長", "success", "verified"],
+    verified_learning_without_new_executable_skill: ["有學習、無新技能", "warning", "stalled"],
+    no_verified_learning_activity: ["無驗證學習", "danger", "stalled"],
+  };
+  const [auditLabel, auditPill, auditPanel] = auditStates[audit.status] || ["資料不足", "", ""];
+  $("#growth-audit-state").textContent = auditLabel;
+  $("#growth-audit-state").className = `pill ${auditPill}`.trim();
+  $("#growth-audit-panel").className = `panel growth-audit-panel ${auditPanel}`.trim();
+  $("#growth-audit-message").textContent = audit.message || "尚未完成能力成長稽核。";
+  const conversion = audit.research_to_active_skill_rate == null
+    ? "—"
+    : `${(Number(audit.research_to_active_skill_rate) * 100).toFixed(2)}%`;
+  const growthMetrics = [
+    ["24h 已准入經驗", audit.admitted_experiences],
+    ["24h 新記憶技能", audit.new_memory_skills],
+    ["24h 技能候選", audit.generated_skill_candidates],
+    ["研究→啟用率", conversion],
+    ["歷史活躍生成技能", audit.lifetime_active_generated_skills],
+  ];
+  $("#growth-metrics").innerHTML = growthMetrics.map(([label, value]) => `
+    <div><span>${escapeHtml(label)}</span><b>${typeof value === "number" ? formatCount(value) : escapeHtml(value ?? "—")}</b></div>
+  `).join("");
+
+  const categoryLabels = {
+    reasoning: "推理",
+    evidence: "證據判斷",
+    tool_routing: "工具路由",
+    software_engineering: "軟體工程",
+  };
+  const categoryScores = protocol.category_scores || {};
+  $("#evaluation-dimensions").innerHTML = Object.entries(categoryLabels).map(([key, label]) => {
+    const value = categoryScores[key];
+    return `<div class="evaluation-dimension"><span>${escapeHtml(label)}</span><b>${value == null ? "—" : `${(Number(value) * 100).toFixed(1)}%`}</b></div>`;
+  }).join("");
+
+  const comparisonStates = {
+    no_baseline: ["尚無基線", "請先執行固定本機評估。"],
+    baseline_created: ["基線已建立", "已有第一筆分數；至少再執行一次同條件評估才能比較。"],
+    conditions_changed: ["條件不同", "題集、模型或模型雜湊不同，不宣稱增退。"],
+    diagnostic_improved: ["固定診斷上升", "同題集、同模型雜湊的診斷分數上升；仍需保留真實任務確認。"],
+    diagnostic_regressed: ["固定診斷退步", "同條件分數下降，應停止宣稱能力增強並調查回歸。"],
+    diagnostic_unchanged: ["固定診斷持平", "同條件分數沒有變化。"],
+  };
+  const [comparisonLabel, comparisonMessage] = comparisonStates[comparison.status] || ["無法比較", "評測條件不足。"];
+  $("#objective-comparison-state").textContent = comparisonLabel;
+  $("#objective-comparison-state").className = comparison.status === "diagnostic_regressed"
+    ? "pill danger"
+    : comparison.status === "diagnostic_improved" ? "pill success" : "pill";
+  $("#objective-comparison-message").textContent = comparisonMessage;
+  $("#evaluation-history").innerHTML = (objective.history || []).map((item) => `
+    <article class="evaluation-history-item">
+      <div><b>${escapeHtml(item.model)}</b><small>${formatTime(item.created_at, true)} · ${formatCount(item.repetitions)} 輪 · ${Number(item.latency_seconds || 0).toFixed(1)} 秒</small></div>
+      <span>${(Number(item.score) * 100).toFixed(1)}%</span>
+    </article>
+  `).join("") || '<div class="empty">尚未執行 P3 評估。</div>';
+}
+
 function renderRoadmap(data) {
   const verified = data.verified_now || {};
   const capabilities = verified.registered_capabilities || [];
@@ -892,6 +970,7 @@ async function refresh() {
     renderResearch(tasks.items, experiences.items);
     renderLearningThemes(themes);
     renderBenchmarks(evaluations);
+    renderObjectiveEvaluation(evaluations);
     renderRoadmap(roadmap);
     renderImageStack(health);
     renderVideoStack(health);
@@ -1317,6 +1396,26 @@ $("#validate-skills").addEventListener("click", async (event) => {
     toast(`技能檢查失敗：${error.message}`);
   } finally {
     event.currentTarget.disabled = false;
+  }
+});
+
+$("#run-objective-evaluation").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "評估執行中…";
+  try {
+    const result = await request("/v1/evaluations/objective", {
+      method: "POST",
+      body: JSON.stringify({ repetitions: 2 }),
+    });
+    const score = Number(result.run?.score || 0) * 100;
+    toast(`P3 固定診斷完成：${score.toFixed(1)}%`);
+    await refresh();
+  } catch (error) {
+    toast(`P3 評估失敗：${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "執行 2 輪本機評估";
   }
 });
 

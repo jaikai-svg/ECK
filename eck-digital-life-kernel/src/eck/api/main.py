@@ -16,7 +16,7 @@ from eck import __version__
 from eck.app import Application, build_application
 from eck.config import Settings
 from eck.core.time import utc_now
-from eck.domain.enums import ApprovalStatus, KernelPhase, TaskStatus
+from eck.domain.enums import ApprovalStatus, BenchmarkSuite, KernelPhase, TaskStatus
 from eck.domain.models import (
     AutonomousActionContext,
     BenchmarkRunCreate,
@@ -26,6 +26,7 @@ from eck.domain.models import (
     MissionCreate,
     MissionReviewDecision,
     MissionUpdate,
+    ObjectiveEvaluationRequest,
     SkillForgeRequest,
     SocialPostObservationCreate,
     TaskCreate,
@@ -305,8 +306,8 @@ def create_api(
                 "最終以高標準數位能力服務使用者並造福人類的自主學習核心。"
             ),
             "current_truth": (
-                "ECK v0.1.0 已完成基礎核心與 P0～P2 工程整修，具生命週期、工具、記憶、"
-                "驗證、監督與資源保護架構；Qwen 權重尚未自我訓練，目前不是已證實的 AGI，"
+                "ECK v0.1.0 已完成基礎核心與 P0～P3 工程整修，具生命週期、工具、記憶、"
+                "驗證、監督、資源保護與客觀診斷架構；Qwen 權重尚未自我訓練，目前不是已證實的 AGI，"
                 "也沒有證據顯示已超越人類知識水平。"
             ),
             "verified_now": {
@@ -345,10 +346,16 @@ def create_api(
                     "evidence": "主機資源監控、工作區容量快取、背景節流與模型閒置釋放已接入。",
                 },
                 {
+                    "version": "P3",
+                    "title": "客觀能力評估",
+                    "state": "verified",
+                    "evidence": "固定本機診斷、模型雜湊、重現率、同條件比較與學習產率稽核已接入。",
+                },
+                {
                     "version": "Next",
-                    "title": "能力增益量化與安全自我改進",
+                    "title": "安全核心候選自我改進",
                     "state": "not_verified",
-                    "evidence": "需以固定基準、真實任務與回歸測試證明能力淨增益。",
+                    "evidence": "需建立隔離 worktree、保留真實任務、陰影重播與人工批准切換。",
                 },
             ],
             "targets": [
@@ -743,6 +750,23 @@ def create_api(
             return await app.evaluations.record(request)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @api.post("/v1/evaluations/objective", status_code=201)
+    async def run_objective_evaluation(
+        request: ObjectiveEvaluationRequest,
+        app: AppDependency,
+    ) -> dict[str, Any]:
+        try:
+            return await app.evaluations.run_objective(request)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @api.get("/v1/evaluations/compare")
+    async def compare_evaluations(
+        app: AppDependency,
+        suite: Annotated[BenchmarkSuite, Query()] = BenchmarkSuite.ECK_P3_OBJECTIVE,
+    ) -> dict[str, Any]:
+        return app.evaluations.compare(suite)
 
     @api.post("/v1/governance/autonomous-actions/evaluate")
     async def evaluate_autonomous_action(

@@ -44,11 +44,12 @@ class OllamaBrainProvider(BrainProvider):
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
                 response.raise_for_status()
-                models = [
-                    item.get("name")
+                model_items = [
+                    item
                     for item in response.json().get("models", [])
-                    if item.get("name")
+                    if isinstance(item, dict) and item.get("name")
                 ]
+                models = [str(item["name"]) for item in model_items]
             if self.model is None:
                 health = BrainHealth(
                     provider="ollama",
@@ -59,13 +60,25 @@ class OllamaBrainProvider(BrainProvider):
                     ),
                 )
                 return self._cache_health(now, health)
-            available = self.model in models or any(
-                name and name.split(":")[0] == self.model for name in models
+            matched = next(
+                (
+                    item
+                    for item in model_items
+                    if item["name"] == self.model
+                    or str(item["name"]).split(":")[0] == self.model
+                ),
+                None,
             )
+            available = matched is not None
             health = BrainHealth(
                 provider="ollama",
                 available=available,
                 model=self.model,
+                artifact_hash=(
+                    str(matched.get("digest"))
+                    if matched and matched.get("digest")
+                    else None
+                ),
                 detail=(
                     "Ollama model is ready."
                     if available

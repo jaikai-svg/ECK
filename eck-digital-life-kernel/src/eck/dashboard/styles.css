@@ -352,6 +352,27 @@ textarea { resize: vertical; }
 .benchmark-item p { margin: .18rem 0 0; color: var(--subtle); font-size: .53rem; }
 .benchmark-score { color: var(--accent); font: 700 .68rem ui-monospace, monospace; white-space: nowrap; }
 .benchmark-score.empty-score { color: var(--subtle); }
+.evaluation-intro { align-items: flex-end; gap: 1rem; }
+.evaluation-intro button { flex: 0 0 auto; }
+.evaluation-summary { margin-bottom: .8rem; }
+.growth-audit-panel { margin-bottom: .8rem; }
+.growth-audit-panel.stalled { border-color: rgba(245, 199, 103, .35); }
+.growth-audit-panel.verified { border-color: var(--line-strong); }
+.growth-audit-panel > p { margin: .7rem 0 0; color: var(--muted); font-size: .68rem; }
+.growth-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
+.growth-metrics > div { min-width: 0; padding: .62rem; border: 1px solid var(--line); border-radius: 11px; background: rgba(255, 255, 255, .018); }
+.growth-metrics span { display: block; overflow: hidden; color: var(--subtle); font-size: .5rem; text-overflow: ellipsis; white-space: nowrap; }
+.growth-metrics b { display: block; margin-top: .18rem; color: var(--text); font: 720 .72rem ui-monospace, monospace; }
+.evaluation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+.evaluation-dimensions, .evaluation-history { display: grid; gap: .5rem; margin-top: .85rem; }
+.evaluation-dimension { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .65rem; padding: .68rem; border: 1px solid var(--line); border-radius: 11px; }
+.evaluation-dimension span { color: var(--muted); font-size: .63rem; }
+.evaluation-dimension b { color: var(--accent); font: 720 .68rem ui-monospace, monospace; }
+.evaluation-history-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem; padding: .68rem; border: 1px solid var(--line); border-radius: 11px; }
+.evaluation-history-item b, .evaluation-history-item small { display: block; }
+.evaluation-history-item b { font-size: .62rem; }
+.evaluation-history-item small { margin-top: .18rem; color: var(--subtle); font: .5rem ui-monospace, monospace; }
+.evaluation-history-item > span { color: var(--accent); font: 720 .68rem ui-monospace, monospace; white-space: nowrap; }
 .subtle-copy { color: var(--subtle); font-size: .59rem; }
 .model-name { margin: 1rem 0 .3rem; font: 760 1.65rem ui-monospace, monospace; }
 .spec-list { display: grid; gap: .5rem; margin-top: .8rem; }
@@ -393,8 +414,8 @@ footer { display: flex; justify-content: space-between; padding: 1.4rem .15rem 0
   .nav a { white-space: nowrap; }
   .nav a span { display: none; }
   .workspace { padding-top: 1rem; }
-  .learning-grid, .system-grid, .home-secondary, .roadmap-truth-grid, .roadmap-list, .skill-tree-grid { grid-template-columns: 1fr; }
-  .skill-tree-intro { align-items: stretch; flex-direction: column; }
+  .learning-grid, .system-grid, .home-secondary, .roadmap-truth-grid, .roadmap-list, .skill-tree-grid, .evaluation-grid { grid-template-columns: 1fr; }
+  .skill-tree-intro, .evaluation-intro { align-items: stretch; flex-direction: column; }
   .challenge-form { grid-template-columns: 1fr; }
   .challenge-form .wide-field { grid-column: auto; }
   .runtime-skill-list { grid-template-columns: 1fr; }
@@ -415,7 +436,7 @@ footer { display: flex; justify-content: space-between; padding: 1.4rem .15rem 0
   .slash-command-item > small { display: none; }
   .research-form, .learning-theme-form, .control-actions, .skill-tree-search { grid-template-columns: 1fr; }
   .event-list { grid-template-columns: 1fr; }
-  .resource-metrics, .resource-breakdown { grid-template-columns: 1fr; }
+  .resource-metrics, .resource-breakdown, .growth-metrics { grid-template-columns: 1fr; }
   .panel-head:has(.panel-actions) { align-items: stretch; flex-direction: column; }
   .panel-actions { justify-content: space-between; }
   .milestone-item { grid-template-columns: 52px minmax(0, 1fr); }

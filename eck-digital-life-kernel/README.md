@@ -310,6 +310,13 @@ counts as proof of intelligence. The initial catalog includes
 real tasks. A model cannot be the sole judge of its own growth claim, and a finite
 benchmark result is not presented as proof that a system has surpassed all humans.
 
+P3 adds `POST /v1/evaluations/objective`, a 20-case local public diagnostic with
+deterministic exact-match grading, repeated-answer reproducibility, suite hashing, Ollama
+model digests, resource snapshots, and same-condition comparison. The dashboard separately
+reports research admissions, new memory procedures, generated skill candidates, and tested
+active generated skills, so repeated research cannot be presented as executable skill growth.
+See `docs/25-p3-objective-evaluation.md` for the claim boundary and next-stage requirements.
+
 Docker isolation reduces risk but is not a formal security boundary for hostile code.
 Generated Python executes only through the restricted worker protocol; structural core
 changes and model-weight changes still require testing and human approval.

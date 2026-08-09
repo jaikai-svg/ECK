@@ -216,6 +216,16 @@ def test_ultimate_challenge_governance_and_evaluation_api(application) -> None:
         evaluations = client.get("/v1/evaluations").json()
         assert evaluations["items"][1]["run_count"] == 1
 
+        objective = client.post(
+            "/v1/evaluations/objective",
+            json={"repetitions": 2},
+        )
+        assert objective.status_code == 201
+        assert objective.json()["run"]["score"] == 1
+        comparison = client.get("/v1/evaluations/compare")
+        assert comparison.status_code == 200
+        assert comparison.json()["status"] == "baseline_created"
+
 
 def test_mission_runtime_and_human_review_api(application) -> None:
     api = create_api(application=application)

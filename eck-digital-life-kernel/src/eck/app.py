@@ -184,7 +184,7 @@ def build_application(settings: Settings | None = None) -> Application:
         task_service,
         registry,
     )
-    evaluation_service = EvaluationService(store, events)
+    evaluation_service = EvaluationService(store, events, brain, resources)
     evolution_service = EvolutionAuditService(settings, store, worker)
     portability_service = CognitiveBundleService(
         settings,

@@ -94,6 +94,11 @@ async def test_kernel_does_not_spin_curriculum_checks(settings, monkeypatch) -> 
         return None
 
     monkeypatch.setattr(application.autonomous_learning, "enqueue_if_idle", enqueue_once)
+    monkeypatch.setattr(
+        application.resources,
+        "background_allowed",
+        lambda: (True, {"level": "normal", "background_allowed": True}),
+    )
     await application.kernel.start()
     await asyncio.sleep(0.15)
     await application.kernel.stop()

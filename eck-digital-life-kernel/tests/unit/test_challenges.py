@@ -5,8 +5,13 @@ from datetime import timedelta
 import pytest
 
 from eck.core.time import utc_now
-from eck.domain.enums import BenchmarkSuite, ChallengeStatus
-from eck.domain.models import BenchmarkRunCreate, SocialPostObservationCreate
+from eck.domain.enums import BenchmarkSuite, ChallengeStatus, VerificationStatus
+from eck.domain.models import (
+    BenchmarkRunCreate,
+    ExperienceRecord,
+    ObjectiveEvaluationRequest,
+    SocialPostObservationCreate,
+)
 
 
 @pytest.mark.asyncio
@@ -112,3 +117,61 @@ async def test_evaluation_requires_independent_judge_and_real_task_size(applicat
     )
     assert record.score == 0.75
     assert application.evaluations.dashboard()["items"][3]["run_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_p3_objective_evaluation_is_reproducible_and_separates_growth(application) -> None:
+    first = await application.evaluations.run_objective(
+        ObjectiveEvaluationRequest(repetitions=2)
+    )
+
+    assert first["run"]["score"] == 1
+    assert first["run"]["sample_count"] == 20
+    assert first["run"]["model_artifact_hash"] == "mock-deterministic-v1"
+    assert first["run"]["protocol"]["reproducibility_rate"] == 1
+    assert first["comparison"]["status"] == "baseline_created"
+    assert not first["comparison"]["claim_allowed"]
+    assert first["growth_audit"]["status"] == "no_verified_learning_activity"
+
+    second = await application.evaluations.run_objective(
+        ObjectiveEvaluationRequest(repetitions=2)
+    )
+    assert second["comparison"]["comparable"]
+    assert second["comparison"]["status"] == "diagnostic_unchanged"
+    assert second["comparison"]["delta"] == 0
+
+    dashboard = application.evaluations.dashboard()
+    assert dashboard["items"][4]["run_count"] == 2
+    assert dashboard["objective"]["case_count"] == 20
+    assert len(dashboard["objective"]["history"]) == 2
+
+
+def test_p3_growth_audit_refuses_to_call_research_an_executable_skill(
+    application,
+    monkeypatch,
+) -> None:
+    experience = ExperienceRecord(
+        experience_id="experience-research",
+        task_id="task-research",
+        capability="web.critical_research",
+        outcome=VerificationStatus.VERIFIED_SUCCESS,
+        summary="Verified research result.",
+        evidence_ids=("evidence-1",),
+        admitted=True,
+        admission_reason="Contract passed.",
+        created_at=utc_now(),
+    )
+    monkeypatch.setattr(
+        application.store,
+        "list_experiences",
+        lambda limit: [experience] * 12,
+    )
+    monkeypatch.setattr(application.store, "list_skills", lambda limit: [])
+    monkeypatch.setattr(application.store, "list_runtime_skills", lambda limit: [])
+
+    audit = application.evaluations.growth_audit()
+
+    assert audit["research_admissions"] == 12
+    assert audit["activated_generated_skills"] == 0
+    assert audit["research_to_active_skill_rate"] == 0
+    assert audit["status"] == "research_without_executable_skill_growth"
