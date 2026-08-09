@@ -17,7 +17,9 @@ from eck.domain.enums import (
     ApprovalStatus,
     ChallengeStatus,
     KernelPhase,
+    MissionCycleStatus,
     MissionStatus,
+    MissionStepStatus,
     RiskLevel,
     RuntimeSkillStatus,
     TaskStatus,
@@ -40,7 +42,10 @@ from eck.domain.models import (
     LearningThemeCreate,
     LearningThemeRecord,
     MissionCreate,
+    MissionReactCycleRecord,
     MissionRecord,
+    MissionStepDefinition,
+    MissionStepRecord,
     MissionUpdate,
     ReflectionRecord,
     RuntimeSkillManifest,
@@ -304,6 +309,49 @@ class SQLiteStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_missions_status
                     ON missions(status, priority, created_at);
+
+                CREATE TABLE IF NOT EXISTS mission_steps (
+                    step_id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    step_key TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    action_kind TEXT NOT NULL,
+                    objective TEXT NOT NULL,
+                    depends_on_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL,
+                    inputs_json TEXT NOT NULL,
+                    output_json TEXT NOT NULL,
+                    last_error TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    UNIQUE(mission_id, step_key),
+                    FOREIGN KEY(mission_id) REFERENCES missions(mission_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_mission_steps_ready
+                    ON mission_steps(status, mission_id, sequence);
+
+                CREATE TABLE IF NOT EXISTS mission_react_cycles (
+                    cycle_id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    attempt INTEGER NOT NULL,
+                    reason_summary TEXT NOT NULL,
+                    action_json TEXT NOT NULL,
+                    observation_json TEXT NOT NULL,
+                    correction TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY(mission_id) REFERENCES missions(mission_id),
+                    FOREIGN KEY(step_id) REFERENCES mission_steps(step_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_mission_cycles_step
+                    ON mission_react_cycles(mission_id, step_id, created_at);
 
                 CREATE TABLE IF NOT EXISTS runtime_skills (
                     runtime_skill_id TEXT PRIMARY KEY,
@@ -1744,7 +1792,13 @@ class SQLiteStore:
                     create.priority,
                     create.target_month,
                     MissionStatus.ACTIVE.value,
-                    _json({"completion_percent": 0, "current_step": "等待規劃"}),
+                    _json(
+                        {
+                            "completion_percent": 0,
+                            "current_step": "等待規劃",
+                            "execution_kind": create.execution_kind,
+                        }
+                    ),
                     _json(()),
                     now,
                     now,
@@ -1836,6 +1890,320 @@ class SQLiteStore:
 
     def count_missions(self) -> int:
         return self._count_table("missions")
+
+    def create_mission_steps(
+        self,
+        mission_id: str,
+        definitions: tuple[MissionStepDefinition, ...],
+    ) -> list[MissionStepRecord]:
+        if not definitions:
+            raise ValueError("A durable mission requires at least one step.")
+        keys = {item.step_key for item in definitions}
+        if len(keys) != len(definitions):
+            raise ValueError("Mission step keys must be unique.")
+        unknown_dependencies = {
+            dependency
+            for item in definitions
+            for dependency in item.depends_on
+            if dependency not in keys
+        }
+        if unknown_dependencies:
+            raise ValueError(
+                "Mission step dependencies are undefined: "
+                + ", ".join(sorted(unknown_dependencies))
+            )
+        now = iso_now()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT COUNT(*) AS count FROM mission_steps WHERE mission_id = ?",
+                (mission_id,),
+            ).fetchone()
+            if existing and int(existing["count"]) > 0:
+                return self.list_mission_steps(mission_id)
+            for definition in sorted(definitions, key=lambda item: item.sequence):
+                conn.execute(
+                    """
+                    INSERT INTO mission_steps (
+                        step_id, mission_id, step_key, sequence, action_kind, objective,
+                        depends_on_json, status, attempts, max_attempts, inputs_json,
+                        output_json, last_error, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, '', ?, ?)
+                    """,
+                    (
+                        new_id("mstep"),
+                        mission_id,
+                        definition.step_key,
+                        definition.sequence,
+                        definition.action_kind,
+                        definition.objective,
+                        _json(definition.depends_on),
+                        MissionStepStatus.PENDING.value,
+                        definition.max_attempts,
+                        _json(definition.inputs),
+                        _json({}),
+                        now,
+                        now,
+                    ),
+                )
+        return self.list_mission_steps(mission_id)
+
+    def get_mission_step(self, step_id: str) -> MissionStepRecord:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM mission_steps WHERE step_id = ?", (step_id,)
+            ).fetchone()
+        if not row:
+            raise KeyError(f"Unknown mission step: {step_id}")
+        return self._mission_step_from_row(row)
+
+    def list_mission_steps(self, mission_id: str) -> list[MissionStepRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM mission_steps
+                WHERE mission_id = ? ORDER BY sequence, created_at
+                """,
+                (mission_id,),
+            ).fetchall()
+        return [self._mission_step_from_row(row) for row in rows]
+
+    def claim_next_mission_step(self) -> MissionStepRecord | None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT step.* FROM mission_steps AS step
+                    JOIN missions AS mission ON mission.mission_id = step.mission_id
+                    WHERE step.status = ? AND mission.status IN (?, ?)
+                    ORDER BY CASE mission.priority WHEN 'urgent' THEN 0 ELSE 1 END,
+                             mission.created_at, step.sequence
+                    """,
+                    (
+                        MissionStepStatus.PENDING.value,
+                        MissionStatus.ACTIVE.value,
+                        MissionStatus.PREPARING.value,
+                    ),
+                ).fetchall()
+                selected: sqlite3.Row | None = None
+                for row in rows:
+                    dependencies = tuple(_load(row["depends_on_json"], []))
+                    if not dependencies:
+                        selected = row
+                        break
+                    placeholders = ",".join("?" for _ in dependencies)
+                    dependency_rows = conn.execute(
+                        f"""
+                        SELECT step_key, status FROM mission_steps
+                        WHERE mission_id = ? AND step_key IN ({placeholders})
+                        """,
+                        (row["mission_id"], *dependencies),
+                    ).fetchall()
+                    statuses = {item["step_key"]: item["status"] for item in dependency_rows}
+                    if all(
+                        statuses.get(dependency) == MissionStepStatus.SUCCEEDED.value
+                        for dependency in dependencies
+                    ):
+                        selected = row
+                        break
+                if selected is None:
+                    conn.execute("COMMIT")
+                    return None
+                now = iso_now()
+                cursor = conn.execute(
+                    """
+                    UPDATE mission_steps
+                    SET status = ?, attempts = attempts + 1, started_at = ?, updated_at = ?
+                    WHERE step_id = ? AND status = ?
+                    """,
+                    (
+                        MissionStepStatus.RUNNING.value,
+                        now,
+                        now,
+                        selected["step_id"],
+                        MissionStepStatus.PENDING.value,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    conn.execute("ROLLBACK")
+                    return None
+                conn.execute("COMMIT")
+            except Exception:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+        return self.get_mission_step(str(selected["step_id"]))
+
+    def finish_mission_step(
+        self,
+        step_id: str,
+        *,
+        success: bool,
+        output: dict[str, Any],
+        error: str = "",
+        retryable: bool = False,
+    ) -> MissionStepRecord:
+        current = self.get_mission_step(step_id)
+        if current.status is not MissionStepStatus.RUNNING:
+            raise ValueError("Only a running mission step can be finished.")
+        retry = retryable and current.attempts < current.max_attempts
+        status = (
+            MissionStepStatus.SUCCEEDED
+            if success
+            else MissionStepStatus.PENDING
+            if retry
+            else MissionStepStatus.FAILED
+        )
+        now = iso_now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE mission_steps
+                SET status = ?, output_json = ?, last_error = ?, updated_at = ?,
+                    finished_at = ?
+                WHERE step_id = ?
+                """,
+                (
+                    status.value,
+                    _json(output),
+                    error[:8000],
+                    now,
+                    now if status is not MissionStepStatus.PENDING else None,
+                    step_id,
+                ),
+            )
+        return self.get_mission_step(step_id)
+
+    def block_pending_mission_steps(self, mission_id: str, *, reason: str) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE mission_steps
+                SET status = ?, last_error = ?, updated_at = ?, finished_at = ?
+                WHERE mission_id = ? AND status = ?
+                """,
+                (
+                    MissionStepStatus.BLOCKED.value,
+                    reason[:8000],
+                    iso_now(),
+                    iso_now(),
+                    mission_id,
+                    MissionStepStatus.PENDING.value,
+                ),
+            )
+        return cursor.rowcount
+
+    def recover_running_mission_steps(self) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE mission_steps
+                SET status = ?, last_error = ?, updated_at = ?, started_at = NULL
+                WHERE status = ?
+                """,
+                (
+                    MissionStepStatus.PENDING.value,
+                    "Interrupted by kernel restart; safely queued for replay.",
+                    iso_now(),
+                    MissionStepStatus.RUNNING.value,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE mission_react_cycles
+                SET status = ?, correction = ?, updated_at = ?, completed_at = ?
+                WHERE status = ?
+                """,
+                (
+                    MissionCycleStatus.NEEDS_CORRECTION.value,
+                    "Kernel restart interrupted the action; replay the idempotent step.",
+                    iso_now(),
+                    iso_now(),
+                    MissionCycleStatus.RUNNING.value,
+                ),
+            )
+        return cursor.rowcount
+
+    def create_mission_react_cycle(
+        self,
+        step: MissionStepRecord,
+        *,
+        reason_summary: str,
+        action: dict[str, Any],
+    ) -> MissionReactCycleRecord:
+        cycle_id = new_id("mcycle")
+        now = iso_now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO mission_react_cycles (
+                    cycle_id, mission_id, step_id, attempt, reason_summary, action_json,
+                    observation_json, correction, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
+                """,
+                (
+                    cycle_id,
+                    step.mission_id,
+                    step.step_id,
+                    step.attempts,
+                    reason_summary[:8000],
+                    _json(action),
+                    _json({}),
+                    MissionCycleStatus.RUNNING.value,
+                    now,
+                    now,
+                ),
+            )
+        return self.get_mission_react_cycle(cycle_id)
+
+    def finish_mission_react_cycle(
+        self,
+        cycle_id: str,
+        *,
+        status: MissionCycleStatus,
+        observation: dict[str, Any],
+        correction: str = "",
+    ) -> MissionReactCycleRecord:
+        if status is MissionCycleStatus.RUNNING:
+            raise ValueError("A completed ReAct cycle cannot remain running.")
+        now = iso_now()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE mission_react_cycles
+                SET status = ?, observation_json = ?, correction = ?,
+                    updated_at = ?, completed_at = ? WHERE cycle_id = ?
+                """,
+                (status.value, _json(observation), correction[:8000], now, now, cycle_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(f"Unknown mission ReAct cycle: {cycle_id}")
+        return self.get_mission_react_cycle(cycle_id)
+
+    def get_mission_react_cycle(self, cycle_id: str) -> MissionReactCycleRecord:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM mission_react_cycles WHERE cycle_id = ?", (cycle_id,)
+            ).fetchone()
+        if not row:
+            raise KeyError(f"Unknown mission ReAct cycle: {cycle_id}")
+        return self._mission_cycle_from_row(row)
+
+    def list_mission_react_cycles(
+        self,
+        mission_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[MissionReactCycleRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM mission_react_cycles WHERE mission_id = ?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (mission_id, limit),
+            ).fetchall()
+        return [self._mission_cycle_from_row(row) for row in rows]
 
     def add_runtime_skill(
         self,
@@ -2665,6 +3033,53 @@ class SQLiteStore:
             ),
             approved_at=(
                 datetime.fromisoformat(row["approved_at"]) if row["approved_at"] else None
+            ),
+        )
+
+    @staticmethod
+    def _mission_step_from_row(row: sqlite3.Row) -> MissionStepRecord:
+        return MissionStepRecord(
+            step_id=row["step_id"],
+            mission_id=row["mission_id"],
+            step_key=row["step_key"],
+            sequence=int(row["sequence"]),
+            action_kind=row["action_kind"],
+            objective=row["objective"],
+            depends_on=tuple(_load(row["depends_on_json"], [])),
+            status=MissionStepStatus(row["status"]),
+            attempts=int(row["attempts"]),
+            max_attempts=int(row["max_attempts"]),
+            inputs=_load(row["inputs_json"], {}),
+            output=_load(row["output_json"], {}),
+            last_error=row["last_error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            started_at=(
+                datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
+            ),
+            finished_at=(
+                datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
+            ),
+        )
+
+    @staticmethod
+    def _mission_cycle_from_row(row: sqlite3.Row) -> MissionReactCycleRecord:
+        return MissionReactCycleRecord(
+            cycle_id=row["cycle_id"],
+            mission_id=row["mission_id"],
+            step_id=row["step_id"],
+            attempt=int(row["attempt"]),
+            reason_summary=row["reason_summary"],
+            action=_load(row["action_json"], {}),
+            observation=_load(row["observation_json"], {}),
+            correction=row["correction"],
+            status=MissionCycleStatus(row["status"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"])
+                if row["completed_at"]
+                else None
             ),
         )
 

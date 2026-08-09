@@ -15,6 +15,7 @@ from eck.domain.enums import (
 )
 from eck.domain.models import (
     ActionProposal,
+    MissionCreate,
     SuccessContract,
     TaskCreate,
     VerificationCheck,
@@ -57,6 +58,14 @@ class DialogueService:
     )
     _research_intent = re.compile(
         r"(研究|論文|學術|文獻|引用|來源|doi|citation|paper|research)",
+        re.IGNORECASE,
+    )
+    _software_subject = re.compile(
+        r"(網站|網頁|landing\s*page|website|web\s*site|軟體|程式|專案|app|api)",
+        re.IGNORECASE,
+    )
+    _software_action = re.compile(
+        r"(製作|建立|開發|實作|完成|打造|寫一個|幫我做|create|build|develop|implement)",
         re.IGNORECASE,
     )
     _terminal_statuses = {
@@ -130,6 +139,14 @@ class DialogueService:
                 "requires_prompt": True,
             },
             {
+                "command": "/mission",
+                "insert": "/mission ",
+                "title": "交付軟體任務",
+                "description": "建立可續跑、驗證、封裝與發布的軟體任務",
+                "category": "任務",
+                "requires_prompt": True,
+            },
+            {
                 "command": "/remove-bg",
                 "insert": "/remove-bg",
                 "title": "移除圖片背景",
@@ -167,6 +184,8 @@ class DialogueService:
             return self._kernel_status()
         if normalized_command in {"/remove-bg", "/remove_background"}:
             return await self._remove_background()
+        if self.is_software_mission_request(message):
+            return await self._start_software_mission(message)
         media_command = self._parse_media_command(message)
         if media_command:
             normalized = self._normalize_media_command(media_command)
@@ -239,6 +258,54 @@ class DialogueService:
         if command:
             return str(command["kind"]) == "video"
         return bool(cls._video_subject.search(message) and cls._video_action.search(message))
+
+    @classmethod
+    def is_software_mission_request(cls, message: str) -> bool:
+        stripped = message.strip()
+        if re.match(r"^/mission\b", stripped, re.IGNORECASE):
+            return bool(re.sub(r"^/mission\b", "", stripped, flags=re.IGNORECASE).strip())
+        return bool(
+            cls._software_subject.search(stripped) and cls._software_action.search(stripped)
+        )
+
+    async def _start_software_mission(self, message: str) -> dict[str, Any]:
+        objective = re.sub(r"^\s*/mission\b", "", message, flags=re.IGNORECASE).strip()
+        if len(objective) < 3:
+            raise ValueError("/mission 後面需要提供要完成的軟體成果。")
+        title = re.sub(r"[\r\n]+", " ", objective).strip()[:120]
+        mission = await self.application.missions.create(
+            MissionCreate(
+                title=title,
+                objective=objective,
+                completion_requirements=(
+                    "交付可直接預覽的完整來源，不以文字範例冒充成果；"
+                    "所有本機檔案引用必須有效並通過確定性驗證；"
+                    "驗證失敗時根據工具觀察修正並重測；"
+                    "產生可下載封裝與 SHA-256；"
+                    "GitHub 可用時推送至 ECK 專用帳號的私有儲存庫；"
+                    "最後提交預覽與證據，等待建立者人工勾選通過。"
+                ),
+                source="human",
+                schedule="manual",
+                priority="urgent",
+                execution_kind="software_project",
+            )
+        )
+        memory = self._memory_counts()
+        return {
+            "answer": (
+                f"已建立持久化軟體任務 {mission.mission_id}。我會把目標拆成隔離微任務，"
+                "依序執行規格、產碼、驗證、修正、封裝與 GitHub 發布；中途重啟可續跑。"
+                "成果完成後會出現在「課題挑戰 → 等待你驗收」，並附本機預覽與下載證據。"
+            ),
+            "model": "p6-durable-react.v1",
+            "tool": "mission.execute",
+            "artifacts": [],
+            "inference": {},
+            "mission_id": mission.mission_id,
+            "pending": True,
+            "context": {**memory, "research_results": 0},
+        }
 
     @classmethod
     def _parse_media_command(cls, message: str) -> dict[str, Any] | None:

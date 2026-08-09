@@ -7,10 +7,16 @@ from typing import Any
 
 from eck.config import Settings
 from eck.domain.enums import KernelPhase, TaskStatus
-from eck.domain.models import KernelStatus, SupervisorReviewRecord, TaskRecord
+from eck.domain.models import (
+    KernelStatus,
+    MissionStepRecord,
+    SupervisorReviewRecord,
+    TaskRecord,
+)
 from eck.events.bus import EventBus
 from eck.runtime.resources import SystemResourceMonitor
 from eck.services.autonomous_learning import AutonomousLearningService
+from eck.services.mission_executor import DurableMissionExecutor
 from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.supervisor import SupervisorService
@@ -29,6 +35,7 @@ class LifeKernel:
         autonomous_learning: AutonomousLearningService,
         skill_bridge: ResearchSkillBridgeService,
         project_lab: AutonomousProjectLabService,
+        mission_executor: DurableMissionExecutor,
         resources: SystemResourceMonitor,
     ) -> None:
         self.settings = settings
@@ -39,6 +46,7 @@ class LifeKernel:
         self.autonomous_learning = autonomous_learning
         self.skill_bridge = skill_bridge
         self.project_lab = project_lab
+        self.mission_executor = mission_executor
         self.resources = resources
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
@@ -47,6 +55,7 @@ class LifeKernel:
         self._curriculum_task: asyncio.Task[TaskRecord | None] | None = None
         self._skill_bridge_task: asyncio.Task[dict[str, Any]] | None = None
         self._project_lab_task: asyncio.Task[dict[str, Any]] | None = None
+        self._mission_task: asyncio.Task[MissionStepRecord | None] | None = None
         self._stop = asyncio.Event()
         self._sleep_requested = asyncio.Event()
         self._sleep_lock = asyncio.Lock()
@@ -76,6 +85,13 @@ class LifeKernel:
             {"boot_count": self._boot_count, "recovered_unclean_shutdown": recovered},
         )
         await self.tasks.recover_interrupted()
+        recovered_mission_steps = self.store.recover_running_mission_steps()
+        if recovered_mission_steps:
+            await self.events.publish(
+                "MissionStepsRecovered",
+                self.settings.identity,
+                {"count": recovered_mission_steps},
+            )
         reconciled_runs = self.store.fail_running_research_runs(
             conclusion="Interrupted research run reconciled during kernel startup."
         )
@@ -148,6 +164,11 @@ class LifeKernel:
             with suppress(asyncio.CancelledError):
                 await self._project_lab_task
             self._project_lab_task = None
+        if self._mission_task:
+            self._mission_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._mission_task
+            self._mission_task = None
         await self.events.publish(
             "KernelStopped",
             self.settings.identity,
@@ -256,13 +277,20 @@ class LifeKernel:
                     next_project_lab = (
                         loop.time() + self.settings.autonomous_project_interval_seconds
                     )
+                if self._mission_task and self._mission_task.done():
+                    try:
+                        await self._mission_task
+                    except Exception as exc:
+                        await self._background_failure("durable_mission_executor", exc)
+                    self._mission_task = None
                 if self.phase is KernelPhase.RUNNING:
                     if (
                         self._execution_task is None
                         and self._supervision_task is None
                         and self._curriculum_task is None
                         and self._skill_bridge_task is None
-                        and self._project_lab_task is None
+                            and self._project_lab_task is None
+                            and self._mission_task is None
                     ):
                         prefer_challenge = (
                             self._schedule_cursor >= self.settings.autonomous_learning_percent
@@ -284,6 +312,14 @@ class LifeKernel:
                             )
                         elif not resource_allowed:
                             await self._resource_pressure_throttled(pressure)
+                        elif (
+                            self.settings.durable_mission_executor_enabled
+                            and self.mission_executor.has_runnable_work()
+                        ):
+                            self._mission_task = asyncio.create_task(
+                                self.mission_executor.run_next(),
+                                name="eck-durable-mission-step",
+                            )
                         elif (
                             self.settings.research_skill_bridge_enabled
                             and loop.time() >= next_skill_bridge

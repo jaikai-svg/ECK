@@ -57,13 +57,16 @@ class MissionService:
             },
         )
         task = await self.tasks.submit(self._planning_task(mission))
+        current_progress = self.store.get_mission(mission.mission_id).progress
         return self.store.set_mission_status(
             mission.mission_id,
             MissionStatus.PREPARING,
             progress={
+                **current_progress,
                 "completion_percent": 0,
-                "current_step": "已排入 10% 課題通道，正在建立能力與證據計畫",
+                "current_step": "正在建立可驗證計畫與持久化執行步驟",
                 "planning_task_id": task.task_id,
+                "execution_kind": current_progress.get("execution_kind", "auto"),
             },
         )
 
@@ -101,6 +104,9 @@ class MissionService:
             for item in required
             if not any(capability_equivalent(item, candidate) for candidate in available)
         ]
+        execution_kind = str(mission.progress.get("execution_kind", "auto"))
+        if execution_kind == "software_project":
+            missing = []
         succeeded = task.status is TaskStatus.VERIFIED_SUCCESS
         if not succeeded:
             current_step = "規劃未通過驗證；監督者會重新研究需求，不影響自主學習。"
@@ -118,6 +124,7 @@ class MissionService:
                 "plan": output,
                 "required_capabilities": required,
                 "missing_capabilities": missing,
+                "execution_kind": execution_kind,
             },
         )
         await self.events.publish(

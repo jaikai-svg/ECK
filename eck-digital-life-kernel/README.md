@@ -185,6 +185,36 @@ P5 is an auditable recursive software-development mechanism. It is not proof of 
 world-class engineering ability, or autonomous base-model weight improvement. See
 `docs/27-p5-verified-recursive-self-development.md` for its gates and claim boundary.
 
+## P6 durable mission executor
+
+P6 changes explicit software requests from one-shot chat answers into persistent execution.
+The Python controller compiles a mission into typed, dependency-ordered microtasks and stores
+each auditable reason summary, tool action, external observation, correction, attempt, and
+result in SQLite. A restart returns interrupted idempotent steps to the queue instead of losing
+the mission.
+
+The first verified workers deliver static websites and constrained Python projects. Website
+missions produce a local preview, deterministic validation report, ZIP plus SHA-256, and a
+private GitHub repository when the dedicated account is ready. Python projects must pass static
+quality checks and pytest inside the existing networkless Docker worker. Unsupported project
+types stop at a recorded capability boundary; model text never counts as delivery.
+
+Mission source lives under `workspace/missions/<mission_id>/`, separate from the ECK core and
+autonomous research projects. Per-mission and total workspace quotas prevent silent disk
+exhaustion. `ECK_MISSION_ARCHIVE_DIR` reserves a future NAS archive target; no completed source
+is silently deleted while that target is unset.
+
+```text
+POST /v1/chat                                      # "製作一個旅遊網站並展示成果"
+GET  /v1/missions/executor/status
+GET  /v1/missions/{mission_id}/execution
+GET  /v1/missions/{mission_id}/preview/
+GET  /v1/missions/{mission_id}/download
+```
+
+P6 is a durable, verifier-grounded task runtime—not evidence that ECK is AGI or that it can yet
+complete every arbitrary digital task. See `docs/28-p6-durable-mission-executor.md`.
+
 ## Safety boundary
 
 v0.1 defaults:
@@ -241,7 +271,8 @@ GET  /v1/challenges
 
 Missions are editable background objectives. Creating a mission schedules a bounded
 planning task, records capability gaps, and keeps the plan itself separate from positive
-learning. ECK allocates 90% of normal scheduling opportunities to autonomous learning
+learning. Eligible software missions additionally compile into the P6 durable execution graph.
+ECK allocates 90% of normal scheduling opportunities to autonomous learning
 and 10% to mission preparation or execution. Urgent human tasks override this ratio.
 
 Submitting evidence moves a mission to `awaiting_review`; it is not complete until the

@@ -427,6 +427,94 @@ class AutonomousProjectLabService:
         )
         return manifest
 
+    async def publish_directory(
+        self,
+        *,
+        name: str,
+        source_dir: Path,
+        visibility: str | None = None,
+    ) -> dict[str, Any]:
+        """Publish an already verified project without coupling it to project-lab manifests."""
+        if not self.settings.github_publish_enabled:
+            return {
+                "published": False,
+                "deferred": True,
+                "detail": "GitHub publishing is disabled.",
+            }
+        if not source_dir.is_dir():
+            raise ValueError("Verified project source directory is missing.")
+        safe_name = self._safe_project_name(name, new_id("project"))
+        selected_visibility = visibility or self.settings.github_default_visibility
+        if selected_visibility not in {"private", "public"}:
+            raise ValueError("GitHub visibility must be private or public.")
+        github = self.github_status()
+        if not github["ready"]:
+            return {
+                "published": False,
+                "deferred": True,
+                "detail": str(github["detail"]),
+            }
+        self._scan_secrets(source_dir)
+        self._initialize_git(source_dir)
+        account = self.settings.github_account or str(github["account"])
+        repository = f"{account}/{safe_name}"
+        executable = str(github["executable"])
+        token = self._github_token(executable, account)
+        if token is None:
+            return {
+                "published": False,
+                "deferred": True,
+                "repository": repository,
+                "detail": f"GitHub credentials for {account!r} are unavailable.",
+            }
+        result = await self._run_process(
+            [
+                executable,
+                "repo",
+                "create",
+                repository,
+                f"--{selected_visibility}",
+                "--source",
+                str(source_dir),
+                "--remote",
+                "origin",
+                "--push",
+            ],
+            cwd=source_dir,
+            timeout=180,
+            env=self._github_environment(token),
+        )
+        published = result["returncode"] == 0
+        return {
+            "published": published,
+            "deferred": False,
+            "repository": repository,
+            "url": f"https://github.com/{repository}",
+            "detail": result["output_tail"],
+        }
+
+    async def validate_python_directory(
+        self,
+        source_dir: Path,
+        *,
+        objective: str,
+    ) -> dict[str, Any]:
+        if not source_dir.is_dir():
+            return {"success": False, "detail": "Python project source directory is missing."}
+        self._scan_secrets(source_dir)
+        quality = self._static_quality_gate(source_dir, objective=objective)
+        if not quality["success"]:
+            return {
+                "success": False,
+                "detail": "Static Python quality contract failed.",
+                "output_tail": "; ".join(quality["issues"]),
+                "quality": quality,
+                "isolated": False,
+            }
+        validation = await self._validate_in_docker(source_dir)
+        validation["quality"] = quality
+        return validation
+
     def github_status(self, *, force: bool = False) -> dict[str, Any]:
         now = time.monotonic()
         if (

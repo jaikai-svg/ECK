@@ -14,7 +14,9 @@ from eck.domain.enums import (
     ComparisonOperator,
     EvidenceSource,
     KernelPhase,
+    MissionCycleStatus,
     MissionStatus,
+    MissionStepStatus,
     RiskLevel,
     RuntimeSkillStatus,
     TaskStatus,
@@ -427,6 +429,7 @@ class MissionCreate(FrozenModel):
     schedule: Literal["manual", "monthly"] = "manual"
     priority: Literal["normal", "urgent"] = "normal"
     target_month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    execution_kind: Literal["auto", "software_project", "manual"] = "auto"
 
 
 class MissionUpdate(FrozenModel):
@@ -465,6 +468,51 @@ class MissionRecord(FrozenModel):
     updated_at: datetime
     submitted_at: datetime | None = None
     approved_at: datetime | None = None
+
+
+class MissionStepDefinition(FrozenModel):
+    step_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,79}$")
+    sequence: int = Field(ge=1, le=10000)
+    action_kind: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,79}$")
+    objective: str = Field(min_length=3, max_length=4000)
+    depends_on: tuple[str, ...] = Field(default=(), max_length=50)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+
+
+class MissionStepRecord(FrozenModel):
+    step_id: str
+    mission_id: str
+    step_key: str
+    sequence: int
+    action_kind: str
+    objective: str
+    depends_on: tuple[str, ...] = ()
+    status: MissionStepStatus
+    attempts: int = Field(ge=0)
+    max_attempts: int = Field(ge=1)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    output: dict[str, Any] = Field(default_factory=dict)
+    last_error: str = ""
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class MissionReactCycleRecord(FrozenModel):
+    cycle_id: str
+    mission_id: str
+    step_id: str
+    attempt: int = Field(ge=1)
+    reason_summary: str
+    action: dict[str, Any] = Field(default_factory=dict)
+    observation: dict[str, Any] = Field(default_factory=dict)
+    correction: str = ""
+    status: MissionCycleStatus
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
 
 
 class RuntimeSkillManifest(FrozenModel):

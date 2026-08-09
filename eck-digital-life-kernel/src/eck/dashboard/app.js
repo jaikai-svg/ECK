@@ -248,7 +248,20 @@ function setPresence(mood, activity, supervisor) {
       : "監督者未啟用";
 }
 
-function renderActivity(kernel, tasks, missions, supervisor, autonomousLearning) {
+function missionExecutionFor(executor, missionId) {
+  return (executor?.items || []).find((item) => item.mission?.mission_id === missionId);
+}
+
+function observationSummary(value) {
+  if (!value || typeof value !== "object") return "尚未取得工具觀察。";
+  if (value.detail) return String(value.detail);
+  if (Array.isArray(value.issues) && value.issues.length) return value.issues.join("；");
+  if (value.result_summary) return String(value.result_summary);
+  if (value.preview_url) return `已產生可驗證預覽：${value.preview_url}`;
+  return JSON.stringify(value);
+}
+
+function renderActivity(kernel, tasks, missions, supervisor, autonomousLearning, executor) {
   const activeTask = tasks.find((task) => ["queued", "running", "waiting_approval"].includes(task.status));
   const latestTask = tasks[0];
   const indicator = $("#activity-indicator");
@@ -274,6 +287,27 @@ function renderActivity(kernel, tasks, missions, supervisor, autonomousLearning)
       ? "activity-indicator blocked"
       : "activity-indicator";
     setPresence(activeTask.status === "waiting_approval" ? "blocked" : "working", activity, supervisor);
+    return;
+  }
+
+  const activeExecution = (executor?.items || []).find((item) =>
+    ["active", "preparing"].includes(item.mission?.status)
+    && item.steps?.some((step) => ["running", "pending"].includes(step.status))
+  );
+  if (activeExecution) {
+    const running = activeExecution.steps.find((step) => step.status === "running");
+    const next = running || activeExecution.steps.find((step) => step.status === "pending");
+    const latestCycle = activeExecution.cycles?.[0];
+    $("#current-activity").textContent = running ? "正在執行持久化軟體任務" : "準備下一個任務微步驟";
+    $("#activity-detail").textContent = next?.objective || activeExecution.mission.progress?.current_step;
+    state.textContent = running ? "執行中" : "可續跑";
+    state.className = "pill success";
+    indicator.className = "activity-indicator";
+    setPresence(
+      running ? "working" : "focused",
+      latestCycle?.reason_summary || `正在處理 ${next?.step_key || "任務步驟"}`,
+      supervisor,
+    );
     return;
   }
 
@@ -314,7 +348,25 @@ function renderActivity(kernel, tasks, missions, supervisor, autonomousLearning)
   indicator.className = "activity-indicator idle";
 }
 
-function renderThoughtFeed(tasks, missions, reflections, events, experiences, supervisor) {
+function renderThoughtFeed(tasks, missions, reflections, events, experiences, supervisor, executor) {
+  const currentExecution = (executor?.items || []).find((item) =>
+    ["active", "preparing", "blocked"].includes(item.mission?.status)
+  );
+  const missionCycle = currentExecution?.cycles?.[0] || executor?.latest_cycle;
+  if (missionCycle && currentExecution) {
+    const step = currentExecution.steps.find((item) => item.step_id === missionCycle.step_id);
+    const items = [
+      ["目標", currentExecution.mission.objective],
+      ["思考摘要", missionCycle.reason_summary],
+      ["行動", `${missionCycle.action?.tool || step?.action_kind || "工具"} · 第 ${missionCycle.attempt} 次`],
+      ["觀察", observationSummary(missionCycle.observation)],
+      ["修正", missionCycle.correction || (missionCycle.status === "succeeded" ? "驗證通過，前進下一個微任務。" : "等待工具結果。")],
+    ];
+    $("#thought-feed").innerHTML = items.map(([label, content]) => `
+      <article class="thought-item"><span>${escapeHtml(label)}</span><p>${escapeHtml(concise(content))}</p></article>
+    `).join("");
+    return;
+  }
   const activeTask = tasks.find((task) => ["queued", "running", "waiting_approval"].includes(task.status));
   const focusTask = activeTask || tasks[0];
   const items = [];
@@ -404,7 +456,26 @@ function renderHomeSummary(health, experiences, skills, missions, reflections, r
   $("#next-step-text").textContent = nextStep || "目前沒有可執行的下一步。";
 }
 
-function renderMissions(missions) {
+function evidenceMarkup(evidence, className = "tag") {
+  const value = String(evidence || "");
+  if (value.startsWith("/v1/missions/") || value.startsWith("https://github.com/")) {
+    return `<a class="${className}" href="${escapeHtml(value)}" target="_blank" rel="noopener">${escapeHtml(value)}</a>`;
+  }
+  return `<span class="${className}">${escapeHtml(value)}</span>`;
+}
+
+function missionStepMarkup(executor, missionId) {
+  const execution = missionExecutionFor(executor, missionId);
+  if (!execution?.steps?.length) return "";
+  return `<div class="mission-step-list"><b>P6 微任務</b>${execution.steps.map((step) => `
+    <div class="mission-step ${escapeHtml(step.status)}">
+      <span>${escapeHtml(step.step_key)}</span>
+      <small>${escapeHtml(step.status)} · ${step.attempts}/${step.max_attempts}</small>
+    </div>
+  `).join("")}</div>`;
+}
+
+function renderMissions(missions, executor) {
   const active = missions.filter((item) => ["active", "preparing", "blocked", "rejected"].includes(item.status));
   const review = missions.filter((item) => item.status === "awaiting_review");
   const completed = missions.filter((item) => item.status === "approved");
@@ -419,6 +490,7 @@ function renderMissions(missions) {
         <p class="objective">${escapeHtml(mission.objective)}</p>
         <div class="mission-requirements"><b>完成要求</b><p>${escapeHtml(mission.completion_requirements)}</p></div>
         <div class="challenge-next"><b>目前進度：</b> ${escapeHtml(mission.progress?.current_step || "等待規劃")}</div>
+        ${missionStepMarkup(executor, mission.mission_id)}
         ${mission.review_feedback ? `<div class="mission-feedback"><b>上次驗收意見</b><p>${escapeHtml(mission.review_feedback)}</p></div>` : ""}
         <form class="mission-edit-form" data-mission-id="${escapeHtml(mission.mission_id)}">
           <input name="title" value="${escapeHtml(mission.title)}" maxlength="240" required>
@@ -443,7 +515,8 @@ function renderMissions(missions) {
     <article class="challenge-card mission-card review-card">
       <div class="challenge-card-head"><div><h3>${escapeHtml(mission.title)}</h3><p class="objective">${escapeHtml(mission.objective)}</p></div><span class="pill">等待驗收</span></div>
       <div class="mission-result"><b>成果</b><p>${escapeHtml(mission.result_summary)}</p></div>
-      <div class="mission-evidence">${(mission.evidence || []).map((item) => `<span class="tag">${escapeHtml(item)}</span>`).join("") || '<span class="tag warn">未附證據</span>'}</div>
+      <div class="mission-evidence">${(mission.evidence || []).map((item) => evidenceMarkup(item)).join("") || '<span class="tag warn">未附證據</span>'}</div>
+      ${missionStepMarkup(executor, mission.mission_id)}
       <form class="mission-review-form" data-mission-id="${escapeHtml(mission.mission_id)}">
         <textarea name="feedback" rows="2" maxlength="4000" placeholder="驗收意見；退回時請說明需要改善的內容"></textarea>
         <div class="mission-actions"><button type="submit" data-decision="approve">勾選通過</button><button type="submit" data-decision="reject" class="secondary">退回改善</button></div>
@@ -454,7 +527,7 @@ function renderMissions(missions) {
   $("#completed-missions").innerHTML = completed.map((mission) => `
     <details class="challenge-card mission-card completed-card">
       <summary><span><b>${escapeHtml(mission.title)}</b><small>完成於 ${formatTime(mission.approved_at, true)}</small></span><span class="pill success">已通過</span></summary>
-      <div class="mission-body"><p class="objective">${escapeHtml(mission.objective)}</p><div class="mission-requirements"><b>完成要求</b><p>${escapeHtml(mission.completion_requirements)}</p></div><div class="mission-result"><b>成果</b><p>${escapeHtml(mission.result_summary)}</p></div><div class="mission-evidence">${(mission.evidence || []).map((item) => `<span class="tag good">${escapeHtml(item)}</span>`).join("")}</div>${mission.review_feedback ? `<div class="mission-feedback"><b>驗收紀錄</b><p>${escapeHtml(mission.review_feedback)}</p></div>` : ""}</div>
+      <div class="mission-body"><p class="objective">${escapeHtml(mission.objective)}</p><div class="mission-requirements"><b>完成要求</b><p>${escapeHtml(mission.completion_requirements)}</p></div><div class="mission-result"><b>成果</b><p>${escapeHtml(mission.result_summary)}</p></div><div class="mission-evidence">${(mission.evidence || []).map((item) => evidenceMarkup(item, "tag good")).join("")}</div>${mission.review_feedback ? `<div class="mission-feedback"><b>驗收紀錄</b><p>${escapeHtml(mission.review_feedback)}</p></div>` : ""}</div>
     </details>
   `).join("") || '<div class="empty">尚無已通過課題。</div>';
 }
@@ -938,7 +1011,7 @@ async function refresh() {
   if (refreshInFlight) return;
   refreshInFlight = true;
   try {
-    const [health, events, tasks, experiences, reflections, skills, capabilities, missions, evaluations, supervisor, runtime, roadmap, themes] = await Promise.all([
+    const [health, events, tasks, experiences, reflections, skills, capabilities, missions, missionExecutor, evaluations, supervisor, runtime, roadmap, themes] = await Promise.all([
       request("/health"),
       request("/v1/events?latest=true&limit=50"),
       request("/v1/tasks?limit=50"),
@@ -947,6 +1020,7 @@ async function refresh() {
       request("/v1/skills?limit=100"),
       request("/v1/capabilities"),
       request("/v1/missions?limit=100"),
+      request("/v1/missions/executor/status"),
       request("/v1/evaluations"),
       request("/v1/supervisor/status"),
       request("/v1/runtime/status"),
@@ -977,11 +1051,11 @@ async function refresh() {
     $("#heartbeat-time").textContent = formatTime(kernel.last_heartbeat_at, true);
     $("#event-count").textContent = `${formatCount(kernel.event_count)} events`;
 
-    renderActivity(kernel, tasks.items, missions.items, supervisor, health.autonomous_learning);
-    renderThoughtFeed(tasks.items, missions.items, reflections.items, events.items, experiences.items, supervisor);
+    renderActivity(kernel, tasks.items, missions.items, supervisor, health.autonomous_learning, missionExecutor);
+    renderThoughtFeed(tasks.items, missions.items, reflections.items, events.items, experiences.items, supervisor, missionExecutor);
     renderSupervisor(supervisor);
     renderHomeSummary(health, experiences.items, skills.items, missions.items, reflections.items, runtime);
-    renderMissions(missions.items);
+    renderMissions(missions.items, missionExecutor);
     renderExperiences(experiences.items);
     renderSkills(skills.items);
     renderRuntime(runtime);
@@ -1264,6 +1338,8 @@ $("#chat-form").addEventListener("submit", async (event) => {
     ? "正在規劃提示並排入本機 CogVideoX 影片生成…"
     : /^\s*\/image\b|圖片|圖像|照片|插畫|image|picture|photo/i.test(message)
     ? "正在規劃模型並執行本機 Forge 圖像生成…"
+    : /網站|網頁|website|軟體|程式|專案|app|api/i.test(message)
+    ? "正在建立可續跑的 P6 軟體任務…"
     : "正在使用本機思考模型…";
   try {
     const result = await request("/v1/chat", {

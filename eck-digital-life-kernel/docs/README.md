@@ -37,6 +37,8 @@
 24. [P2 Resource-Aware Runtime](24-p2-resource-aware-runtime.md)
 25. [P3 Objective Evaluation](25-p3-objective-evaluation.md)
 26. [P4 Auditable Self-Model and Evolution](26-p4-auditable-self-model-and-evolution.md)
+27. [P5 Verified Recursive Self-Development](27-p5-verified-recursive-self-development.md)
+28. [P6 Durable Mission Executor](28-p6-durable-mission-executor.md)
 
 ## v0.2 開發規格下載
 

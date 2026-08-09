@@ -14,6 +14,9 @@ All notable changes are documented here.
   completed runs are inconclusive.
 - A read-only public research operation surface isolated from future state-changing browser
   workers, plus research run and quality APIs.
+- P6 durable software missions with persistent dependency graphs, auditable ReAct summaries,
+  restart recovery, deterministic website validation, Docker-tested Python projects, local
+  previews, SHA-256 packages, quota isolation, and dedicated-account GitHub publication.
 
 ### Planned
 

@@ -46,6 +46,22 @@ class MissionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class MissionStepStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    SKIPPED = "skipped"
+
+
+class MissionCycleStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    NEEDS_CORRECTION = "needs_correction"
+    FAILED = "failed"
+
+
 class RuntimeSkillStatus(StrEnum):
     DRAFT = "draft"
     TESTING = "testing"

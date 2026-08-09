@@ -255,6 +255,15 @@ textarea { resize: vertical; }
 .mission-edit-form, .mission-completion-form, .mission-review-form { display: grid; gap: .5rem; margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .mission-actions { display: flex; flex-wrap: wrap; gap: .45rem; }
 .mission-evidence { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
+.mission-evidence a { text-decoration: none; }
+.mission-step-list { display: grid; gap: .35rem; margin-top: .7rem; padding: .7rem; border: 1px solid var(--line); border-radius: 10px; background: rgba(4, 11, 22, .28); }
+.mission-step-list > b { color: var(--cyan); font-size: .57rem; }
+.mission-step { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .4rem .5rem; border-radius: 7px; background: rgba(255, 255, 255, .025); }
+.mission-step span { overflow: hidden; color: var(--muted); font: 650 .56rem ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.mission-step small { color: var(--subtle); font: .5rem ui-monospace, monospace; white-space: nowrap; }
+.mission-step.succeeded { border-left: 2px solid var(--accent); }
+.mission-step.running { border-left: 2px solid var(--warn); }
+.mission-step.failed, .mission-step.blocked { border-left: 2px solid var(--danger); }
 .review-card { border-color: rgba(245, 199, 103, .25); }
 .completed-card { border-color: rgba(98, 242, 197, .18); background: rgba(98, 242, 197, .025); }
 

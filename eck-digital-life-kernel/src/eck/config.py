@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     workspace_dir: Path = Path("workspace")
     export_dir: Path = Path("workspace/exports")
+    mission_workspace_dir: Path | None = None
+    mission_archive_dir: Path | None = None
     database_path: Path | None = None
 
     bind_host: str = "127.0.0.1"
@@ -160,6 +162,12 @@ class Settings(BaseSettings):
     autonomous_project_min_research_runs: int = Field(default=4, ge=2, le=20)
     autonomous_project_max_per_day: int = Field(default=1, ge=0, le=20)
     autonomous_project_draft_attempts: int = Field(default=3, ge=1, le=5)
+    durable_mission_executor_enabled: bool = True
+    mission_step_max_attempts: int = Field(default=3, ge=1, le=10)
+    mission_workspace_max_mb: int = Field(default=256, ge=16, le=4096)
+    mission_workspace_total_max_gb: float = Field(default=5.0, ge=0.25, le=1024)
+    mission_retention_days: int = Field(default=30, ge=1, le=3650)
+    mission_publish_verified_projects: bool = True
     github_publish_enabled: bool = True
     github_auto_publish_verified_projects: bool = True
     github_account: str | None = None
@@ -203,6 +211,8 @@ class Settings(BaseSettings):
         "data_dir",
         "workspace_dir",
         "export_dir",
+        "mission_workspace_dir",
+        "mission_archive_dir",
         "image_engine_python",
         "image_engine_script",
         "image_model_dir",
@@ -248,6 +258,8 @@ class Settings(BaseSettings):
             )
         if self.database_path is None:
             self.database_path = self.data_dir / "eck.db"
+        if self.mission_workspace_dir is None:
+            self.mission_workspace_dir = self.workspace_dir / "missions"
         if self.autonomous_learning_percent + self.challenge_execution_percent != 100:
             raise ValueError("Autonomous learning and challenge percentages must total 100.")
         if (
@@ -262,6 +274,7 @@ class Settings(BaseSettings):
             self.image_output_dir.resolve().relative_to(self.workspace_dir.resolve())
             self.video_output_dir.resolve().relative_to(self.workspace_dir.resolve())
             self.export_dir.resolve().relative_to(self.workspace_dir.resolve())
+            self.mission_workspace_dir.resolve().relative_to(self.workspace_dir.resolve())
         except ValueError as exc:
             raise ValueError("Image output must stay inside the ECK workspace.") from exc
         try:
@@ -296,6 +309,8 @@ class Settings(BaseSettings):
         self.image_output_dir.mkdir(parents=True, exist_ok=True)
         self.video_output_dir.mkdir(parents=True, exist_ok=True)
         self.export_dir.mkdir(parents=True, exist_ok=True)
+        assert self.mission_workspace_dir is not None
+        self.mission_workspace_dir.mkdir(parents=True, exist_ok=True)
         self.rembg_model_dir.mkdir(parents=True, exist_ok=True)
         self.identity_dir.mkdir(parents=True, exist_ok=True)
         self.evolution_dir.mkdir(parents=True, exist_ok=True)

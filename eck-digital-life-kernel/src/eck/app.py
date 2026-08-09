@@ -46,6 +46,7 @@ from eck.services.core_evolution import CoreEvolutionLabService
 from eck.services.evaluations import EvaluationService
 from eck.services.evolution import EvolutionAuditService
 from eck.services.identity import IdentityService
+from eck.services.mission_executor import DurableMissionExecutor
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
 from eck.services.project_lab import AutonomousProjectLabService
@@ -82,6 +83,7 @@ class Application:
     community_sources: CommunitySourceCatalog
     challenges: ChallengeService
     missions: MissionService
+    mission_executor: DurableMissionExecutor
     versions: VersionService
     evaluations: EvaluationService
     evolution: EvolutionAuditService
@@ -203,13 +205,6 @@ def build_application(settings: Settings | None = None) -> Application:
         experiences=ExperienceEngine(store),
     )
     challenge_service = ChallengeService(store, events, brain)
-    mission_service = MissionService(
-        store,
-        events,
-        versions,
-        task_service,
-        registry,
-    )
     evaluation_service = EvaluationService(store, events, brain, resources)
     skill_bridge = ResearchSkillBridgeService(
         settings,
@@ -231,6 +226,21 @@ def build_application(settings: Settings | None = None) -> Application:
         events,
         coder_brain,
         worker,
+    )
+    mission_service = MissionService(
+        store,
+        events,
+        versions,
+        task_service,
+        registry,
+    )
+    mission_executor = DurableMissionExecutor(
+        settings,
+        store,
+        events,
+        coder_brain,
+        project_lab,
+        mission_service,
     )
     evolution_service = EvolutionAuditService(
         settings,
@@ -278,6 +288,8 @@ def build_application(settings: Settings | None = None) -> Application:
     events.subscribe("TaskVerified", invalidate_skill_graph)
     events.subscribe("RuntimeSkillActivated", invalidate_skill_graph)
     events.subscribe("TaskVerified", mission_service.handle_task_verified)
+    events.subscribe("MissionCreated", mission_executor.handle_mission_created)
+    events.subscribe("MissionPlanUpdated", mission_executor.handle_plan_updated)
     kernel = LifeKernel(
         settings,
         store,
@@ -287,6 +299,7 @@ def build_application(settings: Settings | None = None) -> Application:
         autonomous_learning,
         skill_bridge,
         project_lab,
+        mission_executor,
         resources,
     )
     return Application(
@@ -310,6 +323,7 @@ def build_application(settings: Settings | None = None) -> Application:
         community_sources=community_sources,
         challenges=challenge_service,
         missions=mission_service,
+        mission_executor=mission_executor,
         versions=versions,
         evaluations=evaluation_service,
         evolution=evolution_service,

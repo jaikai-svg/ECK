@@ -16,6 +16,7 @@ def settings(tmp_path: Path) -> Settings:
         data_dir=tmp_path / "data",
         workspace_dir=tmp_path / "workspace",
         export_dir=tmp_path / "workspace" / "exports",
+        mission_workspace_dir=tmp_path / "workspace" / "missions",
         database_path=tmp_path / "data" / "eck.db",
         image_engine_python=tmp_path / "image-engine" / "python.exe",
         image_engine_script=tmp_path / "image-engine" / "run.py",

@@ -85,6 +85,7 @@ def test_command_catalog_exposes_builtin_shortcuts() -> None:
 
     assert commands["/image 9:16"]["insert"] == "/image 9:16 "
     assert commands["/video 9:16"]["requires_prompt"] is True
+    assert commands["/mission"]["requires_prompt"] is True
     assert commands["/status"]["requires_prompt"] is False
     assert commands["/help"]["category"] == "系統"
 

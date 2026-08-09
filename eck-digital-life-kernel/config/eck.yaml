@@ -147,6 +147,13 @@ autonomous_project_interval_seconds: 86400
 autonomous_project_min_research_runs: 4
 autonomous_project_max_per_day: 1
 autonomous_project_draft_attempts: 3
+durable_mission_executor_enabled: true
+mission_workspace_max_mb: 256
+mission_workspace_total_max_gb: 5
+mission_retention_days: 30
+mission_publish_verified_projects: true
+# Set this to a NAS directory after it is mounted. Empty keeps completed artifacts local.
+mission_archive_dir:
 github_publish_enabled: true
 github_auto_publish_verified_projects: true
 github_account:
