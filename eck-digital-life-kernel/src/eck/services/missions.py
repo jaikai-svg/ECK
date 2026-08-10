@@ -159,10 +159,30 @@ class MissionService:
         mission = self.store.get_mission(mission_id)
         if mission.status in {MissionStatus.APPROVED, MissionStatus.CANCELLED}:
             raise ValueError("The mission is already closed.")
+        if mission.progress.get("execution_kind") == "software_project":
+            steps = self.store.list_mission_steps(mission_id)
+            review_steps = [item for item in steps if item.action_kind == "quality.review"]
+            if review_steps and any(
+                item.status.value != "succeeded" for item in review_steps
+            ):
+                raise ValueError(
+                    "Software missions require all independent expert reviews before submission."
+                )
+            validations = [
+                item
+                for item in steps
+                if item.action_kind == "software.validate" and item.status.value == "succeeded"
+            ]
+            if review_steps and not validations:
+                raise ValueError("Software mission validation evidence is incomplete.")
         updated = self.store.set_mission_status(
             mission_id,
             MissionStatus.AWAITING_REVIEW,
-            progress={"completion_percent": 100, "current_step": "等待建立者驗收"},
+            progress={
+                **mission.progress,
+                "completion_percent": 100,
+                "current_step": "等待建立者驗收",
+            },
             result_summary=create.result_summary,
             evidence=create.evidence,
             submitted_at=utc_now(),
@@ -185,6 +205,7 @@ class MissionService:
             raise ValueError("Only a submitted mission can be reviewed.")
         status = MissionStatus.APPROVED if decision.approved else MissionStatus.REJECTED
         progress = {
+            **mission.progress,
             "completion_percent": 100 if decision.approved else 90,
             "current_step": "已由建立者通過" if decision.approved else "依驗收意見改善後重送",
         }
@@ -203,7 +224,7 @@ class MissionService:
         )
         if decision.approved and mission.schedule == "monthly":
             await self.versions.approve_monthly_release(mission_id)
-        return updated
+        return self.store.get_mission(mission_id) if not decision.approved else updated
 
     async def reopen(self, mission_id: str) -> MissionRecord:
         mission = self.store.get_mission(mission_id)
@@ -212,7 +233,11 @@ class MissionService:
         updated = self.store.set_mission_status(
             mission_id,
             MissionStatus.ACTIVE,
-            progress={"completion_percent": 0, "current_step": "依驗收意見重新規劃"},
+            progress={
+                **mission.progress,
+                "completion_percent": 0,
+                "current_step": "依驗收意見重新規劃",
+            },
         )
         await self.events.publish("MissionReopened", mission_id, {}, correlation_id=mission_id)
         return updated

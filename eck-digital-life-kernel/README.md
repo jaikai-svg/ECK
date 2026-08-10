@@ -191,13 +191,21 @@ P6 changes explicit software requests from one-shot chat answers into persistent
 The Python controller compiles a mission into typed, dependency-ordered microtasks and stores
 each auditable reason summary, tool action, external observation, correction, attempt, and
 result in SQLite. A restart returns interrupted idempotent steps to the queue instead of losing
-the mission.
+the mission. The default software graph now has 24 steps: current-reference retrieval, principal
+architecture, six source-changing architect microtasks, an integration pass, three independent
+review/improvement rounds, deterministic validation, learning distillation, packaging,
+publication, and human submission.
 
 The first verified workers deliver static websites and constrained Python projects. Website
 missions produce a local preview, deterministic validation report, ZIP plus SHA-256, and a
 private GitHub repository when the dedicated account is ready. Python projects must pass static
 quality checks and pytest inside the existing networkless Docker worker. Unsupported project
 types stop at a recorded capability boundary; model text never counts as delivery.
+
+Creator rejection replays every expert review with the feedback as binding input. Only patterns
+from missions later approved by the creator may be reused, and GitHub repositories use stable
+topic-plus-task-sequence names instead of generic project-type names. Dashboard review drafts
+survive the five-second status refresh.
 
 Mission source lives under `workspace/missions/<mission_id>/`, separate from the ECK core and
 autonomous research projects. Per-mission and total workspace quotas prevent silent disk

@@ -455,7 +455,6 @@ class AutonomousProjectLabService:
                 "detail": str(github["detail"]),
             }
         self._scan_secrets(source_dir)
-        self._initialize_git(source_dir)
         account = self.settings.github_account or str(github["account"])
         repository = f"{account}/{safe_name}"
         executable = str(github["executable"])
@@ -467,6 +466,55 @@ class AutonomousProjectLabService:
                 "repository": repository,
                 "detail": f"GitHub credentials for {account!r} are unavailable.",
             }
+        if (source_dir / ".git").is_dir():
+            environment = self._github_environment(token)
+            remote = await self._run_process(
+                [executable, "repo", "view", repository, "--json", "nameWithOwner"],
+                cwd=source_dir,
+                timeout=60,
+                env=environment,
+            )
+            created_output = ""
+            if remote["returncode"] != 0:
+                created = await self._run_process(
+                    [executable, "repo", "create", repository, f"--{selected_visibility}"],
+                    cwd=source_dir,
+                    timeout=120,
+                    env=environment,
+                )
+                created_output = str(created["output_tail"])
+                if created["returncode"] != 0:
+                    return {
+                        "published": False,
+                        "deferred": False,
+                        "repository": repository,
+                        "url": f"https://github.com/{repository}",
+                        "detail": created_output,
+                    }
+            existing = await self._publish_existing_directory(
+                source_dir=source_dir,
+                repository=repository,
+                env=environment,
+            )
+            if existing["returncode"] == 0:
+                return {
+                    "published": True,
+                    "deferred": False,
+                    "repository": repository,
+                    "url": f"https://github.com/{repository}",
+                    "detail": "\n".join(
+                        item for item in (created_output, existing["output_tail"]) if item
+                    ),
+                    "updated": True,
+                }
+            return {
+                "published": False,
+                "deferred": False,
+                "repository": repository,
+                "url": f"https://github.com/{repository}",
+                "detail": existing["output_tail"],
+            }
+        self._initialize_git(source_dir)
         result = await self._run_process(
             [
                 executable,
@@ -492,6 +540,41 @@ class AutonomousProjectLabService:
             "url": f"https://github.com/{repository}",
             "detail": result["output_tail"],
         }
+
+    async def _publish_existing_directory(
+        self,
+        *,
+        source_dir: Path,
+        repository: str,
+        env: dict[str, str],
+    ) -> dict[str, Any]:
+        commands = (
+            ["git", "remote", "set-url", "origin", f"https://github.com/{repository}.git"],
+            ["git", "add", "-A"],
+            [
+                "git",
+                "-c",
+                "user.name=ECK Autonomous Developer",
+                "-c",
+                "user.email=eck-local@users.noreply.github.com",
+                "commit",
+                "-m",
+                "Improve verified ECK mission",
+            ],
+            ["git", "push", "origin", "main"],
+        )
+        output: list[str] = []
+        for index, command in enumerate(commands):
+            result = await self._run_process(command, cwd=source_dir, timeout=180, env=env)
+            output.append(str(result["output_tail"]))
+            if result["returncode"] != 0:
+                no_changes = index == 2 and "nothing to commit" in str(
+                    result["output_tail"]
+                ).casefold()
+                if no_changes:
+                    continue
+                return {"returncode": result["returncode"], "output_tail": "\n".join(output)}
+        return {"returncode": 0, "output_tail": "\n".join(output)[-8000:]}
 
     async def validate_python_directory(
         self,

@@ -1,13 +1,63 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from eck.brain.base import BrainResponse
 from eck.domain.enums import MissionCycleStatus, MissionStatus, MissionStepStatus
-from eck.domain.models import MissionCreate
+from eck.domain.models import MissionCreate, MissionReviewDecision, MissionStepDefinition
 from eck.services.dialogue import DialogueService
+
+EXPECTED_WEBSITE_STEPS = [
+    "workspace.prepare",
+    "reference.research",
+    "software.specify",
+    "architecture.design",
+    "architecture.plan",
+    "software.implement",
+    "software.microtask.1",
+    "software.microtask.2",
+    "software.microtask.3",
+    "software.microtask.4",
+    "software.microtask.5",
+    "software.microtask.6",
+    "software.enhance",
+    "quality.review.1",
+    "quality.improve.1",
+    "quality.review.2",
+    "quality.improve.2",
+    "quality.review.3",
+    "quality.improve.3",
+    "software.validate",
+    "learning.distill",
+    "artifact.package",
+    "github.publish",
+    "mission.submit",
+]
+
+
+async def run_steps(application, count: int):
+    completed = []
+    for _ in range(count):
+        step = await application.mission_executor.run_next()
+        assert step is not None
+        completed.append(step)
+    return completed
+
+
+async def run_mission(application):
+    completed = []
+    for _ in range(50):
+        if not application.mission_executor.has_runnable_work():
+            break
+        step = await application.mission_executor.run_next()
+        assert step is not None
+        completed.append(step)
+    else:
+        pytest.fail("Mission executor did not reach a durable terminal state.")
+    return completed
 
 
 @pytest.mark.asyncio
@@ -24,15 +74,9 @@ async def test_dialogue_compiles_website_request_into_durable_mission(applicatio
     assert result["tool"] == "mission.execute"
     assert result["pending"] is True
     assert mission.progress["execution_kind"] == "software_project"
-    assert [step.step_key for step in steps] == [
-        "workspace.prepare",
-        "software.specify",
-        "software.implement",
-        "software.validate",
-        "artifact.package",
-        "github.publish",
-        "mission.submit",
-    ]
+    assert [step.step_key for step in steps] == EXPECTED_WEBSITE_STEPS
+    assert mission.progress["executor"] == "p6-durable-react.v2"
+    assert mission.progress["step_count"] == 24
 
 
 @pytest.mark.asyncio
@@ -47,11 +91,7 @@ async def test_durable_executor_delivers_verified_site_and_review_evidence(appli
         )
     )
 
-    completed = []
-    for _ in range(7):
-        step = await application.mission_executor.run_next()
-        assert step is not None
-        completed.append(step)
+    completed = await run_mission(application)
 
     final = application.store.get_mission(mission.mission_id)
     cycles = application.store.list_mission_react_cycles(mission.mission_id)
@@ -65,9 +105,19 @@ async def test_durable_executor_delivers_verified_site_and_review_evidence(appli
     assert any(item.startswith("sha256:") for item in final.evidence)
     assert preview.name == "index.html" and "旅遊" in preview.read_text(encoding="utf-8")
     assert package.suffix == ".zip" and package.stat().st_size > 0
-    assert len(cycles) == 7
+    assert len(completed) == 24
+    assert len(cycles) == 24
     assert all(cycle.reason_summary for cycle in cycles)
     assert all(cycle.status is MissionCycleStatus.SUCCEEDED for cycle in cycles)
+    review_steps = [step for step in completed if step.action_kind == "quality.review"]
+    microtasks = [step for step in completed if step.action_kind == "software.microtask"]
+    assert len(microtasks) == 6
+    assert all(step.output["changed"] for step in microtasks)
+    assert len(review_steps) == 3
+    assert [step.inputs["round"] for step in review_steps] == [1, 2, 3]
+    assert all(len(step.output["findings"]) >= 5 for step in review_steps)
+    assert final.progress["learning_pattern"]["activation_policy"].startswith("Reusable only")
+    assert application.mission_executor._project_name(final) == "travel-task-0001"
     status = application.mission_executor.status(mission.mission_id)
     assert status["items"][0]["workspace_bytes"] > 0
     assert status["storage"]["used_bytes"] > 0
@@ -102,9 +152,7 @@ async def test_python_project_worker_uses_isolated_validation_contract(
         )
     )
 
-    for _ in range(7):
-        result = await application.mission_executor.run_next()
-        assert result is not None and result.status is MissionStepStatus.SUCCEEDED
+    completed = await run_mission(application)
 
     final = application.store.get_mission(mission.mission_id)
     source = application.settings.mission_workspace_dir / mission.mission_id / "source"
@@ -113,6 +161,7 @@ async def test_python_project_worker_uses_isolated_validation_contract(
     assert source.joinpath("mission_app.py").is_file()
     assert source.joinpath("tests", "test_mission_app.py").is_file()
     assert not any(item.endswith("/preview/") for item in final.evidence)
+    assert len(completed) == 24
 
 
 @pytest.mark.asyncio
@@ -128,14 +177,13 @@ async def test_failed_observation_triggers_correction_and_fixed_contract_replay(
             execution_kind="software_project",
         )
     )
-    for _ in range(3):
-        result = await application.mission_executor.run_next()
-        assert result is not None and result.status is MissionStepStatus.SUCCEEDED
+    completed = await run_steps(application, 19)
+    assert all(step.status is MissionStepStatus.SUCCEEDED for step in completed)
 
     original_validator = application.mission_executor._validate_site
     calls = 0
 
-    def fail_once(source_dir, current_mission):
+    def fail_once(source_dir, current_mission, *, enforce_threshold=True):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -144,7 +192,11 @@ async def test_failed_observation_triggers_correction_and_fixed_contract_replay(
                 "issues": ["simulated deterministic check failure"],
                 "checks": [],
             }
-        return original_validator(source_dir, current_mission)
+        return original_validator(
+            source_dir,
+            current_mission,
+            enforce_threshold=enforce_threshold,
+        )
 
     monkeypatch.setattr(application.mission_executor, "_validate_site", fail_once)
     failed = await application.mission_executor.run_next()
@@ -223,7 +275,7 @@ async def test_structured_coder_reason_spec_and_files_are_used(application, monk
                 "features": ["responsive", "planner"],
                 "acceptance_checks": ["local assets", "semantic html"],
             }
-        elif "世界級前端工程師" in system:
+        elif "世界級產品設計工程師與前端工程師" in system:
             payload = {"files": generated_files}
         else:
             payload = {"files": generated_files}
@@ -234,13 +286,13 @@ async def test_structured_coder_reason_spec_and_files_are_used(application, monk
         )
 
     monkeypatch.setattr(application.coder_brain, "chat", structured_chat)
-    for _ in range(7):
-        result = await application.mission_executor.run_next()
-        assert result is not None and result.status is MissionStepStatus.SUCCEEDED
+    completed = await run_steps(application, 6)
+    assert all(step.status is MissionStepStatus.SUCCEEDED for step in completed)
 
     cycles = application.store.list_mission_react_cycles(mission.mission_id)
-    spec = application.store.list_mission_steps(mission.mission_id)[1].output
-    implementation = application.store.list_mission_steps(mission.mission_id)[2].output
+    steps = application.store.list_mission_steps(mission.mission_id)
+    spec = steps[2].output
+    implementation = steps[5].output
 
     assert "未知項" in cycles[0].reason_summary
     assert spec["project_name"] == "designed-travel-site"
@@ -257,8 +309,7 @@ async def test_site_validator_records_multiple_real_contract_failures(applicatio
             execution_kind="software_project",
         )
     )
-    for _ in range(3):
-        await application.mission_executor.run_next()
+    await run_steps(application, 6)
     source = application.mission_executor._source_dir(mission.mission_id)
     source.joinpath("index.html").unlink()
     missing_index = application.mission_executor._validate_site(source, mission)
@@ -313,13 +364,16 @@ async def test_terminal_validation_failure_blocks_dependent_steps(application, m
             execution_kind="software_project",
         )
     )
-    for _ in range(3):
-        await application.mission_executor.run_next()
+    await run_steps(application, 19)
 
     monkeypatch.setattr(
         application.mission_executor,
         "_validate_site",
-        lambda source, current: {"success": False, "issues": ["fixed failure"], "checks": []},
+        lambda source, current, *, enforce_threshold=True: {
+            "success": False,
+            "issues": ["fixed failure"],
+            "checks": [],
+        },
     )
     failed = await application.mission_executor.run_next()
     final = application.store.get_mission(mission.mission_id)
@@ -333,3 +387,146 @@ async def test_terminal_validation_failure_blocks_dependent_steps(application, m
         if step.sequence > failed.sequence
     )
     assert application.mission_executor.has_runnable_work() is False
+
+
+@pytest.mark.asyncio
+async def test_creator_rejection_replays_all_three_quality_rounds(application) -> None:
+    mission = await application.missions.create(
+        MissionCreate(
+            title="建立互動旅遊網站",
+            objective="建立可規劃行程的動態旅遊網站",
+            completion_requirements="通過三輪專家審查並等待人工驗收",
+            execution_kind="software_project",
+        )
+    )
+    await run_mission(application)
+
+    revised = await application.missions.review(
+        mission.mission_id,
+        MissionReviewDecision(approved=False, feedback="首頁層次不足，請強化視覺焦點。"),
+    )
+    steps = application.store.list_mission_steps(mission.mission_id)
+
+    assert revised.status is MissionStatus.ACTIVE
+    assert revised.review_feedback == "首頁層次不足，請強化視覺焦點。"
+    assert revised.progress["human_revision_round"] == 1
+    first_review_sequence = min(
+        step.sequence for step in steps if step.action_kind == "quality.review"
+    )
+    replay = [step for step in steps if step.sequence >= first_review_sequence]
+    assert replay
+    assert all(step.status is MissionStepStatus.PENDING for step in replay)
+
+    rerun = await run_mission(application)
+    final = application.store.get_mission(mission.mission_id)
+    assert final.status is MissionStatus.AWAITING_REVIEW
+    assert len([step for step in rerun if step.action_kind == "quality.review"]) == 3
+    first_review = next(step for step in rerun if step.action_kind == "quality.review")
+    assert first_review.output["findings"][0]["evidence"] == revised.review_feedback
+
+
+def test_only_human_approved_patterns_are_reused(application) -> None:
+    first = application.store.create_mission(
+        MissionCreate(
+            title="旅遊網站設計",
+            objective="建立互動旅遊網站",
+            completion_requirements="通過驗證",
+            execution_kind="software_project",
+        )
+    )
+    pattern = {
+        "project_type": "static_website",
+        "tags": ["旅遊", "網站"],
+        "review_lessons": ["Improve navigation hierarchy."],
+    }
+    application.store.set_mission_status(
+        first.mission_id,
+        MissionStatus.APPROVED,
+        progress={**first.progress, "learning_pattern": pattern},
+    )
+    second = application.store.create_mission(
+        MissionCreate(
+            title="旅遊網站改版",
+            objective="建立新的旅遊網站",
+            completion_requirements="通過驗證",
+            execution_kind="software_project",
+        )
+    )
+
+    reused = application.mission_executor.council.similar_patterns(
+        second,
+        project_type="static_website",
+    )
+
+    assert reused == [pattern]
+
+
+def test_dashboard_preserves_active_review_draft() -> None:
+    source = Path(__file__).parents[2].joinpath(
+        "src", "eck", "dashboard", "app.js"
+    ).read_text(encoding="utf-8")
+
+    assert "eck-mission-drafts-v1" in source
+    assert "document.activeElement?.closest(\".mission-review-form\")" in source
+    assert 'document.addEventListener("input"' in source
+
+
+def test_legacy_p6_upgrade_adds_architecture_before_review(application) -> None:
+    mission = application.store.create_mission(
+        MissionCreate(
+            title="舊版旅遊網站",
+            objective="建立旅遊網站",
+            completion_requirements="等待人工驗收",
+            execution_kind="software_project",
+        )
+    )
+    application.store.create_mission_steps(
+        mission.mission_id,
+        (
+            MissionStepDefinition(
+                step_key="software.implement",
+                sequence=30,
+                action_kind="software.implement",
+                objective="舊版實作",
+                inputs={"project_type": "static_website"},
+            ),
+            MissionStepDefinition(
+                step_key="software.validate",
+                sequence=40,
+                action_kind="software.validate",
+                objective="舊版驗證",
+                depends_on=("software.implement",),
+                inputs={"project_type": "static_website"},
+            ),
+            MissionStepDefinition(
+                step_key="mission.submit",
+                sequence=70,
+                action_kind="mission.submit",
+                objective="舊版提交",
+                depends_on=("software.validate",),
+                inputs={"project_type": "static_website"},
+            ),
+        ),
+    )
+    application.store.set_mission_status(
+        mission.mission_id,
+        MissionStatus.AWAITING_REVIEW,
+        progress={
+            "completion_percent": 90,
+            "current_step": "依驗收意見改善後重送",
+        },
+    )
+
+    upgraded = application.mission_executor.upgrade_legacy_graphs()
+    refreshed = application.store.get_mission(mission.mission_id)
+    steps = application.store.list_mission_steps(mission.mission_id)
+    keys = [step.step_key for step in steps]
+
+    assert upgraded == 1
+    assert refreshed.status is MissionStatus.ACTIVE
+    assert refreshed.progress["executor"] == "p6-durable-react.v2"
+    assert refreshed.progress["execution_kind"] == "software_project"
+    assert keys.index("reference.research.v2") < keys.index("architecture.design.v2")
+    assert keys.index("architecture.design.v2") < keys.index("architecture.plan.v2")
+    assert keys.index("architecture.plan.v2") < keys.index("quality.review.1")
+    assert len([step for step in steps if step.action_kind == "software.microtask"]) == 6

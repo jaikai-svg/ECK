@@ -259,9 +259,9 @@ def test_mission_runtime_and_human_review_api(application) -> None:
         created = client.post(
             "/v1/missions",
             json={
-                "title": "建立可交付網站",
-                "objective": "建立並測試一個本機網站",
-                "completion_requirements": "提供原始碼、測試報告與可開啟成果",
+                "title": "整理可交付研究摘要",
+                "objective": "整理並驗證一份本機研究摘要",
+                "completion_requirements": "提供摘要、證據索引與驗證報告",
                 "source": "human",
                 "schedule": "manual",
                 "priority": "normal",
@@ -272,15 +272,15 @@ def test_mission_runtime_and_human_review_api(application) -> None:
 
         updated = client.patch(
             f"/v1/missions/{mission_id}",
-            json={"priority": "urgent", "objective": "建立並完整測試一個本機網站"},
+            json={"priority": "urgent", "objective": "整理並完整驗證一份本機研究摘要"},
         )
         assert updated.json()["priority"] == "urgent"
 
         submitted = client.post(
             f"/v1/missions/{mission_id}/completion",
             json={
-                "result_summary": "網站與測試報告已完成",
-                "evidence": ["workspace/site/index.html", "workspace/site/report.json"],
+                "result_summary": "研究摘要與驗證報告已完成",
+                "evidence": ["workspace/research/summary.md", "workspace/research/report.json"],
             },
         )
         assert submitted.json()["status"] == "awaiting_review"

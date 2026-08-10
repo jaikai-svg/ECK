@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     autonomous_project_draft_attempts: int = Field(default=3, ge=1, le=5)
     durable_mission_executor_enabled: bool = True
     mission_step_max_attempts: int = Field(default=3, ge=1, le=10)
+    mission_internal_review_rounds: int = Field(default=3, ge=3, le=5)
+    mission_quality_min_score: int = Field(default=82, ge=60, le=100)
+    mission_reference_search_limit: int = Field(default=5, ge=0, le=10)
     mission_workspace_max_mb: int = Field(default=256, ge=16, le=4096)
     mission_workspace_total_max_gb: float = Field(default=5.0, ge=0.25, le=1024)
     mission_retention_days: int = Field(default=30, ge=1, le=3650)

@@ -17,6 +17,9 @@ All notable changes are documented here.
 - P6 durable software missions with persistent dependency graphs, auditable ReAct summaries,
   restart recovery, deterministic website validation, Docker-tested Python projects, local
   previews, SHA-256 packages, quota isolation, and dedicated-account GitHub publication.
+- P6 quality council with current-reference retrieval, six persisted architect microtasks,
+  three mandatory independent review/improvement rounds, creator-feedback replay, approved-only
+  pattern reuse, topic-plus-sequence repository names, and refresh-safe dashboard review drafts.
 
 ### Planned
 

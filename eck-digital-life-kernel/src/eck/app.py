@@ -242,6 +242,7 @@ def build_application(settings: Settings | None = None) -> Application:
         project_lab,
         mission_service,
     )
+    mission_executor.upgrade_legacy_graphs()
     evolution_service = EvolutionAuditService(
         settings,
         store,
@@ -290,6 +291,7 @@ def build_application(settings: Settings | None = None) -> Application:
     events.subscribe("TaskVerified", mission_service.handle_task_verified)
     events.subscribe("MissionCreated", mission_executor.handle_mission_created)
     events.subscribe("MissionPlanUpdated", mission_executor.handle_plan_updated)
+    events.subscribe("MissionRejected", mission_executor.handle_mission_rejected)
     kernel = LifeKernel(
         settings,
         store,

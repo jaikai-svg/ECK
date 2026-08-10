@@ -148,6 +148,9 @@ autonomous_project_min_research_runs: 4
 autonomous_project_max_per_day: 1
 autonomous_project_draft_attempts: 3
 durable_mission_executor_enabled: true
+mission_internal_review_rounds: 3
+mission_quality_min_score: 82
+mission_reference_search_limit: 5
 mission_workspace_max_mb: 256
 mission_workspace_total_max_gb: 5
 mission_retention_days: 30

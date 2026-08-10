@@ -1891,6 +1891,23 @@ class SQLiteStore:
     def count_missions(self) -> int:
         return self._count_table("missions")
 
+    def mission_sequence(self, mission_id: str) -> int:
+        with self._connect() as conn:
+            target = conn.execute(
+                "SELECT created_at FROM missions WHERE mission_id = ?",
+                (mission_id,),
+            ).fetchone()
+            if not target:
+                raise KeyError(f"Unknown mission: {mission_id}")
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count FROM missions
+                WHERE created_at < ? OR (created_at = ? AND mission_id <= ?)
+                """,
+                (target["created_at"], target["created_at"], mission_id),
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
     def create_mission_steps(
         self,
         mission_id: str,
@@ -1946,6 +1963,85 @@ class SQLiteStore:
                     ),
                 )
         return self.list_mission_steps(mission_id)
+
+    def append_mission_steps(
+        self,
+        mission_id: str,
+        definitions: tuple[MissionStepDefinition, ...],
+    ) -> list[MissionStepRecord]:
+        if not definitions:
+            return self.list_mission_steps(mission_id)
+        existing = self.list_mission_steps(mission_id)
+        existing_keys = {item.step_key for item in existing}
+        new_keys = {item.step_key for item in definitions}
+        if len(new_keys) != len(definitions) or existing_keys & new_keys:
+            raise ValueError("Appended mission step keys must be new and unique.")
+        available = existing_keys | new_keys
+        unknown_dependencies = {
+            dependency
+            for item in definitions
+            for dependency in item.depends_on
+            if dependency not in available
+        }
+        if unknown_dependencies:
+            raise ValueError(
+                "Mission step dependencies are undefined: "
+                + ", ".join(sorted(unknown_dependencies))
+            )
+        now = iso_now()
+        with self._connect() as conn:
+            for definition in sorted(definitions, key=lambda item: item.sequence):
+                conn.execute(
+                    """
+                    INSERT INTO mission_steps (
+                        step_id, mission_id, step_key, sequence, action_kind, objective,
+                        depends_on_json, status, attempts, max_attempts, inputs_json,
+                        output_json, last_error, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, '', ?, ?)
+                    """,
+                    (
+                        new_id("mstep"),
+                        mission_id,
+                        definition.step_key,
+                        definition.sequence,
+                        definition.action_kind,
+                        definition.objective,
+                        _json(definition.depends_on),
+                        MissionStepStatus.PENDING.value,
+                        definition.max_attempts,
+                        _json(definition.inputs),
+                        _json({}),
+                        now,
+                        now,
+                    ),
+                )
+        return self.list_mission_steps(mission_id)
+
+    def reset_mission_steps_from_sequence(
+        self,
+        mission_id: str,
+        *,
+        sequence: int,
+        reason: str,
+    ) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE mission_steps
+                SET status = ?, attempts = 0, output_json = ?, last_error = ?,
+                    started_at = NULL, finished_at = NULL, updated_at = ?
+                WHERE mission_id = ? AND sequence >= ?
+                """,
+                (
+                    MissionStepStatus.PENDING.value,
+                    _json({}),
+                    reason[:8000],
+                    iso_now(),
+                    mission_id,
+                    sequence,
+                ),
+            )
+        return cursor.rowcount
 
     def get_mission_step(self, step_id: str) -> MissionStepRecord:
         with self._connect() as conn:

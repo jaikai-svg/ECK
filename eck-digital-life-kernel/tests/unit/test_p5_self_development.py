@@ -390,6 +390,59 @@ async def test_verified_project_publishes_only_after_ready_check(application, mo
 
 
 @pytest.mark.asyncio
+async def test_existing_git_history_creates_missing_named_remote(
+    application,
+    monkeypatch,
+) -> None:
+    service = application.project_lab
+    source_dir = service.root / "existing-mission"
+    source_dir.joinpath(".git").mkdir(parents=True)
+    source_dir.joinpath("index.html").write_text("<main>Travel</main>", encoding="utf-8")
+    monkeypatch.setattr(
+        service,
+        "github_status",
+        lambda **kwargs: {
+            "ready": True,
+            "authenticated": True,
+            "account": "eck-unit",
+            "executable": "gh",
+        },
+    )
+    monkeypatch.setattr(service, "_scan_secrets", lambda source: None)
+    monkeypatch.setattr(service, "_github_token", lambda executable, account: "unit-token")
+    commands = []
+
+    async def run_process(command, **kwargs):
+        assert kwargs["env"]["GH_TOKEN"] == "unit-token"
+        commands.append(command)
+        if command[1:3] == ["repo", "view"]:
+            return {"returncode": 1, "output_tail": "repository not found"}
+        return {"returncode": 0, "output_tail": "repository created"}
+
+    async def publish_existing_directory(**kwargs):
+        assert kwargs["repository"] == "eck-unit/travel-task-0003"
+        return {"returncode": 0, "output_tail": "history pushed"}
+
+    monkeypatch.setattr(service, "_run_process", run_process)
+    monkeypatch.setattr(
+        service,
+        "_publish_existing_directory",
+        publish_existing_directory,
+    )
+
+    result = await service.publish_directory(
+        name="travel-task-0003",
+        source_dir=source_dir,
+        visibility="private",
+    )
+
+    assert result["published"] is True
+    assert result["repository"] == "eck-unit/travel-task-0003"
+    assert commands[0][1:3] == ["repo", "view"]
+    assert commands[1] == ["gh", "repo", "create", "eck-unit/travel-task-0003", "--private"]
+
+
+@pytest.mark.asyncio
 async def test_project_repairs_preserve_last_contract_valid_candidate(
     settings, monkeypatch
 ) -> None:

@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const CHAT_STORAGE_KEY = "eck-chat-history-v2";
+const MISSION_DRAFT_STORAGE_KEY = "eck-mission-drafts-v1";
 let kernelStartedAt = null;
 let skillTreeLastLoaded = 0;
 let skillTreeRevision = "";
@@ -10,6 +11,7 @@ let systemResourcesLastLoaded = 0;
 let slashCommands = [];
 let slashMatches = [];
 let slashSelection = 0;
+let missionDrafts = loadMissionDrafts();
 
 const escapeHtml = (value) => String(value ?? "")
   .replaceAll("&", "&amp;")
@@ -23,6 +25,40 @@ function toast(message) {
   node.textContent = message;
   node.classList.add("show");
   window.setTimeout(() => node.classList.remove("show"), 3000);
+}
+
+function loadMissionDrafts() {
+  try {
+    const value = JSON.parse(localStorage.getItem(MISSION_DRAFT_STORAGE_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function missionDraftKey(form) {
+  const kind = form.classList.contains("mission-review-form")
+    ? "review"
+    : form.classList.contains("mission-edit-form") ? "edit" : "completion";
+  return `${kind}:${form.dataset.missionId || ""}`;
+}
+
+function saveMissionDraft(form) {
+  const values = {};
+  new FormData(form).forEach((value, key) => {
+    values[key] = String(value);
+  });
+  missionDrafts[missionDraftKey(form)] = values;
+  localStorage.setItem(MISSION_DRAFT_STORAGE_KEY, JSON.stringify(missionDrafts));
+}
+
+function clearMissionDraft(form) {
+  delete missionDrafts[missionDraftKey(form)];
+  localStorage.setItem(MISSION_DRAFT_STORAGE_KEY, JSON.stringify(missionDrafts));
+}
+
+function missionDraft(kind, missionId, field) {
+  return missionDrafts[`${kind}:${missionId}`]?.[field] || "";
 }
 
 async function request(path, options = {}) {
@@ -511,18 +547,21 @@ function renderMissions(missions, executor) {
     $("#active-missions").innerHTML = activeMissionHtml;
   }
 
-  $("#review-missions").innerHTML = review.map((mission) => `
+  const reviewMissionHtml = review.map((mission) => `
     <article class="challenge-card mission-card review-card">
       <div class="challenge-card-head"><div><h3>${escapeHtml(mission.title)}</h3><p class="objective">${escapeHtml(mission.objective)}</p></div><span class="pill">等待驗收</span></div>
       <div class="mission-result"><b>成果</b><p>${escapeHtml(mission.result_summary)}</p></div>
       <div class="mission-evidence">${(mission.evidence || []).map((item) => evidenceMarkup(item)).join("") || '<span class="tag warn">未附證據</span>'}</div>
       ${missionStepMarkup(executor, mission.mission_id)}
       <form class="mission-review-form" data-mission-id="${escapeHtml(mission.mission_id)}">
-        <textarea name="feedback" rows="2" maxlength="4000" placeholder="驗收意見；退回時請說明需要改善的內容"></textarea>
+        <textarea name="feedback" rows="3" maxlength="4000" placeholder="驗收草稿會自動保留；退回時請說明需要改善的內容">${escapeHtml(missionDraft("review", mission.mission_id, "feedback"))}</textarea>
         <div class="mission-actions"><button type="submit" data-decision="approve">勾選通過</button><button type="submit" data-decision="reject" class="secondary">退回改善</button></div>
       </form>
     </article>
   `).join("") || '<div class="empty">目前沒有等待驗收的成果。</div>';
+  if (!document.activeElement?.closest(".mission-review-form")) {
+    $("#review-missions").innerHTML = reviewMissionHtml;
+  }
 
   $("#completed-missions").innerHTML = completed.map((mission) => `
     <details class="challenge-card mission-card completed-card">
@@ -1404,6 +1443,13 @@ $("#mission-form").addEventListener("submit", async (event) => {
   }
 });
 
+document.addEventListener("input", (event) => {
+  const form = event.target.closest?.(
+    ".mission-review-form, .mission-edit-form, .mission-completion-form",
+  );
+  if (form instanceof HTMLFormElement) saveMissionDraft(form);
+});
+
 document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
@@ -1419,6 +1465,7 @@ document.addEventListener("submit", async (event) => {
           completion_requirements: data.get("completion_requirements"),
         }),
       });
+      clearMissionDraft(form);
       toast("課題內容已更新");
       form.closest("details")?.removeAttribute("open");
       await refresh();
@@ -1435,6 +1482,7 @@ document.addEventListener("submit", async (event) => {
         method: "POST",
         body: JSON.stringify({ result_summary: data.get("result_summary"), evidence }),
       });
+      clearMissionDraft(form);
       toast("成果已送交，等待你勾選驗收");
       form.closest("details")?.removeAttribute("open");
       await refresh();
@@ -1454,6 +1502,7 @@ document.addEventListener("submit", async (event) => {
           feedback: data.get("feedback") || "",
         }),
       });
+      clearMissionDraft(form);
       toast(submitter?.dataset.decision === "approve" ? "課題已通過並永久保存" : "課題已退回改善");
       await refresh();
     } catch (error) {
