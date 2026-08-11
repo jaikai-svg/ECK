@@ -1,0 +1,11 @@
+{
+  "schema_version": "eck-performance-budgets.v1",
+  "status_fanout": "concurrent",
+  "sqlite_concurrent_event_writers": 8,
+  "workspace_busy_poll_seconds": 5,
+  "workspace_idle_poll_seconds": 30,
+  "workspace_home_request_count": 1,
+  "workspace_initial_static_bytes": 220000,
+  "workspace_pause_when_hidden": true,
+  "worker_rule": "resource-heavy workers must not run in the API process"
+}

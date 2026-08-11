@@ -298,7 +298,7 @@ async def test_failed_generated_skill_repairs_and_retests_without_kernel_restart
     assert skill.manifest.version == "0.1.1"
     assert {item.status for item in versions} == {
         RuntimeSkillStatus.ACTIVE,
-        RuntimeSkillStatus.FAILED,
+        RuntimeSkillStatus.RETIRED,
     }
 
 

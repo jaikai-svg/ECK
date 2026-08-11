@@ -533,13 +533,20 @@ class RuntimeSkillRecord(FrozenModel):
     manifest: RuntimeSkillManifest
     status: RuntimeSkillStatus
     source_dir: str
-    source: Literal["foundation", "eck-generated", "human"]
+    source: Literal["foundation", "eck-generated", "human", "federation"]
     test_report: dict[str, Any] = Field(default_factory=dict)
     improvements: tuple[str, ...] = ()
     activation_count: int = 0
     created_at: datetime
     updated_at: datetime
     activated_at: datetime | None = None
+
+
+class SkillAcceptanceExample(FrozenModel):
+    operation: str = Field(default="execute", min_length=1, max_length=80)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    expected: Any
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class SkillForgeRequest(FrozenModel):
@@ -549,6 +556,24 @@ class SkillForgeRequest(FrozenModel):
     operations: tuple[str, ...] = Field(min_length=1, max_length=20)
     permissions: tuple[str, ...] = ()
     dependencies: tuple[str, ...] = ()
+    acceptance_examples: tuple[SkillAcceptanceExample, ...] = Field(
+        default=(),
+        max_length=20,
+    )
+
+
+class GuidedSkillAcquisitionRequest(FrozenModel):
+    topic: str = Field(min_length=2, max_length=200)
+    objective: str = Field(min_length=10, max_length=3000)
+    requested_name: str | None = Field(
+        default=None,
+        pattern=r"^[a-z][a-z0-9_.-]{2,79}$",
+    )
+    source_urls: tuple[str, ...] = Field(default=(), max_length=3)
+    acceptance_examples: tuple[SkillAcceptanceExample, ...] = Field(
+        default=(),
+        max_length=20,
+    )
 
 
 class CoreCandidateRequest(FrozenModel):

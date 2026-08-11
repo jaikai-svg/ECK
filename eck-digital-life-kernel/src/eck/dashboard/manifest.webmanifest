@@ -1,0 +1,16 @@
+{
+  "name": "ECK Digital Life Kernel",
+  "short_name": "ECK",
+  "description": "Local-first persistent cognitive runtime.",
+  "start_url": "/#home",
+  "display": "standalone",
+  "background_color": "#050914",
+  "theme_color": "#07111f",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

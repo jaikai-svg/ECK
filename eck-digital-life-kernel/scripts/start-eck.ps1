@@ -13,7 +13,7 @@ $baseUrl = "http://127.0.0.1:8420"
 
 function Test-EckApi {
     try {
-        Invoke-RestMethod -Uri "$baseUrl/v1/roadmap" -TimeoutSec 2 | Out-Null
+        Invoke-RestMethod -Uri "$baseUrl/v1/kernel/status" -TimeoutSec 3 | Out-Null
         return $true
     } catch {
         return $false

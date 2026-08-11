@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck serve verify docker-up docker-down
+.PHONY: install test lint typecheck architecture serve verify docker-up docker-down
 
 install:
 	python -m pip install -e ".[dev]"
@@ -12,6 +12,9 @@ lint:
 typecheck:
 	mypy src/eck
 
+architecture:
+	python scripts/check_architecture.py
+
 serve:
 	eck serve
 
@@ -23,4 +26,3 @@ docker-up:
 
 docker-down:
 	docker compose down
-

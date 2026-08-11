@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Annotated
 
@@ -9,6 +10,7 @@ import uvicorn
 from rich import print
 
 from eck.config import Settings
+from eck.runtime.shutdown import clear_shutdown_request, shutdown_requested
 
 app = typer.Typer(
     name="eck",
@@ -32,12 +34,28 @@ def serve(
 ) -> None:
     """Run the local API and dashboard."""
     settings = Settings()
-    uvicorn.run(
-        "eck.api.main:app",
-        host=host or settings.bind_host,
-        port=port or settings.bind_port,
-        reload=False,
+    asyncio.run(_serve(settings, host=host, port=port))
+
+
+async def _serve(settings: Settings, *, host: str | None, port: int | None) -> None:
+    clear_shutdown_request()
+    server = uvicorn.Server(
+        uvicorn.Config(
+            "eck.api.main:app",
+            host=host or settings.bind_host,
+            port=port or settings.bind_port,
+            reload=False,
+        )
     )
+    server_task = asyncio.create_task(server.serve(), name="eck-api-server")
+    try:
+        while not server_task.done() and not shutdown_requested():
+            await asyncio.sleep(0.2)
+        if shutdown_requested():
+            server.should_exit = True
+        await server_task
+    finally:
+        clear_shutdown_request()
 
 
 @app.command()

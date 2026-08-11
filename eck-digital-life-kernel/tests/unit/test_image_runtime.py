@@ -47,6 +47,21 @@ class ImagePlanningBrain(BrainProvider):
         )
 
 
+class OfflineImagePlanningBrain(BrainProvider):
+    async def health(self) -> BrainHealth:
+        return BrainHealth(provider="test", available=False, model="image-planner")
+
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        format_schema: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> BrainResponse:
+        del messages, format_schema, options
+        raise RuntimeError("Ollama service could not be started.")
+
+
 class FakeInput:
     def __init__(self) -> None:
         self.writes: list[bytes] = []
@@ -240,6 +255,60 @@ async def test_user_request_planning_retries_and_records_inference(
     assert brain.calls == 2
     assert result.output["metadata"]["prompt_planner_model"] == "image-planner"
     assert result.output["metadata"]["prompt_planner_inference"] == {"eval_count": 17}
+
+
+@pytest.mark.asyncio
+async def test_image_planning_offline_uses_direct_prompt_fallback(
+    settings,
+    monkeypatch,
+) -> None:
+    configured = configure_diffusers(settings)
+    capability = ImageGenerationCapability(configured, OfflineImagePlanningBrain())
+    captured_request: dict[str, Any] = {}
+
+    async def release_vram() -> None:
+        return None
+
+    async def generate(request, output_path: Path):
+        captured_request.update(request)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"fallback-image")
+        return {
+            "success": True,
+            "metadata": {
+                "backend": "diffusers",
+                "model": "stable-diffusion-v1-5",
+                "seed": 9,
+                "steps": request["steps"],
+                "scheduler": "DPM++ Karras",
+                "adetailer": False,
+            },
+        }
+
+    monkeypatch.setattr(capability, "_release_ollama_vram", release_vram)
+    monkeypatch.setattr(capability, "_run_diffusers", generate)
+
+    result = await capability.execute(
+        ActionProposal(
+            capability="image.generate",
+            operation="generate",
+            payload={"user_request": "生成一隻狗狗在玩球的照片", "seed": 9},
+        )
+    )
+
+    inference = result.output["metadata"]["prompt_planner_inference"]
+    assert result.success
+    assert "狗狗" in captured_request["prompt"]
+    assert result.output["metadata"]["prompt_planner_model"] == (
+        "deterministic-direct-prompt-fallback.v1"
+    )
+    assert inference["fallback"] is True
+    assert "Ollama service" in inference["reason"]
+    assert capability.status()["activity"] == {
+        "stage": "idle",
+        "started_at": None,
+        "busy": False,
+    }
 
 
 @pytest.mark.asyncio

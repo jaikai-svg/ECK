@@ -31,6 +31,22 @@ class Settings(BaseSettings):
     mission_workspace_dir: Path | None = None
     mission_archive_dir: Path | None = None
     database_path: Path | None = None
+    rag_database_path: Path | None = None
+    rag_model_dir: Path = Path("workspace/models/rag")
+    tool_campaign_workspace_dir: Path | None = None
+    archive_root: Path | None = None
+    archive_cache_dir: Path | None = None
+    archive_cache_max_gb: float = Field(default=10.0, ge=0.25, le=2048)
+    archive_remove_local_after_verify: bool = False
+    artifact_index_refresh_seconds: float = Field(default=60.0, ge=5, le=86400)
+    library_min_cards: int = Field(default=24, ge=3, le=10000)
+    library_min_chapters: int = Field(default=6, ge=2, le=100)
+    library_min_relation_coverage: float = Field(default=0.6, ge=0, le=1)
+    library_min_independent_source_ratio: float = Field(default=0.75, ge=0, le=1)
+    library_min_applied_tasks: int = Field(default=3, ge=0, le=1000)
+    library_min_fixed_tests: int = Field(default=3, ge=1, le=1000)
+    library_min_hidden_tests: int = Field(default=2, ge=1, le=1000)
+    library_min_evaluation_score: float = Field(default=0.82, ge=0, le=1)
 
     bind_host: str = "127.0.0.1"
     bind_port: int = Field(default=8420, ge=1024, le=65535)
@@ -46,6 +62,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str | None = None
     coder_model: str | None = None
+    ollama_executable: str | None = None
+    ollama_auto_start: bool = True
+    ollama_startup_timeout_seconds: float = Field(default=45.0, ge=5, le=300)
+    ollama_keep_alive: str = "5m"
     ollama_timeout_seconds: float = Field(default=120.0, ge=1, le=1800)
     coder_timeout_seconds: float = Field(default=300.0, ge=30, le=1800)
     academic_research_timeout_seconds: float = Field(default=30.0, ge=5, le=120)
@@ -69,6 +89,14 @@ class Settings(BaseSettings):
     critical_research_quality_window: int = Field(default=10, ge=5, le=100)
     critical_research_max_inconclusive_ratio: float = Field(default=0.5, ge=0, le=1)
     critical_research_near_duplicate_distance: int = Field(default=3, ge=0, le=16)
+    rag_enabled: bool = True
+    rag_auto_download: bool = True
+    rag_embedding_model: str = "BAAI/bge-m3"
+    rag_reranker_model: str = "BAAI/bge-reranker-large"
+    rag_device: Literal["cpu", "cuda"] = "cpu"
+    rag_candidate_limit: int = Field(default=20, ge=2, le=100)
+    rag_result_limit: int = Field(default=2, ge=1, le=10)
+    rag_max_source_records: int = Field(default=2000, ge=10, le=100000)
     image_generation_enabled: bool = True
     image_backend: Literal["diffusers", "forge"] = "forge"
     image_engine_python: Path = Path("workspace/image_engine/.venv/Scripts/python.exe")
@@ -152,8 +180,14 @@ class Settings(BaseSettings):
     repository_self_model_enabled: bool = True
     research_skill_bridge_enabled: bool = True
     research_skill_bridge_initial_delay_seconds: float = Field(default=600, ge=30, le=86400)
-    research_skill_bridge_interval_seconds: float = Field(default=21600, ge=300, le=604800)
-    research_skill_bridge_min_research_runs: int = Field(default=12, ge=3, le=100)
+    research_skill_bridge_interval_seconds: float = Field(default=1800, ge=300, le=604800)
+    research_skill_bridge_min_research_runs: int = Field(default=6, ge=3, le=100)
+    tool_campaign_enabled: bool = True
+    tool_campaign_initial_delay_seconds: float = Field(default=3600, ge=300, le=604800)
+    tool_campaign_interval_seconds: float = Field(default=21600, ge=900, le=1209600)
+    tool_campaign_target_count: int = Field(default=100, ge=1, le=1000)
+    tool_campaign_min_stars: int = Field(default=500, ge=10, le=1000000)
+    tool_campaign_auto_publish: bool = True
     core_evolution_enabled: bool = True
     core_evolution_timeout_seconds: float = Field(default=900, ge=60, le=3600)
     autonomous_project_lab_enabled: bool = True
@@ -165,12 +199,26 @@ class Settings(BaseSettings):
     durable_mission_executor_enabled: bool = True
     mission_step_max_attempts: int = Field(default=3, ge=1, le=10)
     mission_internal_review_rounds: int = Field(default=3, ge=3, le=5)
+    mission_deliberation_max_rounds: int = Field(default=5, ge=1, le=5)
     mission_quality_min_score: int = Field(default=82, ge=60, le=100)
     mission_reference_search_limit: int = Field(default=5, ge=0, le=10)
     mission_workspace_max_mb: int = Field(default=256, ge=16, le=4096)
     mission_workspace_total_max_gb: float = Field(default=5.0, ge=0.25, le=1024)
     mission_retention_days: int = Field(default=30, ge=1, le=3650)
     mission_publish_verified_projects: bool = True
+    federation_enabled: bool = True
+    federation_max_pack_mb: int = Field(default=64, ge=1, le=4096)
+    federation_min_reproductions: int = Field(default=2, ge=2, le=20)
+    federation_registry_min_reviews: int = Field(default=2, ge=2, le=20)
+    federation_registry_min_trust_score: float = Field(default=85, ge=0, le=100)
+    federation_synthesis_min_packs: int = Field(default=4, ge=2, le=100)
+    federation_synthesis_min_types: int = Field(default=3, ge=2, le=5)
+    federation_cosign_enabled: bool = True
+    federation_cosign_executable: str | None = None
+    federation_cosign_key_path: Path | None = None
+    federation_cosign_public_key_path: Path | None = None
+    federation_cosign_certificate_identity: str | None = None
+    federation_cosign_oidc_issuer: str | None = None
     github_publish_enabled: bool = True
     github_auto_publish_verified_projects: bool = True
     github_account: str | None = None
@@ -211,11 +259,26 @@ class Settings(BaseSettings):
         )
 
     @field_validator(
+        "archive_root",
+        mode="before",
+    )
+    @classmethod
+    def empty_archive_root_is_unconfigured(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator(
         "data_dir",
         "workspace_dir",
         "export_dir",
         "mission_workspace_dir",
         "mission_archive_dir",
+        "rag_database_path",
+        "rag_model_dir",
+        "tool_campaign_workspace_dir",
+        "archive_root",
+        "archive_cache_dir",
         "image_engine_python",
         "image_engine_script",
         "image_model_dir",
@@ -235,6 +298,8 @@ class Settings(BaseSettings):
         "cogvideo_script",
         "cogvideo_model_dir",
         "cogvideo_smoke_report",
+        "federation_cosign_key_path",
+        "federation_cosign_public_key_path",
         mode="before",
     )
     @classmethod
@@ -244,7 +309,15 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "ollama_model", "supervisor_model", "coder_model", "github_account", mode="before"
+        "ollama_model",
+        "supervisor_model",
+        "coder_model",
+        "ollama_executable",
+        "github_account",
+        "federation_cosign_executable",
+        "federation_cosign_certificate_identity",
+        "federation_cosign_oidc_issuer",
+        mode="before",
     )
     @classmethod
     def empty_model_is_unconfigured(cls, value: object) -> object:
@@ -263,6 +336,40 @@ class Settings(BaseSettings):
             self.database_path = self.data_dir / "eck.db"
         if self.mission_workspace_dir is None:
             self.mission_workspace_dir = self.workspace_dir / "missions"
+        workspace_resolved = self.workspace_dir.resolve()
+        if (
+            self.rag_database_path is None
+            or self.rag_database_path == Path("workspace/memory/eck-rag.sqlite3")
+            or (
+                not self.rag_database_path.resolve().is_relative_to(workspace_resolved)
+                and self.rag_database_path.parts[-2:] == ("memory", "eck-rag.sqlite3")
+            )
+        ):
+            self.rag_database_path = self.workspace_dir / "memory" / "eck-rag.sqlite3"
+        if self.rag_model_dir == Path("workspace/models/rag") or (
+            not self.rag_model_dir.resolve().is_relative_to(workspace_resolved)
+            and self.rag_model_dir.parts[-2:] == ("models", "rag")
+        ):
+            self.rag_model_dir = self.workspace_dir / "models" / "rag"
+        if self.tool_campaign_workspace_dir is None or self.tool_campaign_workspace_dir == Path(
+            "workspace/projects/eck-agent-toolkit"
+        ) or (
+            not self.tool_campaign_workspace_dir.resolve().is_relative_to(workspace_resolved)
+            and self.tool_campaign_workspace_dir.parts[-2:] == (
+                "projects",
+                "eck-agent-toolkit",
+            )
+        ):
+            self.tool_campaign_workspace_dir = (
+                self.workspace_dir / "projects" / "eck-agent-toolkit"
+            )
+        if self.archive_cache_dir is None or self.archive_cache_dir == Path(
+            "workspace/archive-cache"
+        ) or (
+            not self.archive_cache_dir.resolve().is_relative_to(workspace_resolved)
+            and self.archive_cache_dir.parts[-1:] == ("archive-cache",)
+        ):
+            self.archive_cache_dir = self.workspace_dir / "archive-cache"
         if self.autonomous_learning_percent + self.challenge_execution_percent != 100:
             raise ValueError("Autonomous learning and challenge percentages must total 100.")
         if (
@@ -278,6 +385,12 @@ class Settings(BaseSettings):
             self.video_output_dir.resolve().relative_to(self.workspace_dir.resolve())
             self.export_dir.resolve().relative_to(self.workspace_dir.resolve())
             self.mission_workspace_dir.resolve().relative_to(self.workspace_dir.resolve())
+            self.rag_database_path.resolve().relative_to(self.workspace_dir.resolve())
+            self.rag_model_dir.resolve().relative_to(self.workspace_dir.resolve())
+            self.tool_campaign_workspace_dir.resolve().relative_to(
+                self.workspace_dir.resolve()
+            )
+            self.archive_cache_dir.resolve().relative_to(self.workspace_dir.resolve())
         except ValueError as exc:
             raise ValueError("Image output must stay inside the ECK workspace.") from exc
         try:
@@ -320,6 +433,13 @@ class Settings(BaseSettings):
         self.project_lab_dir.mkdir(parents=True, exist_ok=True)
         assert self.database_path is not None
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        assert self.rag_database_path is not None
+        self.rag_database_path.parent.mkdir(parents=True, exist_ok=True)
+        assert self.tool_campaign_workspace_dir is not None
+        self.tool_campaign_workspace_dir.mkdir(parents=True, exist_ok=True)
+        assert self.archive_cache_dir is not None
+        self.archive_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.library_books_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def identity_dir(self) -> Path:
@@ -334,6 +454,10 @@ class Settings(BaseSettings):
         return self.data_dir / "research-skill-bridge.json"
 
     @property
+    def tool_campaign_state_path(self) -> Path:
+        return self.data_dir / "tool-acquisition-campaign.json"
+
+    @property
     def evolution_dir(self) -> Path:
         return self.workspace_dir / "evolution"
 
@@ -344,3 +468,7 @@ class Settings(BaseSettings):
     @property
     def project_lab_state_path(self) -> Path:
         return self.data_dir / "autonomous-project-lab.json"
+
+    @property
+    def library_books_dir(self) -> Path:
+        return self.workspace_dir / "library-books"

@@ -1,0 +1,267 @@
+[
+  {
+    "knowledge_id": "knowledge_c62f577f3b8041fd963a97028e15e702",
+    "task_id": "task_bd2f20615a644da6ad35989c33ac94ad",
+    "title": "Acceptance claim 5 is reproducibly verified by two test sources.",
+    "core_claim": "Acceptance claim 5 is reproducibly verified by two test sources.",
+    "explanation": "Formal publication requires frozen thresholds and traceable evidence.",
+    "capability": "acceptance.phase2",
+    "chapter": "Acceptance / Phase2",
+    "sources": [
+      {
+        "evidence_id": "evidence_c05a47f41e264136badee914fd64cc7d",
+        "kind": "unit_test",
+        "claim": "Independent acceptance source A for case 5.",
+        "url": "eck://acceptance-a/case-5",
+        "independence_key": "acceptance-a"
+      },
+      {
+        "evidence_id": "evidence_0c0fbb93a26d4a32b91220ddc107386e",
+        "kind": "formal_check",
+        "claim": "Independent acceptance source B for case 5.",
+        "url": "eck://acceptance-b/case-5",
+        "independence_key": "acceptance-b"
+      }
+    ],
+    "confidence": 1.0,
+    "applicability": "Verify Phase 2 acceptance claim 5.",
+    "counterexamples": [],
+    "unresolved_questions": [
+      "Replace synthetic acceptance claims with real domain research before use."
+    ],
+    "verification_status": "verified_success",
+    "created_at": "2026-08-11T19:23:54.900336+00:00",
+    "content_sha256": "78fbf3274878373310abc48de1dbeb519bc848519a1f57c4781e16aaa5c6314a",
+    "relations": [
+      {
+        "relation_id": "relation_861ea79a71c64cb988e06ea97237217a",
+        "source_knowledge_id": "knowledge_c62f577f3b8041fd963a97028e15e702",
+        "target_knowledge_id": "knowledge_cc27d837cab342e3a9c031b32391f790",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.028779+00:00",
+        "evidence_ids": []
+      }
+    ],
+    "skill_usages": []
+  },
+  {
+    "knowledge_id": "knowledge_cc27d837cab342e3a9c031b32391f790",
+    "task_id": "task_3f1d4d76a1ef4275bfa04ff6a0b496d2",
+    "title": "Acceptance claim 4 is reproducibly verified by two test sources.",
+    "core_claim": "Acceptance claim 4 is reproducibly verified by two test sources.",
+    "explanation": "Formal publication requires frozen thresholds and traceable evidence.",
+    "capability": "acceptance.phase2",
+    "chapter": "Acceptance / Phase2",
+    "sources": [
+      {
+        "evidence_id": "evidence_400bf80d46e44af1aa6a5f0aabddbde7",
+        "kind": "unit_test",
+        "claim": "Independent acceptance source A for case 4.",
+        "url": "eck://acceptance-a/case-4",
+        "independence_key": "acceptance-a"
+      },
+      {
+        "evidence_id": "evidence_63ee1ead074c44fc97fd7506030948c1",
+        "kind": "formal_check",
+        "claim": "Independent acceptance source B for case 4.",
+        "url": "eck://acceptance-b/case-4",
+        "independence_key": "acceptance-b"
+      }
+    ],
+    "confidence": 1.0,
+    "applicability": "Verify Phase 2 acceptance claim 4.",
+    "counterexamples": [],
+    "unresolved_questions": [
+      "Replace synthetic acceptance claims with real domain research before use."
+    ],
+    "verification_status": "verified_success",
+    "created_at": "2026-08-11T19:23:54.855698+00:00",
+    "content_sha256": "8387fbbcc1e2151e79c151e537b90d1850a6dfabea1b8b26a13862936a8af908",
+    "relations": [
+      {
+        "relation_id": "relation_861ea79a71c64cb988e06ea97237217a",
+        "source_knowledge_id": "knowledge_c62f577f3b8041fd963a97028e15e702",
+        "target_knowledge_id": "knowledge_cc27d837cab342e3a9c031b32391f790",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.028779+00:00",
+        "evidence_ids": []
+      },
+      {
+        "relation_id": "relation_e20ace7134244d81977ac34f98ece28b",
+        "source_knowledge_id": "knowledge_cc27d837cab342e3a9c031b32391f790",
+        "target_knowledge_id": "knowledge_3cc1740adfd44667b2b754ae8f23dbd6",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.038248+00:00",
+        "evidence_ids": []
+      }
+    ],
+    "skill_usages": []
+  },
+  {
+    "knowledge_id": "knowledge_3cc1740adfd44667b2b754ae8f23dbd6",
+    "task_id": "task_135eb55cb66348448f2a4cde0d4d2d83",
+    "title": "Acceptance claim 3 is reproducibly verified by two test sources.",
+    "core_claim": "Acceptance claim 3 is reproducibly verified by two test sources.",
+    "explanation": "Formal publication requires frozen thresholds and traceable evidence.",
+    "capability": "acceptance.phase2",
+    "chapter": "Acceptance / Phase2",
+    "sources": [
+      {
+        "evidence_id": "evidence_ae54d985583a4626ba48cc101640a487",
+        "kind": "unit_test",
+        "claim": "Independent acceptance source A for case 3.",
+        "url": "eck://acceptance-a/case-3",
+        "independence_key": "acceptance-a"
+      },
+      {
+        "evidence_id": "evidence_20a54451ca724e4db8f0e693ae425354",
+        "kind": "formal_check",
+        "claim": "Independent acceptance source B for case 3.",
+        "url": "eck://acceptance-b/case-3",
+        "independence_key": "acceptance-b"
+      }
+    ],
+    "confidence": 1.0,
+    "applicability": "Verify Phase 2 acceptance claim 3.",
+    "counterexamples": [],
+    "unresolved_questions": [
+      "Replace synthetic acceptance claims with real domain research before use."
+    ],
+    "verification_status": "verified_success",
+    "created_at": "2026-08-11T19:23:54.811197+00:00",
+    "content_sha256": "4c5167913384fe701d8a220389f110e8d5d5580025a700b094aea044a8b00c4b",
+    "relations": [
+      {
+        "relation_id": "relation_e20ace7134244d81977ac34f98ece28b",
+        "source_knowledge_id": "knowledge_cc27d837cab342e3a9c031b32391f790",
+        "target_knowledge_id": "knowledge_3cc1740adfd44667b2b754ae8f23dbd6",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.038248+00:00",
+        "evidence_ids": []
+      },
+      {
+        "relation_id": "relation_fe122db28ad34efd88c8aa7c7d53be24",
+        "source_knowledge_id": "knowledge_3cc1740adfd44667b2b754ae8f23dbd6",
+        "target_knowledge_id": "knowledge_db851613a22a4800892e98aadeeb3a29",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.046240+00:00",
+        "evidence_ids": []
+      }
+    ],
+    "skill_usages": []
+  },
+  {
+    "knowledge_id": "knowledge_db851613a22a4800892e98aadeeb3a29",
+    "task_id": "task_a649b67c1028426f83b1ddb54c8b6f70",
+    "title": "Acceptance claim 2 is reproducibly verified by two test sources.",
+    "core_claim": "Acceptance claim 2 is reproducibly verified by two test sources.",
+    "explanation": "Formal publication requires frozen thresholds and traceable evidence.",
+    "capability": "acceptance.phase2",
+    "chapter": "Acceptance / Phase2",
+    "sources": [
+      {
+        "evidence_id": "evidence_5a391185349f43a19a5fce2b7662830c",
+        "kind": "unit_test",
+        "claim": "Independent acceptance source A for case 2.",
+        "url": "eck://acceptance-a/case-2",
+        "independence_key": "acceptance-a"
+      },
+      {
+        "evidence_id": "evidence_7bad779082b14221b5d7a8d20c8433ea",
+        "kind": "formal_check",
+        "claim": "Independent acceptance source B for case 2.",
+        "url": "eck://acceptance-b/case-2",
+        "independence_key": "acceptance-b"
+      }
+    ],
+    "confidence": 1.0,
+    "applicability": "Verify Phase 2 acceptance claim 2.",
+    "counterexamples": [],
+    "unresolved_questions": [
+      "Replace synthetic acceptance claims with real domain research before use."
+    ],
+    "verification_status": "verified_success",
+    "created_at": "2026-08-11T19:23:54.766376+00:00",
+    "content_sha256": "5a2f8e888d4a79cd138e30465d377d44b09cd4ad25479a1d98f98f64fa9cf5b9",
+    "relations": [
+      {
+        "relation_id": "relation_fe122db28ad34efd88c8aa7c7d53be24",
+        "source_knowledge_id": "knowledge_3cc1740adfd44667b2b754ae8f23dbd6",
+        "target_knowledge_id": "knowledge_db851613a22a4800892e98aadeeb3a29",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.046240+00:00",
+        "evidence_ids": []
+      },
+      {
+        "relation_id": "relation_55c91d66529d4cd3bf93b8a9046d8ac1",
+        "source_knowledge_id": "knowledge_db851613a22a4800892e98aadeeb3a29",
+        "target_knowledge_id": "knowledge_eca07a5085784252948c8d439d62dedb",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.054052+00:00",
+        "evidence_ids": []
+      }
+    ],
+    "skill_usages": []
+  },
+  {
+    "knowledge_id": "knowledge_eca07a5085784252948c8d439d62dedb",
+    "task_id": "task_cb2a75e200914150a9775db576f8dd93",
+    "title": "Acceptance claim 1 is reproducibly verified by two test sources.",
+    "core_claim": "Acceptance claim 1 is reproducibly verified by two test sources.",
+    "explanation": "Formal publication requires frozen thresholds and traceable evidence.",
+    "capability": "acceptance.phase2",
+    "chapter": "Acceptance / Phase2",
+    "sources": [
+      {
+        "evidence_id": "evidence_12d55269eb9146ab81e59a4182d298a0",
+        "kind": "unit_test",
+        "claim": "Independent acceptance source A for case 1.",
+        "url": "eck://acceptance-a/case-1",
+        "independence_key": "acceptance-a"
+      },
+      {
+        "evidence_id": "evidence_e1c4f4436b8f4b2a9e3b147eb87e12e8",
+        "kind": "formal_check",
+        "claim": "Independent acceptance source B for case 1.",
+        "url": "eck://acceptance-b/case-1",
+        "independence_key": "acceptance-b"
+      }
+    ],
+    "confidence": 1.0,
+    "applicability": "Verify Phase 2 acceptance claim 1.",
+    "counterexamples": [],
+    "unresolved_questions": [
+      "Replace synthetic acceptance claims with real domain research before use."
+    ],
+    "verification_status": "verified_success",
+    "created_at": "2026-08-11T19:23:54.723208+00:00",
+    "content_sha256": "0eccafbc0ebfeceb3005987af52b272bdbaae002c96ad0b0281448ccd173702a",
+    "relations": [
+      {
+        "relation_id": "relation_55c91d66529d4cd3bf93b8a9046d8ac1",
+        "source_knowledge_id": "knowledge_db851613a22a4800892e98aadeeb3a29",
+        "target_knowledge_id": "knowledge_eca07a5085784252948c8d439d62dedb",
+        "relation_type": "extension",
+        "rationale": "Deterministic acceptance graph edge.",
+        "verified": true,
+        "created_at": "2026-08-11T19:23:55.054052+00:00",
+        "evidence_ids": []
+      }
+    ],
+    "skill_usages": []
+  }
+]

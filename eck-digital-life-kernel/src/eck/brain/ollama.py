@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
@@ -20,6 +21,8 @@ class OllamaBrainProvider(BrainProvider):
         arbiter: InferenceArbiter | None = None,
         default_priority: int = 20,
         health_cache_seconds: float = 15,
+        ensure_service: Callable[[], Awaitable[bool]] | None = None,
+        keep_alive: str = "5m",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -27,6 +30,8 @@ class OllamaBrainProvider(BrainProvider):
         self.arbiter = arbiter or InferenceArbiter()
         self.default_priority = default_priority
         self.health_cache_seconds = health_cache_seconds
+        self.ensure_service = ensure_service
+        self.keep_alive = keep_alive
         self._health_cache: BrainHealth | None = None
         self._health_checked_at = 0.0
 
@@ -41,6 +46,8 @@ class OllamaBrainProvider(BrainProvider):
         ):
             return self._health_cache
         try:
+            if self.ensure_service is not None:
+                await self.ensure_service()
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
                 response.raise_for_status()
@@ -107,6 +114,8 @@ class OllamaBrainProvider(BrainProvider):
     ) -> BrainResponse:
         if not self.model:
             raise RuntimeError("ECK_OLLAMA_MODEL must be configured before chat is used.")
+        if self.ensure_service is not None and not await self.ensure_service():
+            raise RuntimeError("Ollama service could not be started.")
         generation_options: dict[str, Any] = {"temperature": 0}
         if options:
             generation_options.update(options)
@@ -117,6 +126,7 @@ class OllamaBrainProvider(BrainProvider):
             "messages": messages,
             "stream": False,
             "options": generation_options,
+            "keep_alive": self.keep_alive,
         }
         if isinstance(think, bool):
             payload["think"] = think

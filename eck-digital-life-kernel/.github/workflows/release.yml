@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-source-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build portable Windows package
+        shell: pwsh
+        run: python scripts/package_release.py --output "deliverables/eck-digital-life-kernel-${env:GITHUB_REF_NAME}-windows.zip"
+      - name: Publish GitHub Release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" deliverables/* --verify-tag --generate-notes --title "ECK $env:GITHUB_REF_NAME"

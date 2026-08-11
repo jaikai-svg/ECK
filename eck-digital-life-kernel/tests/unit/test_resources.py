@@ -22,9 +22,33 @@ def test_project_scan_reports_logical_size_and_breakdown(settings) -> None:
     assert {item["name"] for item in result["breakdown"]} >= {"workspace", "docs"}
     assert result["cached"] is False
     assert monitor.project_snapshot()["cached"] is True
+    cached = monitor.cached_project_snapshot()
+    assert cached["available"] is True
+    assert cached["logical_bytes"] == result["logical_bytes"]
     restored = SystemResourceMonitor(settings).project_snapshot()
     assert restored["cached"] is True
     assert restored["logical_bytes"] == result["logical_bytes"]
+
+
+def test_cached_project_snapshot_never_starts_a_scan(settings, monkeypatch) -> None:
+    monitor = SystemResourceMonitor(settings)
+    monkeypatch.setattr(
+        monitor,
+        "_scan_project",
+        lambda: (_ for _ in ()).throw(AssertionError("must not scan")),
+    )
+
+    result = monitor.cached_project_snapshot()
+
+    assert result == {
+        "available": False,
+        "logical_bytes": None,
+        "logical_gb": None,
+        "file_count": None,
+        "scanned_at": None,
+        "cached": True,
+        "stale": True,
+    }
 
 
 def test_resource_pressure_only_throttles_critical_background_work(settings) -> None:

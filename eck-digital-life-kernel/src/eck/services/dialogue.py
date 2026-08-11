@@ -373,6 +373,7 @@ class DialogueService:
         ]
         research_results = self._research_results() if self._research_intent.search(message) else []
         related_skill_memory = self.application.skill_graph.search(message, limit=8)
+        verified_retrieval = await self.application.rag.retrieve(message)
         memory_context = {
             "verified_experiences": verified_experience_count,
             "active_skills": active_skill_names,
@@ -386,6 +387,7 @@ class DialogueService:
             "runtime_version": self.application.versions.status().model_dump(mode="json"),
             "research_results": research_results,
             "related_skill_memory": related_skill_memory,
+            "verified_retrieval": verified_retrieval,
         }
         messages = [
             {
@@ -408,6 +410,9 @@ class DialogueService:
                     "若使用者詢問技能增強，只能依 runtime_skills 回答。"
                     "related_skill_memory 是依本次問題檢索的可攜技能、程序與來源；"
                     "執行任務時應優先重用其中已取得且 gold=true 的技能，但仍須通過現行驗證。"
+                    "verified_retrieval.items 是先由 SQLite 向量粗選 20 筆，再由 "
+                    "BAAI/bge-reranker-large 精排後留下的最多 2 筆已驗證記憶。"
+                    "只能依其 source_uri 與 metadata 追溯來源，不得把檢索結果當成新事實。"
                     "只有使用者詢問研究、論文或來源時，research_results 才會出現；引用時使用"
                     "可追溯標題、DOI 或 URL。證據不足時請明說。\n"
                     f"memory_context={json.dumps(memory_context, ensure_ascii=False)}"
@@ -442,6 +447,7 @@ class DialogueService:
                 "research_contexts": len(research_results),
                 "active_skills": len(active_skill_names),
                 "runtime_skills": len(active_runtime_skills),
+                "rag_contexts": len(verified_retrieval["items"]),
                 "inference": inference,
             },
         )
@@ -456,6 +462,7 @@ class DialogueService:
                 "active_skills": len(active_skill_names),
                 "runtime_skills": len(active_runtime_skills),
                 "research_results": len(research_results),
+                "rag_contexts": len(verified_retrieval["items"]),
             },
         }
 

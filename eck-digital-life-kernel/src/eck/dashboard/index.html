@@ -3,452 +3,261 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#07111f">
-  <title>ECK 數位生命核心</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20">
+  <meta name="theme-color" content="#090b10">
+  <meta name="description" content="ECK Workspace：以對話、任務、成果、知識與技能為中心的本機 AI 工作空間。">
+  <title>ECK Workspace · Digital Life Kernel</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/styles.css?v=32">
 </head>
 <body>
-  <div class="ambient ambient-a"></div>
-  <div class="ambient ambient-b"></div>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
 
-  <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="#home" aria-label="ECK 首頁">
-        <span class="brand-mark">E</span>
-        <span><b>ECK</b><small>DIGITAL LIFE KERNEL</small></span>
+  <div class="workspace-shell">
+    <aside class="workspace-sidebar">
+      <a class="workspace-brand" href="#home" aria-label="ECK Workspace 首頁">
+        <span class="brand-symbol"><img src="/static/eck-mark.svg" alt=""></span>
+        <span><b>ECK</b><small>WORKSPACE</small></span>
       </a>
 
-      <nav class="nav" aria-label="主要頁面">
-        <a href="#home" data-view-link="home" class="active"><span>01</span>對話與狀態</a>
-        <a href="#challenges" data-view-link="challenges"><span>02</span>課題挑戰</a>
-        <a href="#learning" data-view-link="learning"><span>03</span>學習成果</a>
-        <a href="#skill-tree" data-view-link="skill-tree"><span>04</span>技能樹</a>
-        <a href="#evaluation" data-view-link="evaluation"><span>05</span>客觀評估</a>
-        <a href="#roadmap" data-view-link="roadmap"><span>06</span>使命與路線圖</a>
-        <a href="#system" data-view-link="system"><span>07</span>系統資訊</a>
+      <nav class="workspace-nav" aria-label="主要頁面">
+        <a class="active" href="#home" data-view-link="home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+          <span>首頁</span>
+        </a>
+        <a href="#projects" data-view-link="projects">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h6l1.5 2H20a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z"/></svg>
+          <span>專案</span>
+        </a>
+        <a href="#results" data-view-link="results">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg>
+          <span>成果</span>
+        </a>
+        <a href="#library" data-view-link="library">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V5a1 1 0 0 1 1-1zm2 13h9V7H7a1 1 0 0 0-1 1v9.2A3 3 0 0 1 7 17z"/></svg>
+          <span>ECK Library</span>
+        </a>
+        <a href="#skills" data-view-link="skills">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.3 4.7L19.5 9l-3.8 3.7.9 5.3-4.6-2.5L7.4 18l.9-5.3L4.5 9l5.2-1.3z"/></svg>
+          <span>技能</span>
+        </a>
       </nav>
 
-      <div class="sidebar-status">
-        <div class="live-row"><i id="connection-dot"></i><span id="connection-state">連線中</span></div>
-        <div class="sidebar-status-row"><span>模型</span><b id="sidebar-model">—</b></div>
-        <div class="sidebar-status-row"><span>狀態</span><b id="sidebar-phase">—</b></div>
-      </div>
+      <nav class="workspace-nav secondary-nav" aria-label="系統頁面">
+        <a href="#more" data-view-link="more">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+          <span>更多</span>
+        </a>
+      </nav>
 
-      <div class="sidebar-footer">
-        <span>Kernel v<span id="version">0.1.0</span></span>
-        <span>Local only</span>
+      <div class="connection-card">
+        <i id="connection-dot"></i>
+        <div><b id="connection-state">正在連線</b><small>資料只保留在本機</small></div>
       </div>
+      <footer><span>Digital Life Kernel</span><small>v0.1.0 · Local-first</small></footer>
     </aside>
 
-    <main class="workspace">
-      <div class="topbar">
-        <div>
-          <span class="eyebrow">ECK CONTROL CENTER</span>
-          <h1 id="page-title">對話與狀態</h1>
+    <main class="workspace-main">
+      <header class="workspace-topbar">
+        <div><span class="mobile-brand">ECK</span><h1 id="page-title">首頁</h1></div>
+        <div class="topbar-meta">
+          <span class="phase-badge"><i></i><b id="kernel-phase">CONNECTING</b></span>
+          <span id="uptime">00天 00:00:00</span>
         </div>
-        <div class="topbar-status">
-          <span class="live-badge"><i></i><b id="phase">CONNECTING</b></span>
-          <span id="uptime"><b id="uptime-days">00天</b><b id="uptime-clock">00:00:00</b></span>
-        </div>
-      </div>
+      </header>
 
-      <section class="view active" data-view="home">
-        <div class="home-grid">
-          <article class="panel chat-panel primary-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">TALK TO ECK</p>
-                <h2>你現在想完成什麼？</h2>
-                <p>直接提問、交付任務或要求它解釋目前學到的內容。</p>
-              </div>
-              <button class="text-button" id="clear-chat" type="button">清除對話</button>
-            </div>
-            <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
-            <form class="chat-form" id="chat-form">
-              <div class="chat-composer">
-                <textarea id="chat-input" maxlength="4000" rows="4" placeholder="輸入 / 開啟快速命令，或直接交付任務…" autocomplete="off" aria-autocomplete="list" aria-controls="slash-command-menu" aria-expanded="false" required></textarea>
-                <div class="slash-command-menu" id="slash-command-menu" role="listbox" aria-label="ECK 快速命令" hidden></div>
-              </div>
-              <div class="chat-actions">
-                <span id="chat-context">輸入 / 可選擇系統功能</span>
-                <button type="submit">傳送</button>
-              </div>
-            </form>
-          </article>
-
-          <article class="panel activity-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">CURRENT ACTIVITY</p>
-                <h2>它現在正在做什麼</h2>
-              </div>
-              <span class="pill" id="activity-state">讀取中</span>
-            </div>
-            <div class="eck-presence" id="eck-presence" data-mood="waiting">
-              <div class="eck-face" aria-hidden="true"><span id="eck-face">•‿•</span><i></i></div>
-              <div class="eck-presence-copy">
-                <span>ECK LIVE</span>
-                <b id="dynamic-activity">正在觀察下一個學習機會</b>
-                <small id="supervisor-label">監督者待命</small>
-              </div>
-            </div>
-            <div class="activity-focus">
-              <span class="activity-indicator" id="activity-indicator"></span>
-              <div><b id="current-activity">確認核心狀態</b><p id="activity-detail">正在讀取任務與課題。</p></div>
-            </div>
-            <div class="thought-head">
-              <span>可稽核思考摘要</span>
-              <small>計畫、動作、證據、結論</small>
-            </div>
-            <div class="thought-feed" id="thought-feed"></div>
-            <p class="thought-policy">這裡呈現可驗證的決策摘要與行動紀錄，不顯示模型不可驗證的私有推理文字。</p>
-            <div class="supervisor-card">
-              <div class="supervisor-head"><span>監督者評估</span><small id="supervisor-model">—</small></div>
-              <p id="supervisor-assessment">尚未完成第一次學習檢查。</p>
-              <ul id="supervisor-recommendations"></ul>
-              <div class="supervisor-challenge" id="supervisor-challenge">下一輪會在閒置時自動提出考驗。</div>
-            </div>
-          </article>
-        </div>
-
-        <section class="result-strip" aria-label="核心學習結果">
-          <article><span>已驗證經驗</span><b id="experience-count">—</b><small>可正向使用</small></article>
-          <article><span>活躍技能</span><b id="active-skill-count">—</b><small id="skill-total-label">—</small></article>
-          <article><span>目前課題</span><b id="home-challenge-state">—</b><small id="home-challenge-title">尚未建立</small></article>
-          <article><span>最近學習</span><b id="last-learning-time">—</b><small id="last-learning-label">尚無紀錄</small></article>
-        </section>
-
-        <div class="home-secondary">
-          <article class="panel">
-            <div class="panel-head compact">
-              <div><p class="eyebrow">LATEST RESULTS</p><h2>最近學到了什麼</h2></div>
-              <a class="panel-link" href="#learning">查看全部</a>
-            </div>
-            <div class="compact-list" id="home-learning-results"></div>
-          </article>
-          <article class="panel">
-            <div class="panel-head compact">
-              <div><p class="eyebrow">NEXT STEP</p><h2>接下來會做什麼</h2></div>
-            </div>
-            <div class="next-step-card">
-              <span id="next-step-kind">等待中</span>
-              <p id="next-step-text">目前沒有可執行的下一步。</p>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="view" data-view="challenges" hidden>
-        <header class="page-intro">
-          <div><p class="eyebrow">MISSION BOARD</p><p>課題獨立使用 10% 執行資源，不會阻塞日常自主學習；只有建立者勾選通過才算完成。</p></div>
-        </header>
-
-        <article class="panel challenge-create-panel">
-          <div class="panel-head compact">
-            <div><h2>新增課題</h2><p>建立後仍可修改或取消；緊急課題可暫時提高排程優先度。</p></div>
-            <span class="pill">90% 學習 · 10% 課題</span>
+      <section class="workspace-view active" data-view="home">
+        <div class="home-hero">
+          <div class="hero-copy">
+            <p class="eyebrow">ECK WORKSPACE</p>
+            <h2>今天想完成什麼？</h2>
+            <p>直接描述成果。ECK 會判斷要對話、研究、生成媒體、撰寫程式，或建立持久化專案。</p>
           </div>
-          <form id="mission-form" class="challenge-form">
-            <label>課題名稱<input id="mission-title" maxlength="240" placeholder="例如：完成一個可交付 App" required></label>
-            <label>課題目標<textarea id="mission-objective" maxlength="4000" rows="3" placeholder="描述要達成的真實結果…" required></textarea></label>
-            <label class="wide-field">完成與驗證要求<textarea id="mission-requirements" maxlength="8000" rows="4" placeholder="逐行描述成果、證據、限制與通過標準…" required></textarea></label>
-            <label>排程<select id="mission-schedule"><option value="manual">一般課題</option><option value="monthly">每月課題</option></select></label>
-            <label>優先度<select id="mission-priority"><option value="normal">一般</option><option value="urgent">緊急</option></select></label>
-            <label>目標月份<input id="mission-month" type="month"></label>
-            <div class="form-footer"><span>完成成果先進入待驗收，不會由 ECK 自行宣告通過。</span><button type="submit">建立課題</button></div>
+
+          <form class="workspace-composer" id="workspace-chat-form">
+            <div class="composer-input">
+              <textarea id="workspace-composer" name="message" rows="4" maxlength="4000" placeholder="例如：製作一個旅遊網站並讓我預覽成果…" autocomplete="off" aria-autocomplete="list" aria-controls="command-menu" aria-expanded="false" required></textarea>
+              <div class="command-menu" id="command-menu" role="listbox" aria-label="快速命令" hidden></div>
+            </div>
+            <div class="composer-footer">
+              <div class="intent-hints" aria-label="支援的工作類型"><span>研究</span><span>圖片</span><span>影片</span><span>程式</span><span>長期任務</span></div>
+              <div><kbd>/</kbd><small>快速功能</small><button class="send-button" type="submit" aria-label="傳送">↑</button></div>
+            </div>
           </form>
-        </article>
 
-        <div class="mission-section">
-          <div class="section-title"><h2>進行中課題</h2><span id="active-mission-count">0</span></div>
-          <div class="challenge-list" id="active-missions"></div>
+          <div class="chat-history-head"><span>最近對話</span><button id="clear-conversation" type="button">清除</button></div>
+          <div class="chat-messages" id="chat-messages" aria-live="polite" hidden></div>
         </div>
-        <div class="mission-section review-section">
-          <div class="section-title"><h2>等待你驗收</h2><span id="review-mission-count">0</span></div>
-          <div class="challenge-list" id="review-missions"></div>
-        </div>
-        <div class="mission-section completed-section">
-          <div class="section-title"><h2>已完成課題</h2><span id="completed-mission-count">0</span></div>
-          <div class="challenge-list" id="completed-missions"></div>
-        </div>
-      </section>
 
-      <section class="view" data-view="learning" hidden>
-        <header class="page-intro">
-          <div><p class="eyebrow">VERIFIED LEARNING</p><p>只看已驗證結果、技能與可追溯研究；失敗結果仍保留但不會成為正向能力。</p></div>
-        </header>
-
-        <section class="learning-summary">
-          <article><span>全部經驗</span><b id="memory-experiences">—</b></article>
-          <article><span>准入經驗</span><b id="memory-admitted">—</b></article>
-          <article><span>知識紀錄</span><b id="memory-knowledge">—</b></article>
-          <article><span>反思紀錄</span><b id="memory-reflections">—</b></article>
+        <section class="home-metrics" aria-label="核心成果摘要">
+          <article><span>執行中工作</span><b id="pending-work-count">—</b><small>原子任務</small></article>
+          <article><span>已驗證經驗</span><b id="verified-experience-count">—</b><small>通過證據閘門</small></article>
+          <article><span>可用技能</span><b id="verified-skill-count">—</b><small>記憶技能與熱技能</small></article>
         </section>
 
-        <article class="panel learning-theme-panel">
-          <div class="panel-head compact">
-            <div><p class="eyebrow">GUIDED AUTONOMOUS LEARNING</p><h2>主題式自主學習</h2></div>
-            <span class="pill" id="learning-theme-ratio">70% 核心 · 30% 主題</span>
-          </div>
-          <p class="subtle-copy">主題會被拆成基礎機制、分析方法、經濟政策、社會倫理、地緣風險、實務技能、反例與最新問題；不會取代 ECK 自主尋找核心能力缺口。</p>
-          <form class="learning-theme-form" id="learning-theme-form">
-            <input id="learning-theme-title" maxlength="200" placeholder="例如：股票、遊戲製作、行銷、自動化" required>
-            <button type="submit">加入長期主題</button>
-          </form>
-          <div class="learning-theme-list" id="learning-theme-list"></div>
-        </article>
+        <div class="home-layout">
+          <article class="surface activity-surface">
+            <header class="surface-heading">
+              <div><p class="eyebrow">CURRENT ACTIVITY</p><h2>ECK 現在正在做什麼</h2></div>
+              <span class="status-chip" id="activity-status" data-state="idle">讀取中</span>
+            </header>
+            <div class="activity-lead">
+              <div class="activity-orb"><span></span><i></i></div>
+              <div><h3 id="activity-title">讀取目前活動</h3><p id="activity-detail">正在確認任務、專案與學習排程。</p></div>
+            </div>
+            <div class="activity-progress">
+              <div><span id="activity-progress-value">未提供百分比</span><small id="activity-resource">資源未知</small></div>
+              <div class="progress-track"><i id="activity-progress-bar"></i></div>
+              <p id="activity-waiting">正在確認外部條件</p>
+            </div>
+            <details class="reasoning-disclosure" open>
+              <summary><span>可稽核思考摘要</span><small>結構化紀錄，不顯示私有 CoT</small></summary>
+              <div class="reason-feed" id="activity-summary"></div>
+            </details>
+          </article>
 
-        <div class="learning-grid">
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">EXPERIENCE</p><h2>最近驗證結果</h2></div><span class="count-label" id="experience-label">0</span></div>
-            <div class="detail-list" id="experiences"></div>
-          </article>
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">SKILLS</p><h2>技能狀態</h2></div><span class="count-label" id="skills-label">0</span></div>
-            <div class="detail-list" id="skills"></div>
-          </article>
+          <aside class="surface compact-surface">
+            <header class="surface-heading"><div><p class="eyebrow">RUNNING</p><h2>進行中的專案</h2></div><a href="#projects">全部</a></header>
+            <div class="project-stack" id="running-projects"></div>
+          </aside>
         </div>
 
-        <article class="panel runtime-skills-panel">
-          <div class="panel-head compact"><div><p class="eyebrow">HOT-SWAPPABLE SKILLS</p><h2>可熱切換能力</h2></div><span class="count-label" id="runtime-skills-count">0 active</span></div>
-          <div class="detail-list runtime-skill-list" id="runtime-skills"></div>
-        </article>
-
-        <div class="learning-grid">
-          <article class="panel research-panel">
-            <div class="panel-head compact"><div><p class="eyebrow">RESEARCH</p><h2>研究課程</h2></div><span class="pill" id="research-state">等待主題</span></div>
-            <form class="research-form" id="research-form">
-              <input id="research-topic" maxlength="200" placeholder="輸入研究主題" required>
-              <button type="submit">建立 2 輪研究</button>
-            </form>
-            <div class="detail-list" id="research-list"></div>
-          </article>
-          <article class="panel benchmark-panel">
-            <div class="panel-head compact"><div><p class="eyebrow">EVALUATION</p><h2>能力基準</h2></div><span class="count-label" id="benchmark-count">0 runs</span></div>
-            <div class="benchmark-list" id="benchmarks"></div>
-            <p class="subtle-copy" id="benchmark-policy"></p>
-          </article>
-        </div>
-      </section>
-
-      <section class="view" data-view="skill-tree" hidden>
-        <header class="page-intro skill-tree-intro">
-          <div>
-            <p class="eyebrow">PORTABLE SKILL KNOWLEDGE GRAPH</p>
-            <p>從 ECK 記憶一路追蹤分類、研究結果、可執行技能與驗證來源；金色代表已通過驗證且可重用的技能。</p>
-          </div>
-          <form id="skill-tree-search" class="skill-tree-search">
-            <input id="skill-tree-query" maxlength="200" placeholder="搜尋 Agent、影片生成、網頁操作…">
-            <button type="submit">搜尋記憶</button>
-          </form>
-        </header>
-
-        <section class="learning-summary skill-tree-summary">
-          <article><span>金色習得技能</span><b id="tree-acquired-count">—</b></article>
-          <article><span>學習中技能</span><b id="tree-learning-count">—</b></article>
-          <article><span>研究結果</span><b id="tree-research-count">—</b></article>
-          <article><span>可追溯來源</span><b id="tree-source-count">—</b></article>
+        <section class="surface results-surface">
+          <header class="surface-heading"><div><p class="eyebrow">RECENT OUTPUTS</p><h2>最近成果</h2></div><a href="#projects">開啟專案</a></header>
+          <div class="result-grid" id="recent-results"></div>
         </section>
-
-        <article class="panel skill-tree-panel">
-          <div class="panel-head compact">
-            <div><p class="eyebrow">ECK MEMORY → DOMAIN → SKILL → SOURCE</p><h2 id="skill-tree-heading">完整技能關聯</h2></div>
-            <div class="skill-tree-legend"><span class="legend-gold">已習得</span><span class="legend-learning">學習中</span><span class="legend-knowledge">研究知識</span></div>
-          </div>
-          <p class="skill-tree-portability" id="skill-tree-portability">技能圖由可攜 SQLite 記憶即時重建，不建立第二份易失資料。</p>
-          <div class="skill-tree-grid" id="skill-tree-grid"><div class="empty">讀取技能關聯中。</div></div>
-        </article>
       </section>
 
-      <section class="view" data-view="evaluation" hidden>
-        <header class="page-intro evaluation-intro">
-          <div>
-            <p class="eyebrow">P3 OBJECTIVE EVALUATION</p>
-            <p>固定題集、確定性評分與模型雜湊分開量測能力；研究次數不再等同技能成長。</p>
-          </div>
-          <button id="run-objective-evaluation" type="button">執行 2 輪本機評估</button>
+      <section class="workspace-view" data-view="projects" hidden>
+        <header class="view-intro">
+          <div><p class="eyebrow">DURABLE PROJECTS</p><h2>每項大型工作都有完整生命週期</h2><p>任務拆解、檔案、ReAct 摘要、測試、審查、成果與你的驗收意見都保留在同一個專案。</p></div>
+          <button class="primary-button" id="new-project" type="button">＋ 建立專案</button>
         </header>
+        <div class="project-toolbar">
+          <span id="project-count">讀取中</span>
+          <label>篩選
+            <select id="project-filter">
+              <option value="">全部狀態</option>
+              <option value="active">執行中</option>
+              <option value="awaiting_review">等待驗收</option>
+              <option value="approved">已完成</option>
+              <option value="blocked">受阻</option>
+              <option value="rejected">待改善</option>
+            </select>
+          </label>
+        </div>
+        <div class="project-grid" id="project-grid"></div>
+        <button class="load-more" id="load-more-projects" type="button" hidden>載入更多</button>
+      </section>
 
-        <section class="learning-summary evaluation-summary">
-          <article><span>最新固定診斷</span><b id="objective-score">—</b></article>
-          <article><span>答案重現率</span><b id="objective-reproducibility">—</b></article>
-          <article><span>24h 研究准入</span><b id="growth-research-count">—</b></article>
-          <article><span>24h 新啟用技能</span><b id="growth-active-skill-count">—</b></article>
+      <section class="workspace-view" data-view="results" hidden>
+        <header class="view-intro"><div><p class="eyebrow">VERIFIED OUTPUTS</p><h2>統一成果中心</h2><p>從既有任務、專案與檔案建立可重建索引；不複製成果、不虛構技能使用。</p></div></header>
+        <form class="result-toolbar" id="result-filter-form">
+          <input name="q" maxlength="200" placeholder="搜尋成果標題或來源 ID">
+          <select name="artifact_type"><option value="">所有類型</option><option value="application">應用程式</option><option value="project">專案</option><option value="image">圖片</option><option value="video">影片</option><option value="document">文件</option><option value="presentation">簡報</option><option value="dataset">資料集</option><option value="package">封裝</option><option value="book">書籍</option></select>
+          <select name="status"><option value="">所有狀態</option><option value="available">可用</option><option value="archived">已封存</option></select>
+          <input name="project_id" maxlength="200" placeholder="專案 ID">
+          <input name="skill_id" maxlength="200" placeholder="技能 ID">
+          <input name="created_from" type="date" aria-label="起始日期">
+          <input name="created_to" type="date" aria-label="結束日期">
+          <button class="secondary-button" type="submit">套用篩選</button>
+        </form>
+        <div class="result-catalog-head"><span id="result-count">讀取成果中</span><small>圖片與影片按需載入 · 閒置頁面不輪詢</small></div>
+        <div class="result-catalog" id="result-catalog"></div>
+        <button class="load-more" id="load-more-results" type="button" hidden>載入更多成果</button>
+      </section>
+
+      <section class="workspace-view" data-view="library" hidden>
+        <header class="view-intro"><div><p class="eyebrow">ECK LIBRARY</p><h2>將已驗證知識整理成可追溯作品</h2><p>Library 會直接投影現有知識、研究證據與 RAG 索引，不建立第二套記憶資料庫。</p></div></header>
+        <section class="formal-library">
+          <div class="section-heading"><div><p class="eyebrow">DOMAIN READINESS</p><h3>領域成熟度與正式書籍</h3></div><span>未通過固定與隱藏測試不得成書</span></div>
+          <div class="domain-grid" id="library-domains"></div>
         </section>
-
-        <article class="panel growth-audit-panel" id="growth-audit-panel">
-          <div class="panel-head compact">
-            <div><p class="eyebrow">HONEST GROWTH AUDIT</p><h2>能力成長稽核</h2></div>
-            <span class="pill" id="growth-audit-state">讀取中</span>
-          </div>
-          <p id="growth-audit-message">正在分開計算研究、記憶技能與可執行技能。</p>
-          <div class="growth-metrics" id="growth-metrics"></div>
-        </article>
-
-        <div class="evaluation-grid">
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">DIMENSIONS</p><h2>固定診斷構面</h2></div><span class="count-label" id="objective-case-count">20 cases</span></div>
-            <div class="evaluation-dimensions" id="evaluation-dimensions"><div class="empty">尚未建立本機基線。</div></div>
-          </article>
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">COMPARISON</p><h2>同條件比較</h2></div><span class="pill" id="objective-comparison-state">尚無基線</span></div>
-            <p class="subtle-copy" id="objective-comparison-message">只有題集版本、模型與模型雜湊相同時才比較增退。</p>
-            <div class="evaluation-history" id="evaluation-history"><div class="empty">尚未執行 P3 評估。</div></div>
-          </article>
-        </div>
-
-        <p class="roadmap-claim-policy" id="objective-claim-policy">公開本機診斷不是保留測試，不能單獨證明能力提升或 AGI。</p>
-      </section>
-
-      <section class="view" data-view="roadmap" hidden>
-        <header class="page-intro">
-          <div><p class="eyebrow">MISSION & CAPABILITY ROADMAP</p><p>清楚分開長期願景、工程進度與已通過外部證據驗證的能力，避免把目標誤認為現況。</p></div>
-        </header>
-
-        <div class="roadmap-truth-grid">
-          <article class="panel mission-vision-card">
-            <div class="panel-head compact"><div><p class="eyebrow">LONG-TERM TARGET</p><h2>長期使命</h2></div><span class="pill">目標</span></div>
-            <p id="roadmap-mission">讀取長期使命。</p>
-          </article>
-          <article class="panel current-truth-card">
-            <div class="panel-head compact"><div><p class="eyebrow">CURRENT TRUTH</p><h2>目前真實狀態</h2></div><span class="pill danger">非 AGI 宣稱</span></div>
-            <p id="roadmap-current-truth">讀取目前能力邊界。</p>
-          </article>
-        </div>
-
-        <section class="learning-summary roadmap-summary">
-          <article><span>SOUL 完整性</span><b id="roadmap-soul-state">—</b></article>
-          <article><span>程式自我模型</span><b id="roadmap-self-model-state">—</b></article>
-          <article><span>研究轉技能</span><b id="roadmap-skill-conversion-state">—</b></article>
-          <article><span>核心候選</span><b id="roadmap-core-candidate-count">—</b></article>
-          <article><span>已註冊能力</span><b id="roadmap-capability-count">—</b></article>
-          <article><span>已驗證經驗</span><b id="roadmap-experience-count">—</b></article>
-          <article><span>熱啟用技能</span><b id="roadmap-runtime-skill-count">—</b></article>
-          <article><span>事件鏈</span><b id="roadmap-chain-state">—</b></article>
-          <article><span>程式專用模型</span><b id="roadmap-coder-state">—</b></article>
-          <article><span>自主專案</span><b id="roadmap-project-count">—</b></article>
-          <article><span>GitHub 發布</span><b id="roadmap-github-state">—</b></article>
+        <section class="library-overview">
+          <article class="library-book"><span>KNOWLEDGE CATALOG</span><h3 id="library-book-title">ECK Verified Knowledge Catalog</h3><p id="library-book-summary">正在從已驗證知識建立可重建目錄；這不是正式書籍。</p><small id="library-cache-state">讀取快取中</small></article>
+          <div class="library-metrics"><article><span>知識卡片</span><b id="library-card-count">—</b></article><article><span>章節</span><b id="library-chapter-count">—</b></article><article><span>版本</span><b id="library-revision">—</b></article><article><span>未解問題</span><b id="library-unresolved-count">—</b></article></div>
         </section>
-
-        <article class="panel roadmap-panel">
-          <div class="panel-head compact"><div><p class="eyebrow">MEASURABLE MILESTONES</p><h2>能力發展里程碑</h2></div><span class="count-label" id="roadmap-target-count">0 targets</span></div>
-          <div class="roadmap-list" id="roadmap-targets"></div>
-          <p class="roadmap-claim-policy" id="roadmap-claim-policy"></p>
-        </article>
-
-        <article class="panel roadmap-panel">
-          <div class="panel-head compact"><div><p class="eyebrow">ENGINEERING DELIVERY</p><h2>版本工程進度</h2></div><span class="count-label" id="roadmap-milestone-count">0 milestones</span></div>
-          <div class="milestone-list" id="roadmap-milestones"></div>
-        </article>
+        <div class="library-toolbar">
+          <div class="chapter-chips" id="library-chapters"></div>
+          <form id="library-search-form"><input name="query" maxlength="200" placeholder="搜尋已驗證知識"><button class="secondary-button" type="submit">搜尋</button></form>
+        </div>
+        <div class="library-grid" id="library-cards"></div>
+        <button class="load-more" id="load-more-library" type="button" hidden>載入更多知識</button>
       </section>
 
-      <section class="view" data-view="system" hidden>
-        <header class="page-intro">
-          <div><p class="eyebrow">SYSTEM & AUDIT</p><p>模型、專案容量、主機資源、生命週期與事件稽核集中在這裡。</p></div>
-        </header>
+      <section class="workspace-view" data-view="skills" hidden>
+        <header class="view-intro"><div><p class="eyebrow">CAPABILITY SYSTEM</p><h2>看見技能從候選到驗證啟用</h2><p>技能頁將使用既有 lifecycle read model，統一呈現記憶技能、熱技能、失敗與撤銷紀錄。</p></div></header>
+        <section class="skill-overview"><article><span>可用技能</span><b id="skill-available-count">—</b></article><article><span>學習中</span><b id="skill-learning-count">—</b></article><article><span>驗證失敗</span><b id="skill-failed-count">—</b></article><article><span>已撤銷</span><b id="skill-retired-count">—</b></article></section>
+        <div class="skill-toolbar"><p id="skill-policy">讀取技能匹配規則。</p><label>狀態<select id="skill-filter"><option value="">全部</option><option value="active">可用</option><option value="candidate">候選</option><option value="testing">測試中</option><option value="failed">驗證失敗</option><option value="retired">已撤銷</option></select></label></div>
+        <div class="skill-grid" id="skill-cards"></div>
+        <button class="load-more" id="load-more-skills" type="button" hidden>載入更多技能</button>
+      </section>
 
-        <div class="system-grid">
-          <article class="panel resource-panel">
-            <div class="panel-head compact">
-              <div><p class="eyebrow">HOST & PROJECT RESOURCES</p><h2>資源壓力與專案占用</h2></div>
-              <div class="panel-actions"><span class="pill" id="resource-state">讀取中</span><button id="refresh-resources" class="ghost compact-button" type="button">重新掃描</button></div>
-            </div>
-            <p class="subtle-copy" id="resource-pressure-detail">只在進入系統頁時掃描專案，結果會快取，避免監控本身造成磁碟負擔。</p>
-            <div class="resource-metrics">
-              <div><span>ECK 專案邏輯總量</span><b id="project-size">—</b><small id="project-files">—</small></div>
-              <div><span>ECK 核心程序記憶體</span><b id="process-memory">—</b><small>不含 Forge、Ollama 與影片子程序</small></div>
-              <div><span>系統記憶體</span><b id="system-memory">—</b><small id="system-memory-percent">—</small></div>
-              <div><span>Commit / 換頁壓力</span><b id="commit-memory">—</b><small>接近上限時 SSD 容易持續忙碌</small></div>
-              <div><span>專案磁碟容量</span><b id="disk-usage">—</b><small id="disk-free">—</small></div>
-              <div><span>專案掃描</span><b id="project-scan-age">—</b><small>邏輯檔案量不等同實際 size on disk</small></div>
-            </div>
-            <div class="resource-breakdown" id="resource-breakdown"><div class="empty">切換到系統資訊後開始讀取。</div></div>
-            <p class="resource-note" id="resource-note">Windows 工作管理員的 SSD 100% 是活動時間，不是容量用滿；本頁用記憶體與 Commit 壓力協助判斷是否正在換頁。</p>
+      <section class="workspace-view" data-view="more" hidden>
+        <header class="view-intro"><div><p class="eyebrow">SYSTEM & GOVERNANCE</p><h2>系統、資源與進階控制</h2><p>底層監控集中在這裡，首頁只保留工作與成果。</p></div></header>
+        <div class="more-grid">
+          <article class="surface">
+            <header class="surface-heading"><div><h2>本機服務</h2><p>模型與高資源 Worker 依工作負載啟動。</p></div></header>
+            <div class="system-summary" id="system-summary"><div><span>狀態</span><b>讀取中</b></div></div>
           </article>
-
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">BRAIN</p><h2>本機模型</h2></div><span class="pill" id="brain-state">檢查中</span></div>
-            <div class="model-name" id="model-name">—</div>
-            <p class="subtle-copy" id="brain-detail">—</p>
-            <div class="spec-list">
-              <div><span>Provider</span><b id="brain-provider">—</b></div>
-              <div><span>核心身份</span><b id="kernel-identity">—</b></div>
-              <div><span>啟動次數</span><b id="boot-count">—</b></div>
-              <div><span>最後心跳</span><b id="heartbeat-time">—</b></div>
-            </div>
-            <div class="control-actions">
-              <button data-action="resume">喚醒 / 繼續</button>
-              <button data-action="pause" class="secondary">暫停</button>
-              <button data-action="sleep" class="ghost">睡眠整理</button>
+          <article class="surface">
+            <header class="surface-heading"><div><h2>NAS 封存與本機快取</h2><p>NAS 離線只標示離線，不會誤判成果遺失或中斷核心。</p></div></header>
+            <div class="system-summary" id="archive-summary"><div><span>狀態</span><b>讀取中</b></div></div>
+          </article>
+          <article class="surface control-surface">
+            <header class="surface-heading"><div><h2>生命週期控制</h2><p>暫停學習不會關閉網頁；完整關閉會停止 ECK 啟動的服務。</p></div></header>
+            <div class="control-buttons">
+              <button class="secondary-button" type="button" data-action="resume">喚醒／繼續</button>
+              <button class="secondary-button" type="button" data-action="pause">暫停自主學習</button>
+              <button class="secondary-button" type="button" data-action="sleep">睡眠整理</button>
+              <button class="danger-button" id="shutdown-eck" type="button">完整關閉 ECK</button>
             </div>
           </article>
-
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">SAFETY</p><h2>安全邊界</h2></div><span class="pill" id="chain-state">驗證中</span></div>
-            <div class="safety-list">
-              <div><span>外部證據</span><b>必要</b></div>
-              <div><span>網路能力</span><b id="network-state">檢查中</b></div>
-              <div><span>付費服務</span><b>禁止</b></div>
-              <div><span>公開 AI 揭露</span><b>必要</b></div>
-              <div><span>系統修改</span><b id="system-state">檢查中</b></div>
-            </div>
-            <div class="capabilities"><span>已註冊能力</span><div id="capability-tags"></div></div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-head compact"><div><p class="eyebrow">RUNTIME</p><h2>技能工作程序</h2></div><span class="pill" id="worker-state">檢查中</span></div>
-            <div class="model-name" id="runtime-version">0.1.0</div>
-            <p class="subtle-copy" id="runtime-reason">讀取版本與技能狀態。</p>
-            <div class="spec-list">
-              <div><span>自主學習</span><b id="learning-share">90%</b></div>
-              <div><span>課題執行</span><b id="challenge-share">10%</b></div>
-              <div><span>已驗證技能</span><b id="verified-skill-total">0</b></div>
-              <div><span>下次小版本</span><b id="next-minor-skill">100</b></div>
-            </div>
-            <button id="validate-skills" class="secondary runtime-action" type="button">重新檢查技能工作程序</button>
-          </article>
-
-          <article class="panel image-stack-panel">
-            <div class="panel-head compact"><div><p class="eyebrow">LOCAL IMAGE STACK</p><h2>本機圖像能力</h2></div><span class="pill" id="image-stack-state">檢查中</span></div>
-            <div class="model-name" id="image-backend">—</div>
-            <p class="subtle-copy" id="image-checkpoint">讀取目前寫實模型。</p>
-            <div class="spec-list">
-              <div><span>寫實模型</span><b id="image-model-count">0</b></div>
-              <div><span>ADetailer</span><b id="image-adetailer">—</b></div>
-              <div><span>ControlNet</span><b id="image-controlnet">—</b></div>
-              <div><span>rembg</span><b id="image-rembg">—</b></div>
-              <div><span>成人內容</span><b id="image-content-mode">—</b></div>
-              <div><span>付費 API</span><b>無</b></div>
-            </div>
-          </article>
-
-          <article class="panel video-stack-panel">
-            <div class="panel-head compact"><div><p class="eyebrow">LOCAL VIDEO STACK</p><h2>本機影片能力</h2></div><span class="pill" id="video-stack-state">檢查中</span></div>
-            <div class="model-name" id="video-backend">—</div>
-            <p class="subtle-copy" id="video-resource-detail">讀取模型與記憶體條件。</p>
-            <div class="spec-list">
-              <div><span>模型</span><b id="video-model">—</b></div>
-              <div><span>系統 RAM</span><b id="video-total-ram">—</b></div>
-              <div><span>目前可用 RAM</span><b id="video-available-ram">—</b></div>
-              <div><span>啟動前最低可用</span><b id="video-min-ram">—</b></div>
-              <div><span>低記憶體設定</span><b id="video-profile">—</b></div>
-              <div><span>目前動作</span><b id="video-activity">—</b></div>
-              <div><span>實機驗證</span><b id="video-verification">—</b></div>
-            </div>
+          <article class="surface link-surface">
+            <header class="surface-heading"><div><h2>進階功能</h2><p>Phase 2 將把 Federation、事件與模型管理整合為漸進式細節頁。</p></div></header>
+            <div class="system-links"><a href="/docs" target="_blank" rel="noreferrer">REST API 文件 ↗</a><a href="/v1/federation/status" target="_blank" rel="noreferrer">Federation 狀態 ↗</a><a href="/v1/events?latest=true&amp;limit=50" target="_blank" rel="noreferrer">最近事件 ↗</a></div>
           </article>
         </div>
-
-        <article class="panel events-panel">
-          <div class="panel-head compact"><div><p class="eyebrow">AUDIT LOG</p><h2>最近有效事件</h2></div><span class="count-label" id="event-count">—</span></div>
-          <div class="event-list" id="events"></div>
-        </article>
       </section>
-
-      <footer><span>ECK Digital Life Kernel · Local-first cognitive runtime</span><span>每 5 秒更新</span></footer>
     </main>
   </div>
 
-  <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=22"></script>
+  <nav class="mobile-nav" aria-label="行動版主要頁面">
+    <a href="#home" data-view-link="home" class="active">首頁</a>
+    <a href="#projects" data-view-link="projects">專案</a>
+    <a href="#results" data-view-link="results">成果</a>
+    <a href="#library" data-view-link="library">Library</a>
+    <a href="#skills" data-view-link="skills">技能</a>
+    <a href="#more" data-view-link="more">更多</a>
+  </nav>
+
+  <dialog class="workspace-dialog create-dialog" id="project-create-dialog">
+    <button class="dialog-close" type="button" data-close-dialog aria-label="關閉">×</button>
+    <header><p class="eyebrow">NEW DURABLE PROJECT</p><h2>建立持久化專案</h2><p>草稿會在輸入時保存，重新整理或關閉頁面都不會消失。</p></header>
+    <form id="project-create-form">
+      <label>專案名稱<input name="title" minlength="3" maxlength="240" placeholder="例如：互動式日本旅遊網站" required></label>
+      <label>預期成果<textarea name="objective" rows="4" minlength="3" maxlength="4000" placeholder="描述完成後你要看到、下載或使用的成果。" required></textarea></label>
+      <label>驗收要求<textarea name="completion_requirements" rows="5" minlength="3" maxlength="8000" placeholder="列出必須具備的頁面、功能、測試或格式。" required></textarea></label>
+      <div class="form-row">
+        <label>執行方式<select name="execution_kind"><option value="auto">自動判斷</option><option value="software_project">軟體專案</option><option value="manual">人工協作</option></select></label>
+        <label>優先度<select name="priority"><option value="normal">一般</option><option value="urgent">緊急</option></select></label>
+      </div>
+      <div class="dialog-actions"><button class="secondary-button" type="button" data-close-dialog>取消</button><button class="primary-button" type="submit">建立並開始拆解</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="workspace-dialog detail-dialog" id="project-detail-dialog">
+    <button class="dialog-close" type="button" data-close-dialog aria-label="關閉">×</button>
+    <div id="project-detail-body"><div class="dialog-loading">讀取專案中…</div></div>
+  </dialog>
+
+  <dialog class="workspace-dialog detail-dialog" id="result-detail-dialog">
+    <button class="dialog-close" type="button" data-close-dialog aria-label="關閉">×</button>
+    <div id="result-detail-body"><div class="dialog-loading">讀取成果中…</div></div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/static/modules/workspace.js?v=32"></script>
 </body>
 </html>

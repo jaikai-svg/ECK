@@ -17,4 +17,4 @@ workspace/*
 *.db-wal
 .env
 artifacts/
-
+node_modules/

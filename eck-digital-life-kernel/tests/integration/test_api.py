@@ -4,6 +4,75 @@ from fastapi.testclient import TestClient
 
 from eck.api.main import create_api
 from eck.app import build_application
+from eck.runtime.shutdown import shutdown_requested
+
+
+def test_federation_api_reports_status_and_fails_closed(application, monkeypatch) -> None:
+    api = create_api(application=application)
+
+    async def published_registry():
+        return {"published": True, "repository": "eck/eck-capability-registry"}
+
+    monkeypatch.setattr(application.federation, "publish_registry", published_registry)
+    with TestClient(api) as client:
+        status = client.get("/v1/federation/status")
+        assert status.status_code == 200
+        assert status.json()["format"] == "eck-evolution-pack.v1"
+        assert client.get("/v1/federation/library/synthesis").status_code == 200
+        assert client.get("/v1/federation/registry/status").status_code == 200
+
+        records = {
+            "record_ids": ["missing_record_00000000000000000000000000000000"],
+            "license_spdx": "Apache-2.0",
+        }
+        assert client.post("/v1/federation/packs/knowledge", json=records).status_code == 409
+        assert client.post("/v1/federation/packs/evaluation", json=records).status_code == 409
+        assert client.post("/v1/federation/packs/distillation", json=records).status_code == 409
+        mission = {
+            "mission_id": "missing_mission_00000000000000000000000000000000",
+            "license_spdx": "Apache-2.0",
+        }
+        assert client.post("/v1/federation/packs/strategy", json=mission).status_code == 409
+
+        assert client.get("/v1/federation/packs/missing.zip").status_code == 404
+        assert client.post("/v1/federation/packs/missing.zip/sign").status_code == 409
+        assert client.get("/v1/federation/inbox/missing.zip/verify").status_code == 409
+        assert client.get("/v1/federation/inbox/missing.zip/preview").status_code == 409
+        assert client.post(
+            "/v1/federation/inbox/missing.zip/stage",
+            json={"plan_sha256": "0" * 64},
+        ).status_code == 409
+        invalid_pack = "evolution-pack_" + "f" * 32
+        assert client.post(f"/v1/federation/quarantine/{invalid_pack}/reproduce").status_code == 409
+        assert client.post(f"/v1/federation/quarantine/{invalid_pack}/install").status_code == 409
+        assert client.post(
+            "/v1/federation/registry/candidates/missing.zip"
+        ).status_code == 409
+        assert client.get(f"/v1/federation/registry/candidates/{invalid_pack}").status_code == 404
+
+        review = {
+            "reviewer_node_sha256": "a" * 64,
+            "verdict": "approve",
+            "reproduction_success": True,
+            "fixed_test_delta": 0,
+            "hidden_test_regression": False,
+            "permission_reviewed": True,
+            "dependency_reviewed": True,
+            "evidence_sha256": "b" * 64,
+            "notes": "Independent review.",
+        }
+        assert client.post(
+            f"/v1/federation/registry/candidates/{invalid_pack}/reviews",
+            json=review,
+        ).status_code == 409
+        assert client.post(
+            f"/v1/federation/registry/candidates/{invalid_pack}/admit"
+        ).status_code == 409
+        assert client.post(
+            f"/v1/federation/registry/packs/{invalid_pack}/revoke",
+            json={"reason": "Independent regression evidence."},
+        ).status_code == 409
+        assert client.post("/v1/federation/registry/publish").json()["published"] is True
 
 
 def test_health_dashboard_and_acceptance(application) -> None:
@@ -17,6 +86,21 @@ def test_health_dashboard_and_acceptance(application) -> None:
         stylesheet = client.get("/static/styles.css")
         assert stylesheet.status_code == 200
         assert stylesheet.headers["content-type"] == "text/css; charset=utf-8"
+
+        dashboard_script = client.get("/static/app.js")
+        workspace_script = client.get("/static/modules/workspace.js")
+        http_module = client.get("/static/modules/http.js")
+        format_module = client.get("/static/modules/format.js")
+        assert dashboard_script.status_code == 404
+        assert workspace_script.status_code == 200
+        assert "pause_when_hidden" not in workspace_script.text
+        assert http_module.status_code == 200
+        assert "export async function request" in http_module.text
+        assert format_module.status_code == 200
+        assert "export function formatDuration" in format_module.text
+        phase2_module = client.get("/static/modules/workspace_phase2.js")
+        assert phase2_module.status_code == 200
+        assert "ResultCenterComponent" in phase2_module.text
 
         health = client.get("/health")
         assert health.status_code == 200
@@ -41,6 +125,13 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert client.post("/v1/kernel/pause").json()["phase"] == "paused"
         assert client.post("/v1/kernel/resume").json()["phase"] == "running"
         assert client.post("/v1/kernel/sleep").json()["accepted"]
+        services = client.get("/v1/system/services")
+        assert services.status_code == 200
+        assert services.json()["policy"]["forge_start"] == "on_image_demand"
+        rag = client.get("/v1/system/rag")
+        assert rag.status_code == 200
+        assert rag.json()["storage"] == "sqlite-vec"
+        assert rag.json()["runtime"]["reranker_model"] == "BAAI/bge-reranker-large"
         capabilities = client.get("/v1/capabilities").json()["items"]
         assert len(capabilities) == 16
         assert any(item["name"] == "core.self_inspect" for item in capabilities)
@@ -50,7 +141,7 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert "background_removal" in image_status.json()
         community_sources = client.get("/v1/learning/community-sources")
         assert community_sources.status_code == 200
-        assert community_sources.json()["source_count"] == 11
+        assert community_sources.json()["source_count"] == 12
         theme = client.post("/v1/learning/themes", json={"title": "股票"})
         assert theme.status_code == 201
         theme_id = theme.json()["theme_id"]
@@ -82,6 +173,35 @@ def test_health_dashboard_and_acceptance(application) -> None:
         bridge = client.get("/v1/evolution/skill-bridge")
         assert bridge.status_code == 200
         assert bridge.json()["conversion_verified"] is False
+        campaign = client.get("/v1/evolution/tool-campaign")
+        assert campaign.status_code == 200
+        assert campaign.json()["target_count"] == 100
+        assert campaign.json()["required_gates"] == [
+            "license",
+            "security_scan",
+            "docker_test",
+            "objective_benchmark",
+            "local_reproduction",
+        ]
+        workspace_home = client.get("/v1/workspace/home")
+        assert workspace_home.status_code == 200
+        assert workspace_home.json()["schema_version"] == "eck-workspace-home.v1"
+        assert workspace_home.json()["refresh"]["pause_when_hidden"] is True
+        workspace_system = client.get("/v1/workspace/system")
+        assert workspace_system.status_code == 200
+        assert workspace_system.json()["schema_version"] == "eck-workspace-system.v1"
+        assert workspace_system.json()["resources"]["project"]["cached"] is True
+        workspace_projects = client.get("/v1/workspace/projects?limit=12&offset=0")
+        assert workspace_projects.status_code == 200
+        assert workspace_projects.json()["page"]["total"] == 0
+        workspace_library = client.get("/v1/workspace/library?limit=12&offset=0")
+        assert workspace_library.status_code == 200
+        assert workspace_library.json()["source_authority"] == (
+            "knowledge_items + tasks + reflections"
+        )
+        workspace_skills = client.get("/v1/workspace/skills?limit=12&offset=0")
+        assert workspace_skills.status_code == 200
+        assert workspace_skills.json()["source_authority"] == "skill-lifecycle.v1"
         core_candidates = client.get("/v1/evolution/core-candidates")
         assert core_candidates.status_code == 200
         assert core_candidates.json()["status"]["live_core_mutation"] is False
@@ -142,6 +262,15 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert client.get("/v1/skills").json()["items"]
         assert client.get("/v1/approvals").json()["items"] == []
         assert client.get("/v1/tasks/not-found").status_code == 404
+
+
+def test_frontend_shutdown_requests_clean_server_exit(application) -> None:
+    api = create_api(application=application)
+    with TestClient(api) as client:
+        response = client.post("/v1/system/shutdown")
+        assert response.status_code == 202
+        assert response.json() == {"accepted": True}
+        assert shutdown_requested() is True
 
 
 def test_human_submitted_research_curriculum_is_queued(settings) -> None:

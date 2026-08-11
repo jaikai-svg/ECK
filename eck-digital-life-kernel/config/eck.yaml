@@ -5,6 +5,19 @@ identity: eck-local
 data_dir: data
 workspace_dir: workspace
 export_dir: workspace/exports
+archive_root:
+archive_cache_dir: workspace/archive-cache
+archive_cache_max_gb: 10
+archive_remove_local_after_verify: false
+artifact_index_refresh_seconds: 60
+library_min_cards: 24
+library_min_chapters: 6
+library_min_relation_coverage: 0.6
+library_min_independent_source_ratio: 0.75
+library_min_applied_tasks: 3
+library_min_fixed_tests: 3
+library_min_hidden_tests: 2
+library_min_evaluation_score: 0.82
 
 bind_host: 127.0.0.1
 bind_port: 8420
@@ -20,6 +33,9 @@ brain_provider: ollama
 ollama_base_url: http://127.0.0.1:11434
 ollama_model:
 coder_model: qwen2.5-coder:7b
+ollama_auto_start: true
+ollama_startup_timeout_seconds: 45
+ollama_keep_alive: 5m
 ollama_timeout_seconds: 120
 coder_timeout_seconds: 300
 
@@ -54,6 +70,17 @@ critical_research_default_timespan: 7d
 critical_research_quality_window: 10
 critical_research_max_inconclusive_ratio: 0.5
 critical_research_near_duplicate_distance: 3
+
+rag_enabled: true
+rag_auto_download: true
+rag_database_path: workspace/memory/eck-rag.sqlite3
+rag_model_dir: workspace/models/rag
+rag_embedding_model: BAAI/bge-m3
+rag_reranker_model: BAAI/bge-reranker-large
+rag_device: cpu
+rag_candidate_limit: 20
+rag_result_limit: 2
+rag_max_source_records: 2000
 
 image_generation_enabled: true
 image_backend: forge
@@ -137,8 +164,15 @@ challenge_execution_percent: 10
 repository_self_model_enabled: true
 research_skill_bridge_enabled: true
 research_skill_bridge_initial_delay_seconds: 600
-research_skill_bridge_interval_seconds: 21600
-research_skill_bridge_min_research_runs: 12
+research_skill_bridge_interval_seconds: 1800
+research_skill_bridge_min_research_runs: 6
+tool_campaign_enabled: true
+tool_campaign_initial_delay_seconds: 3600
+tool_campaign_interval_seconds: 21600
+tool_campaign_target_count: 100
+tool_campaign_min_stars: 500
+tool_campaign_auto_publish: true
+tool_campaign_workspace_dir: workspace/projects/eck-agent-toolkit
 core_evolution_enabled: true
 core_evolution_timeout_seconds: 900
 autonomous_project_lab_enabled: true
@@ -149,6 +183,7 @@ autonomous_project_max_per_day: 1
 autonomous_project_draft_attempts: 3
 durable_mission_executor_enabled: true
 mission_internal_review_rounds: 3
+mission_deliberation_max_rounds: 5
 mission_quality_min_score: 82
 mission_reference_search_limit: 5
 mission_workspace_max_mb: 256
@@ -157,6 +192,20 @@ mission_retention_days: 30
 mission_publish_verified_projects: true
 # Set this to a NAS directory after it is mounted. Empty keeps completed artifacts local.
 mission_archive_dir:
+federation_enabled: true
+federation_max_pack_mb: 64
+federation_min_reproductions: 2
+federation_registry_min_reviews: 2
+federation_registry_min_trust_score: 85
+federation_synthesis_min_packs: 4
+federation_synthesis_min_types: 3
+federation_cosign_enabled: true
+# Configure a local key pair for unattended signing. Never place the private key in a Pack.
+federation_cosign_executable: workspace/tools/cosign/cosign.exe
+federation_cosign_key_path:
+federation_cosign_public_key_path:
+federation_cosign_certificate_identity:
+federation_cosign_oidc_issuer:
 github_publish_enabled: true
 github_auto_publish_verified_projects: true
 github_account:

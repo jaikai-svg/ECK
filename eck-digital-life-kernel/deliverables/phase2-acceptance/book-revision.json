@@ -1,0 +1,26 @@
+{
+  "revision_id": "revision_63b45c14459d45ba920deab2b44c93e7",
+  "book_id": "book_221d3a9682974c4eb44c07fa0f7da801",
+  "revision": 1,
+  "readiness_report_id": "readiness_6a8923c2f4ff4f0689b3af6ad480c2f0",
+  "content_sha256": "87e2e2c656a18b86937298716c9ab5edc9603579baf46e55046f0b08470dced7",
+  "previous_sha256": "",
+  "markdown_path": "C:\\Users\\h0961\\Desktop\\ECK\\eck-digital-life-kernel-v0.1.0\\eck-digital-life-kernel\\deliverables\\.phase2-acceptance-runtime\\library-books\\book_221d3a9682974c4eb44c07fa0f7da801\\r1\\book.md",
+  "manifest_path": "C:\\Users\\h0961\\Desktop\\ECK\\eck-digital-life-kernel-v0.1.0\\eck-digital-life-kernel\\deliverables\\.phase2-acceptance-runtime\\library-books\\book_221d3a9682974c4eb44c07fa0f7da801\\r1\\manifest.json",
+  "diff_summary": "Initial verified publication.",
+  "reason": "Phase 2 deterministic acceptance generation.",
+  "created_at": "2026-08-11T19:23:55.238166+00:00",
+  "citations": [
+    "eck://acceptance-a/case-1",
+    "eck://acceptance-a/case-2",
+    "eck://acceptance-a/case-3",
+    "eck://acceptance-a/case-4",
+    "eck://acceptance-a/case-5",
+    "eck://acceptance-b/case-1",
+    "eck://acceptance-b/case-2",
+    "eck://acceptance-b/case-3",
+    "eck://acceptance-b/case-4",
+    "eck://acceptance-b/case-5"
+  ],
+  "created": true
+}

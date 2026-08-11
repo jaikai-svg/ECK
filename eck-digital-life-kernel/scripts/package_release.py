@@ -20,24 +20,28 @@ EXCLUDED_PARTS = {
     ".ruff_cache",
     ".venv",
     "__pycache__",
+    "artifacts",
     "data",
+    "deliverables",
+    "temp",
     "workspace",
 }
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
-EXCLUDED_NAMES = {".coverage"}
+EXCLUDED_NAMES = {".coverage", ".env"}
 
 
 def included_files() -> list[Path]:
-    files = []
-    for path in PROJECT_ROOT.rglob("*"):
-        relative = path.relative_to(PROJECT_ROOT)
-        if not path.is_file():
-            continue
-        if any(part in EXCLUDED_PARTS for part in relative.parts):
-            continue
-        if path.name in EXCLUDED_NAMES or path.suffix in EXCLUDED_SUFFIXES:
-            continue
-        files.append(path)
+    files: list[Path] = []
+    for root, directories, names in os.walk(PROJECT_ROOT):
+        directories[:] = [
+            name for name in directories if name not in EXCLUDED_PARTS
+        ]
+        root_path = Path(root)
+        for name in names:
+            path = root_path / name
+            if path.name in EXCLUDED_NAMES or path.suffix in EXCLUDED_SUFFIXES:
+                continue
+            files.append(path)
     return sorted(files, key=lambda item: item.relative_to(PROJECT_ROOT).as_posix())
 
 

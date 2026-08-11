@@ -28,8 +28,15 @@ from eck.capabilities.video_generation import VideoGenerationCapability
 from eck.config import Settings
 from eck.domain.models import EventRecord
 from eck.events.bus import EventBus
+from eck.experimental.p6.mission_executor import DurableMissionExecutor
+from eck.experimental.p7.federation import FederationService
 from eck.kernel.runtime import LifeKernel
 from eck.memory.experience import ExperienceEngine
+from eck.memory.rag import PortableRagService
+from eck.modules.archive import ArchiveService
+from eck.modules.artifacts import ArtifactCatalogService
+from eck.modules.library import LibraryAuthoringService, LibraryProjectionService
+from eck.modules.skills.lifecycle import SkillLifecycleService
 from eck.policy.autonomy import AutonomyGate
 from eck.policy.gate import PolicyGate
 from eck.research.discovery import (
@@ -37,6 +44,7 @@ from eck.research.discovery import (
     FallbackDiscoveryClient,
     GDELTDiscoveryClient,
 )
+from eck.runtime.local_services import LocalServiceManager
 from eck.runtime.resources import SystemResourceMonitor
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.autonomous_learning import AutonomousLearningService
@@ -46,7 +54,6 @@ from eck.services.core_evolution import CoreEvolutionLabService
 from eck.services.evaluations import EvaluationService
 from eck.services.evolution import EvolutionAuditService
 from eck.services.identity import IdentityService
-from eck.services.mission_executor import DurableMissionExecutor
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
 from eck.services.project_lab import AutonomousProjectLabService
@@ -56,6 +63,8 @@ from eck.services.skill_forge import SkillForgeService
 from eck.services.skill_graph import SkillKnowledgeGraphService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
+from eck.services.tool_campaign import ToolAcquisitionCampaignService
+from eck.services.tool_campaign_components import ToolCampaignCatalog
 from eck.services.versioning import VersionService
 from eck.storage.sqlite import SQLiteStore
 from eck.verification.verifier import ContractVerifier
@@ -75,6 +84,7 @@ class Application:
     identity_service: IdentityService
     self_model: RepositorySelfModelService
     skill_bridge: ResearchSkillBridgeService
+    tool_campaign: ToolAcquisitionCampaignService
     core_lab: CoreEvolutionLabService
     project_lab: AutonomousProjectLabService
     tasks: TaskService
@@ -88,12 +98,20 @@ class Application:
     evaluations: EvaluationService
     evolution: EvolutionAuditService
     portability: CognitiveBundleService
+    federation: FederationService
     skill_graph: SkillKnowledgeGraphService
+    skill_lifecycle: SkillLifecycleService
+    library: LibraryProjectionService
+    library_authoring: LibraryAuthoringService
+    artifacts: ArtifactCatalogService
+    archive: ArchiveService
+    rag: PortableRagService
     autonomy: AutonomyGate
     image_generation: ImageGenerationCapability
     image_background_removal: ImageBackgroundRemovalCapability
     video_generation: VideoGenerationCapability
     resources: SystemResourceMonitor
+    local_services: LocalServiceManager
     kernel: LifeKernel
 
 
@@ -105,6 +123,7 @@ def build_application(settings: Settings | None = None) -> Application:
     store.initialize()
     events = EventBus(store)
     resources = SystemResourceMonitor(settings)
+    local_services = LocalServiceManager(settings)
     identity_service = IdentityService(settings)
     self_model = RepositorySelfModelService(settings)
     if settings.repository_self_model_enabled and settings.environment != "test":
@@ -123,6 +142,8 @@ def build_application(settings: Settings | None = None) -> Application:
             arbiter=inference_arbiter,
             default_priority=20,
             health_cache_seconds=settings.brain_health_cache_seconds,
+            ensure_service=local_services.ensure_ollama,
+            keep_alive=settings.ollama_keep_alive,
         )
         supervisor_brain = OllamaBrainProvider(
             settings.ollama_base_url,
@@ -131,6 +152,8 @@ def build_application(settings: Settings | None = None) -> Application:
             arbiter=inference_arbiter,
             default_priority=100,
             health_cache_seconds=settings.brain_health_cache_seconds,
+            ensure_service=local_services.ensure_ollama,
+            keep_alive=settings.ollama_keep_alive,
         )
         coder_brain = OllamaBrainProvider(
             settings.ollama_base_url,
@@ -139,6 +162,8 @@ def build_application(settings: Settings | None = None) -> Application:
             arbiter=inference_arbiter,
             default_priority=40,
             health_cache_seconds=settings.brain_health_cache_seconds,
+            ensure_service=local_services.ensure_ollama,
+            keep_alive=settings.ollama_keep_alive,
         )
 
     versions = VersionService(store, events)
@@ -168,6 +193,9 @@ def build_application(settings: Settings | None = None) -> Application:
         store,
         capability_provider=lambda: (video_generation.skill_graph_snapshot(),),
     )
+    skill_lifecycle = SkillLifecycleService(store)
+    library = LibraryProjectionService(settings, store)
+    rag = PortableRagService(settings, store)
     registry.register(
         AcademicResearchCapability(
             brain,
@@ -206,6 +234,7 @@ def build_application(settings: Settings | None = None) -> Application:
     )
     challenge_service = ChallengeService(store, events, brain)
     evaluation_service = EvaluationService(store, events, brain, resources)
+    community_sources = CommunitySourceCatalog(settings.community_source_catalog_path)
     skill_bridge = ResearchSkillBridgeService(
         settings,
         store,
@@ -213,6 +242,7 @@ def build_application(settings: Settings | None = None) -> Application:
         coder_brain,
         forge,
         self_model,
+        community_sources,
     )
     core_lab = CoreEvolutionLabService(
         settings,
@@ -243,6 +273,9 @@ def build_application(settings: Settings | None = None) -> Application:
         mission_service,
     )
     mission_executor.upgrade_legacy_graphs()
+    library_authoring = LibraryAuthoringService(settings, store, mission_service)
+    artifacts = ArtifactCatalogService(settings, store)
+    archive = ArchiveService(settings, store)
     evolution_service = EvolutionAuditService(
         settings,
         store,
@@ -259,8 +292,21 @@ def build_application(settings: Settings | None = None) -> Application:
         registry,
         versions,
     )
+    federation_service = FederationService(settings, store, events, forge, project_lab)
+    assert settings.tool_campaign_workspace_dir is not None
+    tool_campaign = ToolAcquisitionCampaignService(
+        settings,
+        store,
+        events,
+        coder_brain,
+        supervisor_brain,
+        skill_bridge,
+        forge,
+        worker,
+        project_lab,
+        ToolCampaignCatalog(settings.tool_campaign_workspace_dir, federation_service),
+    )
     autonomy_gate = AutonomyGate()
-    community_sources = CommunitySourceCatalog(settings.community_source_catalog_path)
     supervisor_service = SupervisorService(
         settings,
         store,
@@ -300,6 +346,7 @@ def build_application(settings: Settings | None = None) -> Application:
         supervisor_service,
         autonomous_learning,
         skill_bridge,
+        tool_campaign,
         project_lab,
         mission_executor,
         resources,
@@ -317,6 +364,7 @@ def build_application(settings: Settings | None = None) -> Application:
         identity_service=identity_service,
         self_model=self_model,
         skill_bridge=skill_bridge,
+        tool_campaign=tool_campaign,
         core_lab=core_lab,
         project_lab=project_lab,
         tasks=task_service,
@@ -330,11 +378,19 @@ def build_application(settings: Settings | None = None) -> Application:
         evaluations=evaluation_service,
         evolution=evolution_service,
         portability=portability_service,
+        federation=federation_service,
         skill_graph=skill_graph,
+        skill_lifecycle=skill_lifecycle,
+        library=library,
+        library_authoring=library_authoring,
+        artifacts=artifacts,
+        archive=archive,
+        rag=rag,
         autonomy=autonomy_gate,
         image_generation=image_generation,
         image_background_removal=image_background_removal,
         video_generation=video_generation,
         resources=resources,
+        local_services=local_services,
         kernel=kernel,
     )

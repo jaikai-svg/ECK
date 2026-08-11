@@ -110,6 +110,16 @@
       "license": "MIT",
       "adoption_mode": "pattern-candidate",
       "topics": ["software repair", "agent computer interface", "repository navigation", "test driven patch", "sandbox"]
+    },
+    {
+      "source_id": "agency-agents",
+      "name": "Agency Agents",
+      "url": "https://github.com/msitarzewski/agency-agents",
+      "owner": "AgentLand Contributors",
+      "trust_tier": "official-maintainer",
+      "license": "MIT",
+      "adoption_mode": "pattern-candidate",
+      "topics": ["agent roles", "software architect", "frontend development", "code review", "multi-agent", "ui finish gate", "quality rubric"]
     }
   ]
 }

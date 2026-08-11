@@ -2,6 +2,13 @@
 
 **Digital Life Kernel v0.1**
 
+<p align="center">
+  <img src="src/eck/dashboard/eck-mark.svg" width="92" alt="ECK mark">
+</p>
+
+[Download current Windows source package](https://github.com/jaikai-svg/ECK/archive/refs/heads/main.zip)
+· [Versioned release packages](https://github.com/jaikai-svg/ECK/releases/latest)
+
 > v0.1.0 is the current verified runtime. v0.2.0 is now in specification and
 > development; the runtime version will not change until its release gate passes.
 
@@ -26,10 +33,14 @@ described as AGI and it does not update model weights automatically.
 - Replaceable Mock and Ollama brain providers.
 - Local dialogue grounded with admitted experience, active skills, and verified research.
 - Human-guided, bounded academic curricula using allowlisted Crossref metadata and abstracts.
+- A serialized 100-tool GitHub acquisition campaign with five mandatory verification gates,
+  pinned provenance, local reproduction, and versioned Evolution Packs.
 - Persistent idle supervisor that reviews verified learning and assigns bounded research tests.
 - Persistent multi-day challenge contracts with externally reviewed social metrics.
 - Versioned MMLU, GSM8K, FrontierScience, and real-task evaluation records.
 - CLI, REST API, OpenAPI, and a local Web Dashboard.
+- Workspace result catalog, exact runtime-skill execution provenance, optional verified NAS
+  archive/cache, and evidence-gated versioned Library books.
 - Safe arithmetic-expression capability without shell or file access.
 - Deterministic GridWorld capability for experience-reuse measurement.
 - Windows 11 + WSL2 + Docker Desktop deployment.
@@ -50,6 +61,13 @@ notepad .env
 .\scripts\setup-windows.ps1
 .\scripts\start-windows.ps1
 ```
+
+For a downloaded ZIP, extract it and double-click `Install-ECK.cmd`. It creates the local
+virtual environment, installs ECK, restores the isolated Docker skill worker when Docker is
+available, installs the pinned official GitHub CLI archive after SHA-256 verification, creates
+the `ECK Digital Life Kernel` desktop shortcut, starts the kernel, and opens the dashboard. Local
+model weights are deliberately not bundled because they are large and may have separate licenses;
+the installer preserves the machine-local `.env` model configuration.
 
 For a native Windows process with PID and log tracking instead of Compose, use:
 
@@ -151,6 +169,27 @@ automation, reusable skills, MCP, memory, evaluation, sandboxing, local inferenc
 self-modification safety. Trusted official specifications and maintainer repositories are
 listed by `GET /v1/learning/community-sources`; catalog inclusion never authorizes direct
 code execution or bypasses the isolated skill and regression gates.
+
+ECK also supports operator-guided capability acquisition at
+`POST /v1/learning/skills/acquire`. The Dashboard's **現在就教 ECK 一項可執行技能** form
+accepts a precise outcome, immutable JSON input/output examples, and up to three public GitHub
+repositories. ECK pins repository
+metadata and commit identity, checks an automatic permissive-license allowlist, treats README
+content as untrusted research data, synthesizes an ECK-native implementation, and runs isolated
+tests plus Canary replay. A generated candidate that fails remains visible as failed evidence
+and does not increase the active-skill count.
+
+Long-term themes steer research; they do not immediately create a skill. To teach a capability
+now, describe one narrow executable contract and add normal, boundary, and error examples in the
+same form. ECK turns those examples into an acceptance oracle that the coding model cannot edit
+during repair. See `docs/30-open-source-capability-acquisition.md`.
+
+The trusted source catalog includes the MIT-licensed
+[Agency Agents](https://github.com/msitarzewski/agency-agents). Its role definitions are adapted
+as attributed architecture and review profiles—software architect, frontend engineer, code
+reviewer, multi-agent architect, and UI finish gate—not misrepresented as executable tools. For
+arbitrary repositories, ECK follows the same rule: reuse proven methods and interfaces, never
+blindly execute upstream code or claim that a prompt profile is a runtime capability.
 
 ## P5 verified self-development
 
@@ -371,6 +410,36 @@ must be restored from their licensed sources before a clean-machine regression t
 
 See `docs/17-autonomous-learning-portability-media.md` for the learning validation,
 transfer, and current AGI-gap criteria.
+
+## P7 ECK Federation
+
+P7 introduces `eck-evolution-pack.v1` for sharing verified capabilities without sharing an
+ECK's SOUL, private SQLite memory, owner settings, credentials, machine paths, or model weights.
+Skill, Knowledge, Strategy, Evaluation, and Distillation Packs use hash inventories, diff plans,
+quarantine, receiver reproduction, and two-node admission. Installed data packs are retrieved by
+the P6 architecture council instead of being counted as inert files.
+
+```text
+GET  /v1/federation/status
+POST /v1/federation/packs
+POST /v1/federation/packs/{knowledge|strategy|evaluation|distillation}
+POST /v1/federation/packs/{archive_name}/sign
+GET  /v1/federation/inbox/{archive_name}/preview
+POST /v1/federation/inbox/{archive_name}/stage
+POST /v1/federation/quarantine/{pack_id}/reproduce
+POST /v1/federation/quarantine/{pack_id}/install
+GET  /v1/federation/registry/status
+POST /v1/federation/registry/candidates/{archive_name}
+POST /v1/federation/registry/candidates/{pack_id}/reviews
+POST /v1/federation/registry/candidates/{pack_id}/admit
+POST /v1/federation/registry/publish
+```
+
+Detached Cosign signing and identity-pinned verification are integrated but require a local Cosign
+installation and operator-owned key policy. The Registry supports local review, trust scoring,
+revocation, and dedicated-account GitHub publication; remote attestations, Adapter Packs, hosted
+hidden tests, and CognitiveBundle v3 restore remain future work. See
+`docs/29-p7-eck-federation.md`.
 
 ## Capability evaluation
 

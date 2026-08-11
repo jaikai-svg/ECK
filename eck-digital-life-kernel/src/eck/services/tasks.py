@@ -160,10 +160,21 @@ class TaskService:
             correlation_id=task_id,
         )
         try:
-            result = await capability.execute(task.action)
+            execution_action = task.action
+            if task.action.capability == "runtime.skill":
+                execution_action = task.action.model_copy(
+                    update={
+                        "payload": {
+                            **task.action.payload,
+                            "_task_id": task.task_id,
+                            "_task_attempt": attempts,
+                        }
+                    }
+                )
+            result = await capability.execute(execution_action)
             repeated: CapabilityResult | None = None
             if task.success_contract.require_reproducible and capability.definition.deterministic:
-                repeated = await capability.execute(task.action)
+                repeated = await capability.execute(execution_action)
             report = self.verifier.verify(
                 task.success_contract, result, repeated_result=repeated
             )
@@ -190,6 +201,16 @@ class TaskService:
                 finished_at=now,
             )
             report = self.verifier.verify(task.success_contract, result)
+
+        usage_id = str(result.output.get("_task_skill_usage_id", ""))
+        if usage_id:
+            self.store.finish_task_skill_usage(
+                usage_id,
+                result_status="succeeded" if result.success else "failed",
+                verification_status=report.status.value,
+                evidence_ids=[item.evidence_id for item in result.evidence],
+                failure_detail="" if result.success else self._error_signature(result),
+            )
 
         if self._should_retry(task, result, report.status):
             return await self._schedule_retry(

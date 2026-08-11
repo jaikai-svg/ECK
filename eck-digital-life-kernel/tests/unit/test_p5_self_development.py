@@ -557,10 +557,78 @@ def test_github_status_covers_install_auth_and_account_checks(application, monke
 
 
 def test_github_environment_routes_only_the_dedicated_account_token(application) -> None:
-    environment = application.project_lab._github_environment("dedicated-token")
+    environment = application.project_lab._github_environment(
+        "dedicated-token",
+        "C:/Program Files/GitHub CLI/gh.exe",
+    )
 
     assert environment["GH_TOKEN"] == "dedicated-token"
     assert environment["GH_HOST"] == "github.com"
+    assert environment["PATH"].startswith("C:\\Program Files\\GitHub CLI")
+
+
+@pytest.mark.asyncio
+async def test_existing_directory_push_uses_dedicated_gh_credential_helper(
+    application,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    commands = []
+
+    async def run_process(command, **kwargs):
+        assert kwargs["env"]["GH_TOKEN"] == "dedicated-token"
+        commands.append(command)
+        return {"returncode": 0, "output_tail": "ok"}
+
+    monkeypatch.setattr(application.project_lab, "_run_process", run_process)
+    result = await application.project_lab._publish_existing_directory(
+        source_dir=tmp_path,
+        repository="eck-unit/travel-task-0003",
+        env=application.project_lab._github_environment("dedicated-token", "gh"),
+    )
+
+    assert result["returncode"] == 0
+    assert commands[-1][:3] == [
+        "git",
+        "-c",
+        f"safe.directory={tmp_path.resolve()}",
+    ]
+    assert "credential.helper=" in commands[-1]
+    assert "credential.helper=!gh auth git-credential" in commands[-1]
+    assert commands[-1][-3:] == ["push", "origin", "main"]
+
+
+@pytest.mark.asyncio
+async def test_existing_directory_adds_missing_origin(
+    application,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    commands = []
+
+    async def run_process(command, **kwargs):
+        del kwargs
+        commands.append(command)
+        if command[-2:] == ["get-url", "origin"]:
+            return {"returncode": 2, "output_tail": "origin is missing"}
+        return {"returncode": 0, "output_tail": "ok"}
+
+    monkeypatch.setattr(application.project_lab, "_run_process", run_process)
+    result = await application.project_lab._publish_existing_directory(
+        source_dir=tmp_path,
+        repository="eck-unit/travel-task-0004",
+        env=application.project_lab._github_environment("dedicated-token", "gh"),
+    )
+
+    assert result["returncode"] == 0
+    assert any(
+        command[-3:] == [
+            "add",
+            "origin",
+            "https://github.com/eck-unit/travel-task-0004.git",
+        ]
+        for command in commands
+    )
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,29 @@
+{
+  "schema_version": "eck-library-book.v1",
+  "book_id": "book_221d3a9682974c4eb44c07fa0f7da801",
+  "domain_id": "domain_52abfc602d7e4045b5e5cdcd091ebb6a",
+  "revision": 1,
+  "content_sha256": "87e2e2c656a18b86937298716c9ab5edc9603579baf46e55046f0b08470dced7",
+  "previous_sha256": "",
+  "readiness_report_id": "readiness_6a8923c2f4ff4f0689b3af6ad480c2f0",
+  "knowledge_ids": [
+    "knowledge_c62f577f3b8041fd963a97028e15e702",
+    "knowledge_cc27d837cab342e3a9c031b32391f790",
+    "knowledge_3cc1740adfd44667b2b754ae8f23dbd6",
+    "knowledge_db851613a22a4800892e98aadeeb3a29",
+    "knowledge_eca07a5085784252948c8d439d62dedb"
+  ],
+  "citations": [
+    "eck://acceptance-a/case-1",
+    "eck://acceptance-a/case-2",
+    "eck://acceptance-a/case-3",
+    "eck://acceptance-a/case-4",
+    "eck://acceptance-a/case-5",
+    "eck://acceptance-b/case-1",
+    "eck://acceptance-b/case-2",
+    "eck://acceptance-b/case-3",
+    "eck://acceptance-b/case-4",
+    "eck://acceptance-b/case-5"
+  ],
+  "formal": true
+}

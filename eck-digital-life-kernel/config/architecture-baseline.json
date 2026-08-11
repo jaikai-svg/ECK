@@ -1,0 +1,48 @@
+{
+  "schema_version": "eck-architecture-baseline.v1",
+  "default_python_max_lines": 1000,
+  "default_frontend_max_lines": 1000,
+  "line_ratcheted_files": {
+    "src/eck/capabilities/image_generation.py": 1248,
+    "src/eck/experimental/p6/mission_quality.py": 1011,
+    "src/eck/experimental/p7/federation.py": 1006
+  },
+  "experimental_import_allowlist": [
+    "src/eck/app.py",
+    "src/eck/kernel/runtime.py",
+    "src/eck/services/evolution_packs.py",
+    "src/eck/services/federation.py",
+    "src/eck/services/federation_registry.py",
+    "src/eck/services/mission_executor.py",
+    "src/eck/services/mission_quality.py"
+  ],
+  "rest_route_sha256_v010": "52709c9b2219309d68c17ff5ed250fd18f09344e5fc18f2e5f0e54ef3a253894",
+  "post_v010_additive_routes": [
+    "/v1/skills/lifecycle",
+    "/v1/system/rag",
+    "/v1/system/services",
+    "/v1/system/shutdown",
+    "/v1/evolution/tool-campaign",
+    "/v1/evolution/tool-campaign/run",
+    "/v1/workspace/home",
+    "/v1/workspace/system",
+    "/v1/workspace/library",
+    "/v1/workspace/projects",
+    "/v1/workspace/projects/{project_id}",
+    "/v1/workspace/skills",
+    "/v1/workspace/results",
+    "/v1/workspace/results/{artifact_id}",
+    "/v1/workspace/results/{artifact_id}/preview",
+    "/v1/workspace/results/{artifact_id}/archive",
+    "/v1/workspace/results/{artifact_id}/restore",
+    "/v1/workspace/archive/status",
+    "/v1/workspace/library/domains",
+    "/v1/workspace/library/domains/{domain_id}",
+    "/v1/workspace/library/domains/{domain_id}/relations",
+    "/v1/workspace/library/domains/{domain_id}/evaluate",
+    "/v1/workspace/library/domains/{domain_id}/author",
+    "/v1/workspace/library/books/{book_id}",
+    "/v1/workspace/library/books/{book_id}/revisions/{revision_id}/download",
+    "/v1/workspace/library/books/{book_id}/suggestions"
+  ]
+}

@@ -14,13 +14,14 @@ from eck.domain.models import (
     TaskRecord,
 )
 from eck.events.bus import EventBus
+from eck.experimental.p6.mission_executor import DurableMissionExecutor
 from eck.runtime.resources import SystemResourceMonitor
 from eck.services.autonomous_learning import AutonomousLearningService
-from eck.services.mission_executor import DurableMissionExecutor
 from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.supervisor import SupervisorService
 from eck.services.tasks import TaskService
+from eck.services.tool_campaign import ToolAcquisitionCampaignService
 from eck.storage.sqlite import SQLiteStore
 
 
@@ -34,6 +35,7 @@ class LifeKernel:
         supervisor: SupervisorService,
         autonomous_learning: AutonomousLearningService,
         skill_bridge: ResearchSkillBridgeService,
+        tool_campaign: ToolAcquisitionCampaignService,
         project_lab: AutonomousProjectLabService,
         mission_executor: DurableMissionExecutor,
         resources: SystemResourceMonitor,
@@ -45,6 +47,7 @@ class LifeKernel:
         self.supervisor = supervisor
         self.autonomous_learning = autonomous_learning
         self.skill_bridge = skill_bridge
+        self.tool_campaign = tool_campaign
         self.project_lab = project_lab
         self.mission_executor = mission_executor
         self.resources = resources
@@ -54,6 +57,7 @@ class LifeKernel:
         self._supervision_task: asyncio.Task[SupervisorReviewRecord | None] | None = None
         self._curriculum_task: asyncio.Task[TaskRecord | None] | None = None
         self._skill_bridge_task: asyncio.Task[dict[str, Any]] | None = None
+        self._tool_campaign_task: asyncio.Task[dict[str, Any]] | None = None
         self._project_lab_task: asyncio.Task[dict[str, Any]] | None = None
         self._mission_task: asyncio.Task[MissionStepRecord | None] | None = None
         self._stop = asyncio.Event()
@@ -159,6 +163,11 @@ class LifeKernel:
             with suppress(asyncio.CancelledError):
                 await self._skill_bridge_task
             self._skill_bridge_task = None
+        if self._tool_campaign_task:
+            self._tool_campaign_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._tool_campaign_task
+            self._tool_campaign_task = None
         if self._project_lab_task:
             self._project_lab_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -217,6 +226,7 @@ class LifeKernel:
         next_skill_bridge = (
             loop.time() + self.settings.research_skill_bridge_initial_delay_seconds
         )
+        next_tool_campaign = loop.time() + self.settings.tool_campaign_initial_delay_seconds
         next_project_lab = (
             loop.time() + self.settings.autonomous_project_initial_delay_seconds
         )
@@ -268,6 +278,15 @@ class LifeKernel:
                     next_skill_bridge = (
                         loop.time() + self.settings.research_skill_bridge_interval_seconds
                     )
+                if self._tool_campaign_task and self._tool_campaign_task.done():
+                    try:
+                        await self._tool_campaign_task
+                    except Exception as exc:
+                        await self._background_failure("tool_acquisition_campaign", exc)
+                    self._tool_campaign_task = None
+                    next_tool_campaign = (
+                        loop.time() + self.settings.tool_campaign_interval_seconds
+                    )
                 if self._project_lab_task and self._project_lab_task.done():
                     try:
                         await self._project_lab_task
@@ -289,8 +308,9 @@ class LifeKernel:
                         and self._supervision_task is None
                         and self._curriculum_task is None
                         and self._skill_bridge_task is None
-                            and self._project_lab_task is None
-                            and self._mission_task is None
+                        and self._tool_campaign_task is None
+                        and self._project_lab_task is None
+                        and self._mission_task is None
                     ):
                         prefer_challenge = (
                             self._schedule_cursor >= self.settings.autonomous_learning_percent
@@ -304,7 +324,22 @@ class LifeKernel:
                                 or "human-guided" in queued.labels
                             )
                         )
-                        if queued and (resource_allowed or foreground_task):
+                        urgent_mission = self.mission_executor.has_urgent_runnable_work()
+                        if queued and foreground_task:
+                            self._schedule_cursor = (self._schedule_cursor + 1) % 100
+                            self._execution_task = asyncio.create_task(
+                                self._execute_bounded(queued),
+                                name=f"eck-task-{queued.task_id}",
+                            )
+                        elif urgent_mission and (
+                            resource_allowed
+                            or self.mission_executor.has_urgent_low_resource_work()
+                        ):
+                            self._mission_task = asyncio.create_task(
+                                self.mission_executor.run_next(),
+                                name="eck-urgent-durable-mission-step",
+                            )
+                        elif queued and resource_allowed:
                             self._schedule_cursor = (self._schedule_cursor + 1) % 100
                             self._execution_task = asyncio.create_task(
                                 self._execute_bounded(queued),
@@ -327,6 +362,14 @@ class LifeKernel:
                             self._skill_bridge_task = asyncio.create_task(
                                 self.skill_bridge.run_if_needed(),
                                 name="eck-research-skill-bridge",
+                            )
+                        elif (
+                            self.settings.tool_campaign_enabled
+                            and loop.time() >= next_tool_campaign
+                        ):
+                            self._tool_campaign_task = asyncio.create_task(
+                                self.tool_campaign.run_once(),
+                                name="eck-tool-acquisition-campaign",
                             )
                         elif (
                             self.settings.autonomous_project_lab_enabled

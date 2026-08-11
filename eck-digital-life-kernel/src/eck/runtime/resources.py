@@ -84,6 +84,27 @@ class SystemResourceMonitor:
             self._persist_project_cache(result)
             return self._project_result(result, cached=False)
 
+    def cached_project_snapshot(self) -> dict[str, Any]:
+        """Return the latest project measurement without starting a filesystem scan."""
+        with self._project_lock:
+            if self._project_cache is None:
+                return {
+                    "available": False,
+                    "logical_bytes": None,
+                    "logical_gb": None,
+                    "file_count": None,
+                    "scanned_at": None,
+                    "cached": True,
+                    "stale": True,
+                }
+            result = self._project_result(self._project_cache, cached=True)
+            result["available"] = True
+            result["stale"] = (
+                float(result["age_seconds"])
+                >= self.settings.resource_project_scan_seconds
+            )
+            return result
+
     def _restore_project_cache(self) -> None:
         try:
             result = json.loads(self._project_cache_path.read_text(encoding="utf-8"))
@@ -95,8 +116,6 @@ class SystemResourceMonitor:
         if scanned_at.tzinfo is None:
             scanned_at = scanned_at.replace(tzinfo=UTC)
         age = max(0.0, (datetime.now(UTC) - scanned_at.astimezone(UTC)).total_seconds())
-        if age >= self.settings.resource_project_scan_seconds:
-            return
         self._project_cache = result
         self._project_scanned_at = time.monotonic() - age
 

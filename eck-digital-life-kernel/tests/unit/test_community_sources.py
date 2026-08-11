@@ -16,6 +16,12 @@ def test_official_community_catalog_is_valid_and_matchable(application) -> None:
     assert match is not None
     assert match["source_id"] == "langgraph"
     assert match["adoption_mode"] == "pattern-candidate"
+    role_source = application.community_sources.match(
+        "frontend agent role and ui finish gate review"
+    )
+    assert role_source is not None
+    assert role_source["source_id"] == "agency-agents"
+    assert role_source["license"] == "MIT"
 
 
 def test_community_catalog_rejects_untrusted_or_credentialed_sources(tmp_path) -> None:

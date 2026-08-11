@@ -1,0 +1,9 @@
+{
+  "test_only": true,
+  "domain_id": "domain_52abfc602d7e4045b5e5cdcd091ebb6a",
+  "card_count": 5,
+  "readiness_passed": true,
+  "book_revision": 1,
+  "content_sha256": "87e2e2c656a18b86937298716c9ab5edc9603579baf46e55046f0b08470dced7",
+  "source_database": "isolated generated acceptance database (not committed)"
+}

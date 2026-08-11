@@ -47,11 +47,19 @@ than regenerating the entire project.
 ### Static website
 
 The worker requires complete local `index.html`, `styles.css`, `app.js`, and `README.md` files.
-The validator checks document title, viewport, content depth, heading hierarchy, semantic
-navigation and main content, local asset references, CSS tokens/layout/responsive/focus/hover/
-motion states, three meaningful JavaScript interactions, observable state changes, accessibility,
-placeholder removal, objective relevance, a configurable quality score, and a source hash.
-Failure returns a real observation to the coder and retries the same fixed contract.
+The v3 validator checks document title, viewport, five substantive sections, heading hierarchy,
+semantic navigation and main content, HTML and CSS local-asset references, mission-language
+alignment, CSS tokens/layout/real breakpoint/fluid type/visual depth/component/focus/hover/motion
+states, three meaningful JavaScript interactions, observable non-blocking page feedback,
+accessibility, placeholder removal, objective relevance, a configurable quality score, and a
+source hash. Unsupported preprocessor functions, blocking alerts, simulated success, missing
+background images, and generic wrong-language output are rejected.
+
+Initial model output is compared with a deterministic designed baseline. A model result that
+scores lower is discarded before it can become the working tree. Every architect and expert
+improvement receives the same non-degradation gate. Mechanical issues such as missing local
+images and `aria-live` are repaired deterministically; generated vector assets replace broken
+references, and a model repair is rolled back if it increases issues or lowers quality.
 
 ### Python project
 
@@ -97,6 +105,14 @@ core. Defaults enforce 256 MB per mission and 5 GB total. Reaching a quota block
 an explicit observation rather than filling the SSD. A future NAS path can be configured through
 `ECK_MISSION_ARCHIVE_DIR`; until it is configured and verified, P6 does not silently delete final
 artifacts.
+
+Urgent human missions run ahead of autonomous background research while still yielding to direct
+urgent media/tool tasks. Resource pressure pauses model-heavy work, but a runnable deterministic
+workspace, packaging, publication, distillation, or submission step may continue because it does
+not load the coder model. These mechanical steps use fixed auditable reason summaries instead of
+spending an extra model call. Creative architecture, implementation, review, improvement, and
+repair-capable validation steps retain model inference, resource throttling, and all three review
+rounds.
 
 ## 7. Acceptance gates
 

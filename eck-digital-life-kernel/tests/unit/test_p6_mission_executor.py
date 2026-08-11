@@ -75,7 +75,7 @@ async def test_dialogue_compiles_website_request_into_durable_mission(applicatio
     assert result["pending"] is True
     assert mission.progress["execution_kind"] == "software_project"
     assert [step.step_key for step in steps] == EXPECTED_WEBSITE_STEPS
-    assert mission.progress["executor"] == "p6-durable-react.v2"
+    assert mission.progress["executor"] == "p6-durable-react.v3"
     assert mission.progress["step_count"] == 24
 
 
@@ -463,12 +463,78 @@ def test_only_human_approved_patterns_are_reused(application) -> None:
 
 def test_dashboard_preserves_active_review_draft() -> None:
     source = Path(__file__).parents[2].joinpath(
-        "src", "eck", "dashboard", "app.js"
+        "src", "eck", "dashboard", "src", "workspace_state.ts"
     ).read_text(encoding="utf-8")
 
-    assert "eck-mission-drafts-v1" in source
-    assert "document.activeElement?.closest(\".mission-review-form\")" in source
-    assert 'document.addEventListener("input"' in source
+    assert "WorkspaceDraftStore" in source
+    assert "localStorage" in source
+    assert "capture(scope" in source
+
+
+@pytest.mark.asyncio
+async def test_mechanical_site_repair_is_local_and_non_degrading(application) -> None:
+    mission = await application.missions.create(
+        MissionCreate(
+            title="建立旅行圖片網站",
+            objective="建立一個包含旅遊圖片與互動的旅行網站",
+            completion_requirements="本機引用、可及性與品質契約全部通過",
+            priority="urgent",
+            execution_kind="software_project",
+        )
+    )
+    await run_steps(application, 6)
+    source = application.mission_executor._source_dir(mission.mission_id)
+    index = source.joinpath("index.html")
+    markup = index.read_text(encoding="utf-8").replace(' aria-live="polite"', "")
+    markup = markup.replace(
+        "</main>",
+        '<section><h2>旅行相簿</h2><img src="adventure-travel.jpg" '
+        'alt="旅行風景"></section></main>',
+    )
+    index.write_text(markup, encoding="utf-8")
+    compact_css = """
+:root { --a:#14221b; --b:#f4f0e7; --c:#ef6c42; --d:#b8ef5a; }
+body { display:flex; flex-direction:column; margin:0; color:var(--a); background:var(--b); }
+button { transition:transform .2s ease; }
+button:hover { transform:translateY(-2px); }
+button:focus-visible { outline:3px solid var(--d); }
+@media (max-width: 800px) { body { display:block; } }
+""" + "/* useful spacing reserve */\n" * 35
+    source.joinpath("styles.css").write_text(compact_css, encoding="utf-8")
+
+    before = application.mission_executor._validate_site(source, mission)
+    repair = await application.mission_executor._repair_site(
+        mission,
+        source,
+        "; ".join(before["issues"]),
+    )
+    after = application.mission_executor._validate_site(source, mission)
+
+    assert before["success"] is False
+    assert repair["model"] == "deterministic-site-contract-repair.v1"
+    assert repair["quality_after"] >= repair["quality_before"]
+    assert after["success"] is True
+    assert source.joinpath("assets", "adventure-travel.svg").is_file()
+
+
+@pytest.mark.asyncio
+async def test_urgent_mission_is_visible_to_foreground_scheduler(application) -> None:
+    await application.missions.create(
+        MissionCreate(
+            title="建立急件網站",
+            objective="建立一個需要立即執行的完整網站",
+            completion_requirements="通過全部持久化步驟",
+            priority="urgent",
+            execution_kind="software_project",
+        )
+    )
+
+    assert application.mission_executor.has_urgent_runnable_work() is True
+    assert application.mission_executor.has_urgent_low_resource_work() is True
+    await application.mission_executor.run_next()
+    assert application.mission_executor.has_urgent_low_resource_work() is False
+    await run_mission(application)
+    assert application.mission_executor.has_urgent_runnable_work() is False
 
 
 def test_legacy_p6_upgrade_adds_architecture_before_review(application) -> None:
@@ -524,7 +590,7 @@ def test_legacy_p6_upgrade_adds_architecture_before_review(application) -> None:
 
     assert upgraded == 1
     assert refreshed.status is MissionStatus.ACTIVE
-    assert refreshed.progress["executor"] == "p6-durable-react.v2"
+    assert refreshed.progress["executor"] == "p6-durable-react.v3"
     assert refreshed.progress["execution_kind"] == "software_project"
     assert keys.index("reference.research.v2") < keys.index("architecture.design.v2")
     assert keys.index("architecture.design.v2") < keys.index("architecture.plan.v2")

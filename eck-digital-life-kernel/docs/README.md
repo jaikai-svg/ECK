@@ -39,6 +39,11 @@
 26. [P4 Auditable Self-Model and Evolution](26-p4-auditable-self-model-and-evolution.md)
 27. [P5 Verified Recursive Self-Development](27-p5-verified-recursive-self-development.md)
 28. [P6 Durable Mission Executor](28-p6-durable-mission-executor.md)
+29. [P7 ECK Federation](29-p7-eck-federation.md)
+30. [Open-source Capability Acquisition](30-open-source-capability-acquisition.md)
+31. [Architecture Stabilization Baseline](31-architecture-stabilization.md)
+32. [ECK Workspace Architecture](32-eck-workspace.md)
+33. [ECK Workspace Phase 2](33-eck-workspace-phase2.md)
 
 ## v0.2 開發規格下載
 

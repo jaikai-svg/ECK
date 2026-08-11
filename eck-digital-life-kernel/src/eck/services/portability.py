@@ -40,6 +40,7 @@ class CognitiveBundleService:
         stage.mkdir(parents=True, exist_ok=False)
         try:
             self._backup_database(stage / "data" / "eck.db")
+            self._backup_rag_database(stage / "memory" / "eck-rag.sqlite3")
             self._copy_generated_skills(stage / "runtime_skills")
             self._copy_cognitive_identity(stage / "identity")
             self._copy_evolution_metadata(stage / "evolution")
@@ -118,6 +119,17 @@ class CognitiveBundleService:
         target.parent.mkdir(parents=True, exist_ok=True)
         with (
             sqlite3.connect(self.settings.database_path) as source,
+            sqlite3.connect(target) as destination,
+        ):
+            source.backup(destination)
+
+    def _backup_rag_database(self, target: Path) -> None:
+        assert self.settings.rag_database_path is not None
+        if not self.settings.rag_database_path.is_file():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with (
+            sqlite3.connect(self.settings.rag_database_path) as source,
             sqlite3.connect(target) as destination,
         ):
             source.backup(destination)
@@ -207,6 +219,10 @@ class CognitiveBundleService:
                 "runtime_skills": len(self.store.list_runtime_skills(limit=10000)),
                 "learning_themes": len(self.store.list_learning_themes(limit=10000)),
                 "skill_graph_rebuildable": True,
+                "portable_rag_database": bool(
+                    self.settings.rag_database_path
+                    and self.settings.rag_database_path.is_file()
+                ),
                 "soul_and_lineage": True,
                 "repository_self_model": self.settings.self_model_path.is_file(),
             },
@@ -217,6 +233,10 @@ class CognitiveBundleService:
             "capabilities": [item["name"] for item in self.registry.list()],
             "included": {
                 "database": True,
+                "portable_rag_database": bool(
+                    self.settings.rag_database_path
+                    and self.settings.rag_database_path.is_file()
+                ),
                 "generated_skill_source": True,
                 "identity_and_lineage": True,
                 "evolution_candidate_metadata": True,

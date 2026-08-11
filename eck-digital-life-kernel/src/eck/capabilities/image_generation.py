@@ -93,9 +93,17 @@ class ImageGenerationCapability(Capability):
                 / "control_v11p_sd15_openpose.pth"
             ).is_file(),
         }
+        installed_ready = all(checks.values())
         return {
             "enabled": self.settings.image_generation_enabled,
-            "available": self.settings.image_generation_enabled and all(checks.values()),
+            "available": self.settings.image_generation_enabled and installed_ready,
+            "installed_ready": installed_ready,
+            "runtime_ready": api_ready,
+            "runtime_state": (
+                "warm"
+                if api_ready
+                else "available_on_demand" if installed_ready else "unavailable"
+            ),
             "backend": "forge",
             "local_only": True,
             "paid_api": False,
@@ -205,6 +213,7 @@ class ImageGenerationCapability(Capability):
         planner_inference: dict[str, Any] = {}
         model_alias = str(action.payload.get("model", "")).strip()
         use_adetailer = bool(action.payload.get("use_adetailer", False))
+        user_request = ""
         try:
             self._set_activity("planning_prompt")
             user_request = str(action.payload.get("user_request", "")).strip()
@@ -240,6 +249,7 @@ class ImageGenerationCapability(Capability):
             else:
                 prompt = str(action.payload.get("prompt", "")).strip()[:1200]
                 if len(prompt) < 3:
+                    self._set_activity("idle")
                     return self._failure(
                         action, started, "A descriptive image prompt is required."
                     )
@@ -255,9 +265,40 @@ class ImageGenerationCapability(Capability):
                         "use_adetailer", self._prompt_depicts_people(prompt)
                     )
                 )
-        except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+        except (RuntimeError, httpx.HTTPError) as exc:
+            if not user_request:
+                self._set_activity("idle")
+                return self._failure(action, started, f"Image prompt planning failed: {exc}")
+            plan = self._fallback_prompt_plan(user_request)
+            direct_prompt = f"{user_request}, {plan['prompt']}"
+            prompt = self._quality_prompt(direct_prompt, adult=adult_request)
+            negative_prompt = self._negative_prompt(
+                str(plan.get("negative_prompt", "")),
+                adult=adult_request,
+                request=user_request,
+            )
+            model_alias = (
+                model_alias
+                or self._requested_model_alias(user_request)
+                or self._recommended_model_alias(user_request)
+                or str(plan.get("model", ""))
+            )
+            use_adetailer = bool(
+                action.payload.get(
+                    "use_adetailer",
+                    plan.get("use_adetailer", self._prompt_depicts_people(prompt)),
+                )
+            ) and self._prompt_depicts_people(user_request)
+            planner_model = "deterministic-direct-prompt-fallback.v1"
+            planner_inference = {
+                "fallback": True,
+                "reason": str(exc)[:500],
+            }
+        except ValueError as exc:
+            self._set_activity("idle")
             return self._failure(action, started, f"Image prompt planning failed: {exc}")
         if len(prompt) < 3:
+            self._set_activity("idle")
             return self._failure(action, started, "A descriptive image prompt is required.")
 
         width = self._dimension(action.payload.get("width", 512))

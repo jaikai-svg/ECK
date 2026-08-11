@@ -276,11 +276,8 @@ async def test_skill_bridge_repairs_failed_candidate_with_bounded_attempts(
     application,
     monkeypatch,
 ) -> None:
-    async def available_worker() -> dict[str, object]:
-        return {"available": True, "detail": "ready"}
-
-    async def image_available() -> bool:
-        return True
+    async def worker_ready(*, force: bool = False) -> dict[str, object]:
+        return {"success": True, "force": force}
 
     failed = application.store.add_runtime_skill(
         RuntimeSkillManifest(
@@ -295,19 +292,20 @@ async def test_skill_bridge_repairs_failed_candidate_with_bounded_attempts(
         source="eck-generated",
         status=RuntimeSkillStatus.FAILED,
     )
-    repaired = application.store.add_runtime_skill(
-        failed.manifest.model_copy(update={"version": "0.1.1"}),
-        source_dir=str(application.settings.workspace_dir / "repaired"),
-        source="eck-generated",
-        status=RuntimeSkillStatus.ACTIVE,
+    repaired = failed.model_copy(
+        update={
+            "runtime_skill_id": "runtime-skill_repaired",
+            "manifest": failed.manifest.model_copy(update={"version": "0.1.1"}),
+            "source_dir": str(application.settings.workspace_dir / "repaired"),
+            "status": RuntimeSkillStatus.ACTIVE,
+        }
     )
 
     async def repair(runtime_skill_id: str):
         assert runtime_skill_id == failed.runtime_skill_id
         return repaired
 
-    monkeypatch.setattr(application.worker, "health", available_worker)
-    monkeypatch.setattr(application.worker, "image_available", image_available)
+    monkeypatch.setattr(application.forge, "ensure_worker_image", worker_ready)
     monkeypatch.setattr(application.forge, "repair_failed_skill", repair)
 
     result = await application.skill_bridge.run_if_needed(force=True)
