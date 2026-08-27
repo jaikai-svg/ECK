@@ -209,6 +209,9 @@ tempCodeRunnerFile.py
 # Local ECK model caches
 .eck-model-cache/
 
+# Local release artifacts are reproducible and must not block clean-tree evolution gates
+/deliverables/
+
 # PyPI configuration file
 .pypirc
 
