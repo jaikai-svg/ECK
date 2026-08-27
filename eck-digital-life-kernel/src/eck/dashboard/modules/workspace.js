@@ -1,5 +1,6 @@
 import { request } from "./http.js";
 import { bindSystemControls } from "./system_controls.js";
+import { renderSleepRun } from "./workspace_quality.js";
 import { ChatComponent, concise, escapeHtml, formatBytes, HomeComponent, LibraryComponent, ProjectListComponent, SkillComponent, } from "./workspace_components.js";
 import { ConversationStore, WorkspaceDraftStore, } from "./workspace_state.js";
 import { LibraryDomainComponent, renderArchiveStatus, ResultCenterComponent, } from "./workspace_phase2.js";
@@ -21,7 +22,7 @@ const skillComponent = new SkillComponent();
 const resultComponent = new ResultCenterComponent();
 const libraryDomainComponent = new LibraryDomainComponent();
 let homeState = null;
-let projectOffset = 0;
+let projectLoadedCount = 0;
 let projectNextOffset = null;
 let projectFilter = "";
 let refreshTimer = null;
@@ -93,6 +94,7 @@ async function loadResults(append) {
     const filters = [
         "artifact_type",
         "status",
+        "storage_state",
         "project_id",
         "skill_id",
         "q",
@@ -216,14 +218,15 @@ async function loadHome() {
     updateUptime();
 }
 async function loadProjects(append = false, force = false) {
-    if (!append && !force && projectOffset > 0)
-        return;
     const offset = append ? projectNextOffset ?? 0 : 0;
+    const limit = append ? 12 : force ? Math.min(48, Math.max(12, projectLoadedCount)) : 12;
     const status = projectFilter ? `&status=${encodeURIComponent(projectFilter)}` : "";
-    const data = await request(`/v1/workspace/projects?limit=12&offset=${offset}${status}`);
+    const data = await request(`/v1/workspace/projects?limit=${limit}&offset=${offset}${status}`);
     if (!data)
         return;
-    projectOffset = data.page.offset;
+    projectLoadedCount = append
+        ? projectLoadedCount + data.items.length
+        : data.items.length;
     projectNextOffset = data.page.next_offset;
     projectComponent.render(data.items, append);
     const count = element("#project-count");
@@ -253,6 +256,23 @@ async function openProject(projectId) {
     }
 }
 function bindProjectDetailForms(projectId) {
+    const edit = element("#project-edit-form");
+    if (edit) {
+        const scope = `project-edit:${projectId}`;
+        drafts.restore(scope, edit);
+        edit.addEventListener("input", () => drafts.capture(scope, edit));
+        edit.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void submitProjectEdit(edit, scope, projectId);
+        });
+    }
+    document.querySelectorAll("[data-rollback-project]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const revisionId = button.dataset.revisionId;
+            if (revisionId)
+                void rollbackProject(projectId, revisionId);
+        });
+    });
     const review = element("#project-review-form");
     if (review) {
         const scope = `project-review:${projectId}`;
@@ -276,6 +296,54 @@ function bindProjectDetailForms(projectId) {
             toast(`重新執行失敗：${errorMessage(error)}`);
         }
     });
+}
+async function submitProjectEdit(form, scope, projectId) {
+    const values = new FormData(form);
+    const targetMonth = String(values.get("target_month") ?? "").trim();
+    setFormBusy(form, true);
+    try {
+        await request(`/v1/missions/${projectId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+                title: String(values.get("title") ?? ""),
+                objective: String(values.get("objective") ?? ""),
+                completion_requirements: String(values.get("completion_requirements") ?? ""),
+                priority: String(values.get("priority") ?? "normal"),
+                target_month: targetMonth || null,
+                edit_reason: String(values.get("edit_reason") ?? ""),
+            }),
+        });
+        drafts.clear(scope);
+        toast("專案修改已保存，可從編輯歷史回滾。");
+        await Promise.all([openProject(projectId), loadProjects(false, true), loadHome()]);
+    }
+    catch (error) {
+        toast(`修改失敗：${errorMessage(error)}；草稿仍已保存。`);
+    }
+    finally {
+        setFormBusy(form, false);
+    }
+}
+async function rollbackProject(projectId, revisionId) {
+    const reason = window.prompt("請輸入回滾原因", "使用先前已保存的專案版本");
+    if (reason === null)
+        return;
+    if (reason.trim().length < 3) {
+        toast("回滾原因至少需要 3 個字元。");
+        return;
+    }
+    try {
+        await request(`/v1/missions/${projectId}/revisions/${revisionId}/rollback`, {
+            method: "POST",
+            body: JSON.stringify({ reason: reason.trim() }),
+        });
+        drafts.clear(`project-edit:${projectId}`);
+        toast("專案已回滾，且保留新的回滾紀錄。");
+        await Promise.all([openProject(projectId), loadProjects(false, true), loadHome()]);
+    }
+    catch (error) {
+        toast(`回滾失敗：${errorMessage(error)}`);
+    }
 }
 async function submitProjectReview(form, scope, approved) {
     const feedback = String(new FormData(form).get("feedback") ?? "").trim();
@@ -416,12 +484,15 @@ function hideCommandMenu() {
     input?.setAttribute("aria-expanded", "false");
 }
 async function loadSystemSummary() {
-    const [data, archive] = await Promise.all([
+    const [data, archive, sleep] = await Promise.all([
         request("/v1/workspace/system"),
         request("/v1/workspace/archive/status"),
+        request("/v1/kernel/sleep/status"),
     ]);
+    renderSleepRun(sleep?.run);
     const services = data?.services;
     const resources = data?.resources;
+    const evolution = data?.evolution;
     const target = element("#system-summary");
     if (!target || !services || !resources)
         return;
@@ -437,6 +508,11 @@ async function loadSystemSummary() {
         ["可用記憶體", formatBytes(memory?.available_bytes)],
         ["磁碟可用", formatBytes(disk?.free_bytes)],
         ["ECK 專案", project?.available ? formatBytes(project.logical_bytes) : "尚未測量"],
+        ["演化交易", evolution?.transaction_count ?? 0],
+        [
+            "最新演化",
+            evolution?.latest?.status ?? "尚無交易",
+        ],
     ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`).join("");
     if (archive)
         renderArchiveStatus(archive);
@@ -570,10 +646,18 @@ function bindEvents() {
         }
         const restore = event.target.closest("[data-restore-artifact]");
         if (restore?.dataset.restoreArtifact) {
-            void request(`/v1/workspace/results/${restore.dataset.restoreArtifact}/restore`, {
+            const artifactId = restore.dataset.restoreArtifact;
+            void request(`/v1/workspace/results/${artifactId}/restore`, {
                 method: "POST",
-            }).then(() => toast("成果已驗證並還原至本機快取。"))
+            }).then(async () => {
+                toast("成果已驗證並還原至本機快取。");
+                await openResult(artifactId);
+            })
                 .catch((error) => toast(errorMessage(error)));
+        }
+        const remove = event.target.closest("[data-delete-artifact]");
+        if (remove?.dataset.deleteArtifact) {
+            void deleteArtifact(remove.dataset.deleteArtifact);
         }
     });
     const createDialog = element("#project-create-dialog");
@@ -598,7 +682,7 @@ function bindEvents() {
     });
     element("#project-filter")?.addEventListener("change", (event) => {
         projectFilter = event.currentTarget.value;
-        projectOffset = 0;
+        projectLoadedCount = 0;
         projectNextOffset = null;
         void loadProjects(false, true);
     });
@@ -631,7 +715,40 @@ function bindEvents() {
     element("#load-more-skills")?.addEventListener("click", () => {
         void loadSkills(true);
     });
-    bindSystemControls(request, async () => loadHome(), setConnection, toast);
+    bindSystemControls(request, async () => {
+        await loadHome();
+        if (currentView() === "more")
+            await loadSystemSummary();
+    }, setConnection, toast);
+}
+async function deleteArtifact(artifactId) {
+    try {
+        const plan = await request(`/v1/workspace/results/${artifactId}/deletion-plan?include_derived=true`);
+        if (!plan)
+            return;
+        if (!plan.deletable) {
+            toast(`目前不能刪除：${plan.blockers.join("、")}`);
+            return;
+        }
+        const confirmation = window.prompt(`將徹底刪除 ${plan.artifact_ids.length} 項索引及本機、NAS、快取與衍生檔案。請完整輸入成果名稱：`);
+        if (confirmation === null)
+            return;
+        await request(`/v1/workspace/results/${artifactId}`, {
+            method: "DELETE",
+            body: JSON.stringify({
+                plan_sha256: plan.plan_sha256,
+                confirm_title: confirmation,
+                include_derived: true,
+            }),
+        });
+        element("#result-detail-dialog")?.close();
+        toast("成果與可追溯衍生檔案已徹底刪除。");
+        resultNextOffset = null;
+        await Promise.all([loadResults(false), loadHome()]);
+    }
+    catch (error) {
+        toast(`刪除失敗：${errorMessage(error)}`);
+    }
 }
 chatComponent.render(conversations.list());
 bindEvents();

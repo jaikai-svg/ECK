@@ -30,6 +30,7 @@ test("workspace drafts survive store reconstruction", () => {
   first.set("project-review:1", "feedback", "請改善導覽");
 
   first.set("library-suggestion:book-1", "content", "重新查證第三章來源");
+  first.set("project-edit:project-1", "edit_reason", "修正驗收條件");
 
   const restored = new WorkspaceDraftStore("drafts", storage);
   assert.equal(restored.value("home-composer", "message"), "尚未送出的任務");
@@ -38,6 +39,10 @@ test("workspace drafts survive store reconstruction", () => {
   assert.equal(
     restored.value("library-suggestion:book-1", "content"),
     "重新查證第三章來源",
+  );
+  assert.equal(
+    restored.value("project-edit:project-1", "edit_reason"),
+    "修正驗收條件",
   );
   restored.clear("home-composer");
   assert.equal(restored.value("home-composer", "message"), "");

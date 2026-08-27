@@ -156,7 +156,8 @@
         <form class="result-toolbar" id="result-filter-form">
           <input name="q" maxlength="200" placeholder="搜尋成果標題或來源 ID">
           <select name="artifact_type"><option value="">所有類型</option><option value="application">應用程式</option><option value="project">專案</option><option value="image">圖片</option><option value="video">影片</option><option value="document">文件</option><option value="presentation">簡報</option><option value="dataset">資料集</option><option value="package">封裝</option><option value="book">書籍</option></select>
-          <select name="status"><option value="">所有狀態</option><option value="available">可用</option><option value="archived">已封存</option></select>
+          <select name="status"><option value="">所有成果狀態</option><option value="available">可用</option></select>
+          <select name="storage_state"><option value="">所有儲存位置</option><option value="local">僅本機</option><option value="local+nas">本機與 NAS</option><option value="nas">僅 NAS</option><option value="cache">本機快取</option></select>
           <input name="project_id" maxlength="200" placeholder="專案 ID">
           <input name="skill_id" maxlength="200" placeholder="技能 ID">
           <input name="created_from" type="date" aria-label="起始日期">
@@ -213,6 +214,12 @@
               <button class="secondary-button" type="button" data-action="sleep">睡眠整理</button>
               <button class="danger-button" id="shutdown-eck" type="button">完整關閉 ECK</button>
             </div>
+            <div class="sleep-status" aria-live="polite">
+              <div><span>狀態</span><b id="sleep-state">尚未執行</b></div>
+              <div><span>真實階段</span><b id="sleep-phase">沒有睡眠整理紀錄</b></div>
+              <div><span>執行結果</span><b id="sleep-result">按下後才會建立執行紀錄</b></div>
+              <div><span>資料變化</span><b id="sleep-changes">尚無變化</b></div>
+            </div>
           </article>
           <article class="surface link-surface">
             <header class="surface-heading"><div><h2>進階功能</h2><p>Phase 2 將把 Federation、事件與模型管理整合為漸進式細節頁。</p></div></header>
@@ -258,6 +265,6 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/static/modules/workspace.js?v=32"></script>
+  <script type="module" src="/static/modules/workspace.js?v=34"></script>
 </body>
 </html>

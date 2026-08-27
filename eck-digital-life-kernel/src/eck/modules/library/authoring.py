@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from eck.config import Settings
 from eck.domain.enums import TaskStatus
 from eck.domain.models import MissionCreate, TaskRecord
+from eck.modules.library.quality import normalize_claim, unresolved_questions
 from eck.services.missions import MissionService
 from eck.storage.sqlite import SQLiteStore
 
@@ -84,8 +85,11 @@ class LibraryAuthoringService:
         explicit = {str(item) for item in selector.get("knowledge_ids", [])}
         prefixes = tuple(str(item) for item in selector.get("capability_prefixes", []))
         query = str(selector.get("query", "")).casefold().strip()
-        count = 0
-        for item in self.store.list_knowledge(limit=10000):
+        knowledge = self.store.list_knowledge(limit=10000)
+        existing_ids = self.store.list_domain_knowledge_ids(domain_id)
+        existing_rank = {knowledge_id: index for index, knowledge_id in enumerate(existing_ids)}
+        grouped: dict[str, list[Any]] = {}
+        for item in knowledge:
             if not item.admitted:
                 continue
             selected = item.knowledge_id in explicit
@@ -94,9 +98,18 @@ class LibraryAuthoringService:
                 query and query in f"{item.capability} {item.claim}".casefold()
             )
             if selected:
-                self.store.bind_domain_card(domain_id, item.knowledge_id)
-                count += 1
-        return count
+                grouped.setdefault(normalize_claim(item.claim), []).append(item)
+        selected_ids: list[str] = []
+        for candidates in grouped.values():
+            candidates.sort(
+                key=lambda item: (
+                    existing_rank.get(item.knowledge_id, len(existing_rank)),
+                    item.created_at,
+                )
+            )
+            selected_ids.append(candidates[0].knowledge_id)
+        self.store.replace_domain_cards(domain_id, selected_ids)
+        return len(selected_ids)
 
     def add_relation(
         self,
@@ -159,10 +172,15 @@ class LibraryAuthoringService:
             by_card.setdefault(str(relation["source_knowledge_id"]), []).append(relation)
             by_card.setdefault(str(relation["target_knowledge_id"]), []).append(relation)
         cards = []
+        seen_claims: set[str] = set()
         for knowledge_id in ids:
             item = knowledge.get(knowledge_id)
             if item is None or not item.admitted:
                 continue
+            claim_key = normalize_claim(item.claim)
+            if claim_key in seen_claims:
+                continue
+            seen_claims.add(claim_key)
             task = self._task(item.task_id)
             reflection = reflection_by_task.get(item.task_id)
             sources = self._sources(task)
@@ -186,8 +204,8 @@ class LibraryAuthoringService:
                     ),
                     "applicability": task.goal if task else "",
                     "counterexamples": failed_checks,
-                    "unresolved_questions": (
-                        [reflection.next_step] if reflection and reflection.next_step else []
+                    "unresolved_questions": unresolved_questions(
+                        reflection.next_step if reflection else ""
                     ),
                     "verification_status": item.outcome.value,
                     "created_at": item.created_at.isoformat(),

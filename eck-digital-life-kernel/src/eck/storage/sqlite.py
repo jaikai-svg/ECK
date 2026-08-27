@@ -9,17 +9,21 @@ from pathlib import Path
 from eck.core.time import iso_now
 from eck.storage.repositories.common import GENESIS_HASH
 from eck.storage.repositories.event_tasks import EventTaskRepositoryMixin
+from eck.storage.repositories.evolution_transactions import EvolutionTransactionRepositoryMixin
 from eck.storage.repositories.learning import LearningRepositoryMixin
 from eck.storage.repositories.missions import MissionRepositoryMixin
 from eck.storage.repositories.runtime_research import RuntimeResearchRepositoryMixin
 from eck.storage.repositories.workspace_phase2 import WorkspacePhase2RepositoryMixin
+from eck.storage.repositories.workspace_quality import WorkspaceQualityRepositoryMixin
 
 
 class SQLiteStore(
     EventTaskRepositoryMixin,
+    EvolutionTransactionRepositoryMixin,
     LearningRepositoryMixin,
     MissionRepositoryMixin,
     RuntimeResearchRepositoryMixin,
+    WorkspaceQualityRepositoryMixin,
     WorkspacePhase2RepositoryMixin,
 ):
     """Small, explicit persistence layer with a tamper-evident event chain."""
@@ -615,6 +619,119 @@ class SQLiteStore(
                 );
                 CREATE INDEX IF NOT EXISTS idx_library_suggestions_book
                     ON library_suggestions(book_id, status, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS mission_revisions (
+                    revision_id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    before_json TEXT NOT NULL,
+                    after_json TEXT NOT NULL,
+                    changed_fields_json TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    rollback_of_revision_id TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(mission_id, revision),
+                    FOREIGN KEY(mission_id) REFERENCES missions(mission_id),
+                    FOREIGN KEY(rollback_of_revision_id)
+                        REFERENCES mission_revisions(revision_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_mission_revisions_mission
+                    ON mission_revisions(mission_id, revision DESC);
+
+                CREATE TABLE IF NOT EXISTS sleep_runs (
+                    run_id TEXT PRIMARY KEY,
+                    trigger_kind TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    before_json TEXT NOT NULL,
+                    after_json TEXT NOT NULL,
+                    changes_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    error TEXT NOT NULL,
+                    requested_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sleep_runs_latest
+                    ON sleep_runs(requested_at DESC, run_id);
+
+                CREATE TABLE IF NOT EXISTS artifact_deletion_runs (
+                    deletion_id TEXT PRIMARY KEY,
+                    artifact_id TEXT NOT NULL,
+                    artifact_title TEXT NOT NULL,
+                    plan_sha256 TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    artifact_ids_json TEXT NOT NULL,
+                    targets_json TEXT NOT NULL,
+                    deleted_bytes INTEGER NOT NULL,
+                    result_json TEXT NOT NULL,
+                    error TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_artifact_deletions_artifact
+                    ON artifact_deletion_runs(artifact_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS evolution_transactions (
+                    transaction_id TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    base_commit TEXT NOT NULL,
+                    base_tree_sha256 TEXT NOT NULL,
+                    candidate_tree_sha TEXT NOT NULL,
+                    patch_sha256 TEXT NOT NULL,
+                    manifest_sha256 TEXT NOT NULL,
+                    protected_paths_json TEXT NOT NULL,
+                    fixed_gates_json TEXT NOT NULL,
+                    approval_json TEXT NOT NULL,
+                    expected_commit_sha TEXT,
+                    previous_commit_sha TEXT,
+                    rollback_commit_sha TEXT,
+                    restart_nonce TEXT,
+                    error TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    approved_at TEXT,
+                    activation_requested_at TEXT,
+                    restart_verified_at TEXT,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_evolution_transactions_status
+                    ON evolution_transactions(status, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS evolution_evaluations (
+                    evaluation_id TEXT PRIMARY KEY,
+                    transaction_id TEXT NOT NULL,
+                    pack_id TEXT NOT NULL,
+                    pack_sha256 TEXT NOT NULL,
+                    baseline_json TEXT NOT NULL,
+                    candidate_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    verdict TEXT NOT NULL,
+                    improvement_score REAL NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(transaction_id)
+                        REFERENCES evolution_transactions(transaction_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_evolution_evaluations_transaction
+                    ON evolution_evaluations(transaction_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS evolution_boot_receipts (
+                    receipt_id TEXT PRIMARY KEY,
+                    transaction_id TEXT NOT NULL,
+                    expected_commit_sha TEXT NOT NULL,
+                    observed_commit_sha TEXT NOT NULL,
+                    boot_count INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(transaction_id)
+                        REFERENCES evolution_transactions(transaction_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_evolution_boot_receipts_transaction
+                    ON evolution_boot_receipts(transaction_id, created_at DESC);
                 """
             )
             self._ensure_column(conn, "tasks", "idempotency_key", "TEXT")

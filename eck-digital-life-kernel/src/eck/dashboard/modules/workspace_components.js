@@ -60,7 +60,8 @@ export class HomeComponent {
         this.text("kernel-phase", data.kernel.phase.toUpperCase());
         this.text("pending-work-count", String(data.kernel.pending_tasks));
         this.text("verified-experience-count", String(data.learning.verified_experiences));
-        this.text("verified-skill-count", String(data.learning.memory_skills + data.learning.runtime_skills));
+        this.text("verified-skill-count", String(data.learning.available_skills
+            ?? data.learning.memory_skills + data.learning.runtime_skills));
         this.renderActivity(activity, data.resources);
         this.renderProjects("running-projects", data.running_projects, "目前沒有執行中的專案。");
         this.renderProjects("recent-results", data.recent_results, "尚無可展示的近期成果。", true);
@@ -158,6 +159,31 @@ export class ProjectListComponent {
         const skillUsages = detail.skill_usages.map((usage) => `
       <li><b>${escapeHtml(usage.skill_name)}</b><span>v${escapeHtml(usage.skill_version)}</span><small>${escapeHtml(usage.verification_status)}</small></li>
     `).join("");
+        const mission = detail.mission;
+        const editable = !["approved", "cancelled"].includes(project.status);
+        const editForm = editable ? `
+      <details class="project-edit-panel">
+        <summary>編輯專案目標與驗收條件</summary>
+        <form id="project-edit-form" data-project-id="${escapeHtml(project.project_id)}">
+          <label>專案名稱<input name="title" minlength="3" maxlength="240" required value="${escapeHtml(mission.title ?? project.title)}"></label>
+          <label>目標<textarea name="objective" rows="4" minlength="3" maxlength="4000" required>${escapeHtml(mission.objective ?? project.objective)}</textarea></label>
+          <label>完成要求<textarea name="completion_requirements" rows="5" minlength="3" maxlength="8000" required>${escapeHtml(mission.completion_requirements ?? "")}</textarea></label>
+          <div class="project-edit-grid">
+            <label>優先度<select name="priority"><option value="normal" ${mission.priority === "urgent" ? "" : "selected"}>一般</option><option value="urgent" ${mission.priority === "urgent" ? "selected" : ""}>緊急</option></select></label>
+            <label>目標月份<input type="month" name="target_month" value="${escapeHtml(mission.target_month ?? "")}"></label>
+          </div>
+          <label>修改原因<input name="edit_reason" minlength="3" maxlength="1000" required placeholder="說明這次修改的原因"></label>
+          <div class="dialog-actions"><button class="primary-button" type="submit">保存可回滾版本</button></div>
+        </form>
+      </details>
+    ` : "";
+        const editRevisions = detail.edit_revisions.map((revision) => `
+      <li>
+        <div><b>編輯版本 ${escapeHtml(revision.revision)}</b><small>${formatTime(revision.created_at)} · ${escapeHtml(revision.actor)}</small></div>
+        <p>${escapeHtml(revision.reason)}<br><span>${escapeHtml(revision.changed_fields.join("、"))}</span></p>
+        ${editable ? `<button class="secondary-button" type="button" data-rollback-project="${escapeHtml(project.project_id)}" data-revision-id="${escapeHtml(revision.revision_id)}">回滾到修改前</button>` : ""}
+      </li>
+    `).join("");
         const review = project.status === "awaiting_review" ? `
       <form id="project-review-form" data-project-id="${escapeHtml(project.project_id)}">
         <label>驗收意見<textarea name="feedback" rows="4" maxlength="4000" placeholder="草稿會自動保存，直到成功送出。"></textarea></label>
@@ -174,7 +200,9 @@ export class ProjectListComponent {
         <div><span class="status-chip" data-state="${escapeHtml(project.status)}">${escapeHtml(statusLabel(project.status))}</span><h2>${escapeHtml(project.title)}</h2><p>${escapeHtml(project.objective)}</p></div>
         <div class="project-score"><b>${project.progress_percent}%</b><small>真實完成度</small></div>
       </header>
-      <div class="project-detail-meta"><span>更新 ${formatTime(project.updated_at)}</span><span>修訂 ${project.revision}</span><span>工作區 ${formatBytes(detail.workspace_bytes)}</span></div>
+      <div class="project-detail-meta"><span>更新 ${formatTime(project.updated_at)}</span><span>執行修訂 ${project.revision}</span><span>編輯版本 ${detail.edit_revisions.length}</span><span>工作區 ${formatBytes(detail.workspace_bytes)}</span></div>
+      ${editForm}
+      ${editRevisions ? `<section><div class="section-heading"><h3>可回滾編輯歷史</h3><span>${detail.edit_revisions.length} 版</span></div><ul class="project-edit-revisions">${editRevisions}</ul></section>` : ""}
       ${detail.artifacts.length ? `<section><div class="section-heading"><h3>成果</h3></div><div class="artifact-grid">${artifactMarkup(detail.artifacts)}</div></section>` : ""}
       <section><div class="section-heading"><h3>真實使用技能</h3><span>${detail.skill_usages.length} 筆</span></div>${skillUsages ? `<ul class="usage-list">${skillUsages}</ul>` : '<div class="empty-state"><p>這個專案沒有實際 Runtime Skill Worker 紀錄。</p></div>'}</section>
       <section><div class="section-heading"><h3>任務拆解</h3><span>${detail.steps.length} steps</span></div><ol class="step-timeline">${steps || "<li><div><b>等待 ECK 建立計畫</b></div></li>"}</ol></section>

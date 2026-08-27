@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 from typing import Annotated
 
 import httpx
@@ -10,7 +12,12 @@ import uvicorn
 from rich import print
 
 from eck.config import Settings
-from eck.runtime.shutdown import clear_shutdown_request, shutdown_requested
+from eck.runtime.shutdown import (
+    clear_restart_request,
+    clear_shutdown_request,
+    restart_requested,
+    shutdown_requested,
+)
 
 app = typer.Typer(
     name="eck",
@@ -34,10 +41,12 @@ def serve(
 ) -> None:
     """Run the local API and dashboard."""
     settings = Settings()
-    asyncio.run(_serve(settings, host=host, port=port))
+    should_restart = asyncio.run(_serve(settings, host=host, port=port))
+    if should_restart:
+        _replace_server_process(settings, host=host, port=port)
 
 
-async def _serve(settings: Settings, *, host: str | None, port: int | None) -> None:
+async def _serve(settings: Settings, *, host: str | None, port: int | None) -> bool:
     clear_shutdown_request()
     server = uvicorn.Server(
         uvicorn.Config(
@@ -55,7 +64,29 @@ async def _serve(settings: Settings, *, host: str | None, port: int | None) -> N
             server.should_exit = True
         await server_task
     finally:
+        should_restart = restart_requested()
         clear_shutdown_request()
+        clear_restart_request()
+    return should_restart
+
+
+def _replace_server_process(
+    settings: Settings,
+    *,
+    host: str | None,
+    port: int | None,
+) -> None:
+    arguments = [
+        sys.executable,
+        "-m",
+        "eck.cli",
+        "serve",
+        "--host",
+        host or settings.bind_host,
+        "--port",
+        str(port or settings.bind_port),
+    ]
+    os.execv(sys.executable, arguments)
 
 
 @app.command()

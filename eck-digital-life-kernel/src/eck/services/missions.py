@@ -142,11 +142,42 @@ class MissionService:
         mission = self.store.get_mission(mission_id)
         if mission.status in {MissionStatus.APPROVED, MissionStatus.CANCELLED}:
             raise ValueError("Approved or cancelled missions are immutable.")
-        updated = self.store.update_mission(mission_id, update)
+        updated = self.store.update_mission(mission_id, update, actor="user")
+        changed_fields = sorted(
+            field for field in update.model_fields_set if field != "edit_reason"
+        )
         await self.events.publish(
             "MissionUpdated",
             mission_id,
-            {"fields": sorted(update.model_fields_set)},
+            {
+                "fields": changed_fields,
+                "reason": update.edit_reason,
+                "revision": len(self.store.list_mission_revisions(mission_id)),
+            },
+            correlation_id=mission_id,
+        )
+        return updated
+
+    async def rollback_revision(
+        self,
+        mission_id: str,
+        revision_id: str,
+        *,
+        reason: str,
+    ) -> MissionRecord:
+        mission = self.store.get_mission(mission_id)
+        if mission.status in {MissionStatus.APPROVED, MissionStatus.CANCELLED}:
+            raise ValueError("Approved or cancelled missions are immutable.")
+        updated = self.store.rollback_mission_revision(
+            mission_id,
+            revision_id,
+            reason=reason,
+            actor="user",
+        )
+        await self.events.publish(
+            "MissionRevisionRolledBack",
+            mission_id,
+            {"revision_id": revision_id, "reason": reason},
             correlation_id=mission_id,
         )
         return updated

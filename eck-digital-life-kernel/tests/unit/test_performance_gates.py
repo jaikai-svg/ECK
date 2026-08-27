@@ -134,9 +134,10 @@ def test_workspace_frontend_obeys_idle_request_and_bundle_budgets() -> None:
         dashboard / "modules" / "workspace_types.js",
         dashboard / "modules" / "http.js",
         dashboard / "modules" / "system_controls.js",
+        dashboard / "modules" / "workspace_quality.js",
     )
 
-    assert '/static/modules/workspace.js?v=32' in index
+    assert '/static/modules/workspace.js?v=34' in index
     assert '/static/app.js' not in index
     assert not (dashboard / "app.js").exists()
     assert source.count('request<WorkspaceHome>("/v1/workspace/home")') == budget[

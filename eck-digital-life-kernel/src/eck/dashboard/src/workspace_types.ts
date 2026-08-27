@@ -24,6 +24,7 @@ export interface ProjectSummary {
   result_summary: string;
   review_feedback: string;
   revision: number;
+  edit_revision_count?: number;
   artifacts: ArtifactLink[];
 }
 
@@ -57,6 +58,9 @@ export interface WorkspaceHome {
     knowledge_items: number;
     memory_skills: number;
     runtime_skills: number;
+    available_skills?: number;
+    total_memory_skills?: number;
+    total_runtime_skills?: number;
   };
   resources: Record<string, unknown>;
   refresh: {
@@ -87,6 +91,19 @@ export interface ProjectDetail {
   workspace_bytes: number;
   thinking_policy: string;
   skill_usages: Array<Record<string, unknown>>;
+  edit_revisions: MissionEditRevision[];
+}
+
+export interface MissionEditRevision {
+  revision_id: string;
+  revision: number;
+  changed_fields: string[];
+  reason: string;
+  actor: string;
+  rollback_of_revision_id?: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface ChatResponse {
@@ -266,6 +283,32 @@ export interface ArchiveStatus {
     entries: number;
     in_use: number;
   };
+}
+
+export interface ArtifactDeletionPlan {
+  artifact_id: string;
+  artifact_title: string;
+  artifact_ids: string[];
+  targets: Array<Record<string, unknown>>;
+  blockers: string[];
+  deletable: boolean;
+  total_bytes: number;
+  plan_sha256: string;
+}
+
+export interface SleepRun {
+  run_id: string;
+  trigger_kind: string;
+  status: string;
+  phase: string;
+  before: Record<string, number>;
+  after: Record<string, number>;
+  changes: Record<string, number>;
+  result: Record<string, unknown>;
+  error: string;
+  requested_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 export type { ConversationMessage };

@@ -4,6 +4,7 @@ import ast
 import asyncio
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -17,6 +18,8 @@ from eck.core.ids import new_id
 from eck.core.time import utc_now
 from eck.domain.models import CoreCandidateRequest
 from eck.events.bus import EventBus
+from eck.services.evolution_policy import EvolutionProtectedSurfacePolicy
+from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.self_model import RepositorySelfModelService
 
 
@@ -29,13 +32,16 @@ class CoreEvolutionLabService:
         events: EventBus,
         brain: BrainProvider,
         self_model: RepositorySelfModelService,
+        transactions: EvolutionTransactionService | None = None,
         project_root: Path | None = None,
     ) -> None:
         self.settings = settings
         self.events = events
         self.brain = brain
         self.self_model = self_model
+        self.transactions = transactions
         self.project_root = (project_root or Path(__file__).resolve().parents[3]).resolve()
+        self.protected_policy = EvolutionProtectedSurfacePolicy(self.project_root)
         self.metadata_root = settings.evolution_dir / "core_candidates"
         self.metadata_root.mkdir(parents=True, exist_ok=True)
 
@@ -51,12 +57,14 @@ class CoreEvolutionLabService:
             "status_counts": counts,
             "latest": candidates[0] if candidates else None,
             "fixed_evaluator": "p4-fixed-v1",
-            "held_out_evaluation": "not_configured",
+            "held_out_evaluation": "required_before_human_approved_activation",
             "live_core_mutation": False,
+            "restart_activation_supported": self.transactions is not None,
             "activation_policy": "human_approval_required_after_all_fixed_gates_pass",
             "truthfulness": (
-                "A validated candidate is not an activated core update. P4 never merges or "
-                "hot-switches structural code automatically."
+                "A fixed-gate pass is not an improvement claim. Activation additionally requires "
+                "a pre-registered held-out evaluation, explicit human approval, an exact Git "
+                "tree match, a graceful restart, and a startup receipt."
             ),
         }
 
@@ -91,6 +99,7 @@ class CoreEvolutionLabService:
             raise RuntimeError("Core candidate creation requires a clean source tree.")
         repository_model = self.self_model.refresh()
         target_files = tuple(self._validate_relative_path(path) for path in request.target_files)
+        protected_paths = self.protected_policy.assert_candidate_allowed(list(target_files))
         for relative in target_files:
             target = self.project_root / relative
             if not target.is_file():
@@ -115,9 +124,35 @@ class CoreEvolutionLabService:
                 target_files,
                 changes,
             )
-            patch = self._git(checkout_root, "diff", "--binary", "--", ".")
+            changed_paths = [str(item["path"]) for item in changed_files]
+            self._git(candidate_project, "add", "--", *changed_paths)
+            staged_paths = {
+                item
+                for item in self._git(
+                    candidate_project,
+                    "diff",
+                    "--cached",
+                    "--name-only",
+                    "--relative",
+                    "--",
+                    ".",
+                ).splitlines()
+                if item
+            }
+            if staged_paths != set(changed_paths):
+                raise RuntimeError("Candidate staging included missing or unattributed paths.")
+            patch = self._git(
+                candidate_project,
+                "diff",
+                "--cached",
+                "--binary",
+                "--no-ext-diff",
+                "--",
+                ".",
+            )
             patch_path = metadata_dir / "candidate.patch"
-            patch_path.write_text(patch, encoding="utf-8")
+            patch_path.write_text(patch, encoding="utf-8", newline="")
+            patch_sha256 = hashlib.sha256(patch_path.read_bytes()).hexdigest()
             manifest = {
                 "schema_version": "eck-core-candidate.v1",
                 "candidate_id": candidate_id,
@@ -131,7 +166,9 @@ class CoreEvolutionLabService:
                 "rationale": rationale,
                 "proposed_tests": proposed_tests,
                 "model": model,
-                "patch_sha256": hashlib.sha256(patch.encode("utf-8")).hexdigest(),
+                "patch_sha256": patch_sha256,
+                "candidate_tree_sha": self._git(candidate_project, "write-tree").strip(),
+                "protected_paths": protected_paths,
                 "status": "drafted",
                 "created_at": utc_now().isoformat(),
                 "updated_at": utc_now().isoformat(),
@@ -140,6 +177,8 @@ class CoreEvolutionLabService:
                 "activated": False,
             }
             self._write_manifest(metadata_dir, manifest)
+            if self.transactions is not None:
+                self.transactions.observe_candidate(manifest)
             await self.events.publish(
                 "CoreCandidateDrafted",
                 candidate_id,
@@ -204,6 +243,8 @@ class CoreEvolutionLabService:
         )
         metadata_dir = self._candidate_metadata_dir(candidate_id)
         self._write_manifest(metadata_dir, manifest)
+        if self.transactions is not None:
+            self.transactions.observe_candidate(manifest)
         await self.events.publish(
             "CoreCandidateValidated" if passed else "CoreCandidateRejected",
             candidate_id,
@@ -336,10 +377,17 @@ class CoreEvolutionLabService:
         cwd: Path,
     ) -> dict[str, Any]:
         started = utc_now()
+        env = os.environ.copy()
+        source_path = str(cwd / "src")
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = source_path + (
+            os.pathsep + existing_pythonpath if existing_pythonpath else ""
+        )
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=cwd,
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )

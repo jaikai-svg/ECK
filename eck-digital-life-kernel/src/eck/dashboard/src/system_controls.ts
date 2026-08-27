@@ -1,3 +1,6 @@
+import { renderSleepRun, sleepView } from "./workspace_quality.js";
+import type { SleepRun } from "./workspace_types.js";
+
 type RequestFunction = (
   path: string,
   options?: RequestInit,
@@ -13,7 +16,14 @@ export function bindSystemControls(
     button.addEventListener("click", async () => {
       button.disabled = true;
       try {
-        await request(`/v1/kernel/${button.dataset.action}`, { method: "POST" });
+        const response = await request(
+          `/v1/kernel/${button.dataset.action}`,
+          { method: "POST" },
+        ) as { run?: SleepRun };
+        if (button.dataset.action === "sleep") {
+          renderSleepRun(response.run);
+          await followSleepRun(request);
+        }
         await refresh();
       } catch (error) {
         toast(`操作失敗：${errorMessage(error)}`);
@@ -43,6 +53,15 @@ export function bindSystemControls(
       }
     },
   );
+}
+
+async function followSleepRun(request: RequestFunction): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await request("/v1/kernel/sleep/status") as { run?: SleepRun | null };
+    renderSleepRun(response.run);
+    if (sleepView(response.run).terminal) return;
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
+  }
 }
 
 function errorMessage(error: unknown): string {

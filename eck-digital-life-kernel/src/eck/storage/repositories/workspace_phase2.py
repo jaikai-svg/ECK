@@ -41,6 +41,7 @@ class WorkspacePhase2RepositoryMixin(SQLiteRepositoryMixin):
                     mime_type = excluded.mime_type,
                     metadata_json = excluded.metadata_json,
                     integrity_status = excluded.integrity_status,
+                    created_at = excluded.created_at,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -84,6 +85,7 @@ class WorkspacePhase2RepositoryMixin(SQLiteRepositoryMixin):
         offset: int = 0,
         artifact_type: str = "",
         status: str = "",
+        storage_state: str = "",
         project_id: str = "",
         skill_id: str = "",
         query: str = "",
@@ -98,14 +100,17 @@ class WorkspacePhase2RepositoryMixin(SQLiteRepositoryMixin):
         if status:
             clauses.append("a.status = ?")
             values.append(status)
+        if storage_state:
+            clauses.append("a.storage_state = ?")
+            values.append(storage_state)
         if project_id:
             clauses.append("a.project_id = ?")
             values.append(project_id)
         if created_from:
-            clauses.append("a.created_at >= ?")
+            clauses.append("date(a.created_at) >= date(?)")
             values.append(created_from)
         if created_to:
-            clauses.append("a.created_at <= ?")
+            clauses.append("date(a.created_at) <= date(?)")
             values.append(created_to)
         if query:
             clauses.append("(a.title LIKE ? OR a.source_id LIKE ?)")
@@ -360,6 +365,17 @@ class WorkspacePhase2RepositoryMixin(SQLiteRepositoryMixin):
             ).fetchone()
         return self._archive_from_row(row) if row is not None else None
 
+    def list_archives_for_artifact(self, artifact_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM archive_records WHERE artifact_id = ?
+                ORDER BY created_at DESC
+                """,
+                (artifact_id,),
+            ).fetchall()
+        return [self._archive_from_row(row) for row in rows]
+
     def upsert_cache_entry(self, record: dict[str, Any]) -> dict[str, Any]:
         now = iso_now()
         with self._connect() as conn:
@@ -500,6 +516,30 @@ class WorkspacePhase2RepositoryMixin(SQLiteRepositoryMixin):
                 """,
                 (domain_id, knowledge_id, iso_now()),
             )
+
+    def replace_domain_cards(self, domain_id: str, knowledge_ids: list[str]) -> None:
+        selected = list(dict.fromkeys(knowledge_ids))
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if selected:
+                placeholders = ",".join("?" for _ in selected)
+                conn.execute(
+                    f"DELETE FROM library_domain_cards WHERE domain_id = ? "
+                    f"AND knowledge_id NOT IN ({placeholders})",
+                    (domain_id, *selected),
+                )
+                now = iso_now()
+                conn.executemany(
+                    "INSERT OR IGNORE INTO library_domain_cards "
+                    "(domain_id, knowledge_id, added_at) VALUES (?, ?, ?)",
+                    ((domain_id, knowledge_id, now) for knowledge_id in selected),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM library_domain_cards WHERE domain_id = ?",
+                    (domain_id,),
+                )
+            conn.execute("COMMIT")
 
     def list_domain_knowledge_ids(self, domain_id: str) -> list[str]:
         with self._connect() as conn:
@@ -803,6 +843,21 @@ class WorkspacePhase2RepositoryMixin(SQLiteRepositoryMixin):
         value = dict(row)
         value["manifest"] = _load(value.pop("manifest_json"))
         value["remove_local"] = bool(value["remove_local"])
+        return value
+
+    @staticmethod
+    def _sleep_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        for key in ("before", "after", "changes", "result"):
+            value[key] = _load(value.pop(f"{key}_json"))
+        return value
+
+    @staticmethod
+    def _artifact_deletion_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value["artifact_ids"] = _load(value.pop("artifact_ids_json"))
+        value["targets"] = _load(value.pop("targets_json"))
+        value["result"] = _load(value.pop("result_json"))
         return value
 
     @staticmethod

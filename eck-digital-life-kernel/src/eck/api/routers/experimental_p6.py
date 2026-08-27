@@ -10,6 +10,7 @@ from eck.domain.models import (
     MissionCompletionCreate,
     MissionCreate,
     MissionReviewDecision,
+    MissionRollbackRequest,
     MissionUpdate,
 )
 
@@ -100,6 +101,34 @@ async def update_mission(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/v1/missions/{mission_id}/revisions")
+async def mission_revisions(mission_id: str, app: AppDependency) -> dict[str, Any]:
+    try:
+        app.store.get_mission(mission_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"items": app.store.list_mission_revisions(mission_id)}
+
+
+@router.post("/v1/missions/{mission_id}/revisions/{revision_id}/rollback")
+async def rollback_mission_revision(
+    mission_id: str,
+    revision_id: str,
+    request: MissionRollbackRequest,
+    app: AppDependency,
+) -> Any:
+    try:
+        return await app.missions.rollback_revision(
+            mission_id,
+            revision_id,
+            reason=request.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/v1/missions/{mission_id}/completion")
 async def submit_mission_completion(
     mission_id: str,
@@ -146,4 +175,3 @@ async def cancel_mission(mission_id: str, app: AppDependency) -> Any:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-

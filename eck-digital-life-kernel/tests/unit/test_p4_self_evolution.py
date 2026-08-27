@@ -418,8 +418,14 @@ async def test_core_candidate_draft_is_persisted_without_live_mutation(
             target.parent.mkdir(parents=True)
             target.write_text("VALUE = 1\n", encoding="utf-8")
             return "prepared"
-        if arguments[:2] == ("diff", "--binary"):
+        if arguments[:2] == ("add", "--"):
+            return ""
+        if arguments[:3] == ("diff", "--cached", "--name-only"):
+            return "src/eck/example.py\n"
+        if arguments[:3] == ("diff", "--cached", "--binary"):
             return "diff --git a/src/eck/example.py b/src/eck/example.py\n"
+        if arguments == ("write-tree",):
+            return "c" * 40 + "\n"
         raise AssertionError(arguments)
 
     async def draft(*args, **kwargs):
@@ -453,6 +459,7 @@ async def test_core_candidate_draft_is_persisted_without_live_mutation(
     assert result["status"] == "drafted"
     assert result["source_commit"] == "a" * 40
     assert result["patch_sha256"]
+    assert result["candidate_tree_sha"] == "c" * 40
     assert source.read_text(encoding="utf-8") == "VALUE = 1\n"
     assert lab.list_candidates()[0]["candidate_id"] == result["candidate_id"]
 

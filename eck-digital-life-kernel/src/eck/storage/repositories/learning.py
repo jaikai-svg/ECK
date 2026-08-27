@@ -377,8 +377,15 @@ class LearningRepositoryMixin(SQLiteRepositoryMixin):
             ).fetchall()
         return [self._skill_from_row(row) for row in rows]
 
-    def count_skills(self) -> int:
-        return self._count_table("skills")
+    def count_skills(self, *, active: bool | None = None) -> int:
+        if active is None:
+            return self._count_table("skills")
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM skills WHERE active = ?",
+                (int(active),),
+            ).fetchone()
+        return int(row["count"])
 
     def revoke_skill_success(self, fingerprint: str) -> SkillRecord | None:
         now = iso_now()

@@ -34,7 +34,7 @@ from eck.kernel.runtime import LifeKernel
 from eck.memory.experience import ExperienceEngine
 from eck.memory.rag import PortableRagService
 from eck.modules.archive import ArchiveService
-from eck.modules.artifacts import ArtifactCatalogService
+from eck.modules.artifacts import ArtifactCatalogService, ArtifactDeletionService
 from eck.modules.library import LibraryAuthoringService, LibraryProjectionService
 from eck.modules.skills.lifecycle import SkillLifecycleService
 from eck.policy.autonomy import AutonomyGate
@@ -53,6 +53,7 @@ from eck.services.community_sources import CommunitySourceCatalog
 from eck.services.core_evolution import CoreEvolutionLabService
 from eck.services.evaluations import EvaluationService
 from eck.services.evolution import EvolutionAuditService
+from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.identity import IdentityService
 from eck.services.missions import MissionService
 from eck.services.portability import CognitiveBundleService
@@ -86,6 +87,7 @@ class Application:
     skill_bridge: ResearchSkillBridgeService
     tool_campaign: ToolAcquisitionCampaignService
     core_lab: CoreEvolutionLabService
+    evolution_transactions: EvolutionTransactionService
     project_lab: AutonomousProjectLabService
     tasks: TaskService
     supervisor: SupervisorService
@@ -104,6 +106,7 @@ class Application:
     library: LibraryProjectionService
     library_authoring: LibraryAuthoringService
     artifacts: ArtifactCatalogService
+    artifact_deletion: ArtifactDeletionService
     archive: ArchiveService
     rag: PortableRagService
     autonomy: AutonomyGate
@@ -244,11 +247,13 @@ def build_application(settings: Settings | None = None) -> Application:
         self_model,
         community_sources,
     )
+    evolution_transactions = EvolutionTransactionService(settings, store, events)
     core_lab = CoreEvolutionLabService(
         settings,
         events,
         coder_brain,
         self_model,
+        evolution_transactions,
     )
     project_lab = AutonomousProjectLabService(
         settings,
@@ -275,6 +280,7 @@ def build_application(settings: Settings | None = None) -> Application:
     mission_executor.upgrade_legacy_graphs()
     library_authoring = LibraryAuthoringService(settings, store, mission_service)
     artifacts = ArtifactCatalogService(settings, store)
+    artifact_deletion = ArtifactDeletionService(settings, store)
     archive = ArchiveService(settings, store)
     evolution_service = EvolutionAuditService(
         settings,
@@ -284,6 +290,7 @@ def build_application(settings: Settings | None = None) -> Application:
         skill_bridge,
         core_lab,
         project_lab,
+        evolution_transactions,
     )
     portability_service = CognitiveBundleService(
         settings,
@@ -350,6 +357,7 @@ def build_application(settings: Settings | None = None) -> Application:
         project_lab,
         mission_executor,
         resources,
+        evolution_transactions,
     )
     return Application(
         settings=settings,
@@ -366,6 +374,7 @@ def build_application(settings: Settings | None = None) -> Application:
         skill_bridge=skill_bridge,
         tool_campaign=tool_campaign,
         core_lab=core_lab,
+        evolution_transactions=evolution_transactions,
         project_lab=project_lab,
         tasks=task_service,
         supervisor=supervisor_service,
@@ -384,6 +393,7 @@ def build_application(settings: Settings | None = None) -> Application:
         library=library,
         library_authoring=library_authoring,
         artifacts=artifacts,
+        artifact_deletion=artifact_deletion,
         archive=archive,
         rag=rag,
         autonomy=autonomy_gate,

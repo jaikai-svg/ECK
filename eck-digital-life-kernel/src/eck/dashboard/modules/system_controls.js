@@ -1,9 +1,14 @@
+import { renderSleepRun, sleepView } from "./workspace_quality.js";
 export function bindSystemControls(request, refresh, setConnection, toast) {
     document.querySelectorAll("[data-action]").forEach((button) => {
         button.addEventListener("click", async () => {
             button.disabled = true;
             try {
-                await request(`/v1/kernel/${button.dataset.action}`, { method: "POST" });
+                const response = await request(`/v1/kernel/${button.dataset.action}`, { method: "POST" });
+                if (button.dataset.action === "sleep") {
+                    renderSleepRun(response.run);
+                    await followSleepRun(request);
+                }
                 await refresh();
             }
             catch (error) {
@@ -34,6 +39,15 @@ export function bindSystemControls(request, refresh, setConnection, toast) {
             toast(`關閉失敗：${errorMessage(error)}`);
         }
     });
+}
+async function followSleepRun(request) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        const response = await request("/v1/kernel/sleep/status");
+        renderSleepRun(response.run);
+        if (sleepView(response.run).terminal)
+            return;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+    }
 }
 function errorMessage(error) {
     return error instanceof Error ? error.message : String(error);

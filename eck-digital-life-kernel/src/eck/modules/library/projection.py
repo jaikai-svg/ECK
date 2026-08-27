@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from eck.config import Settings
 from eck.core.time import iso_now
 from eck.domain.models import KnowledgeRecord, ReflectionRecord, TaskRecord
+from eck.modules.library.quality import normalize_claim, unique_text, unresolved_questions
 
 
 class LibraryRepository(Protocol):
@@ -22,6 +23,7 @@ class LibraryProjectionService:
     """Rebuildable Markdown/JSON projection over verified ECK knowledge."""
 
     schema_version = "eck-library.v1"
+    projection_revision = 2
 
     def __init__(self, settings: Settings, repository: LibraryRepository) -> None:
         self.repository = repository
@@ -91,7 +93,10 @@ class LibraryProjectionService:
         reflections = self.repository.list_reflections(limit=2000)
         source_digest = self._source_digest(knowledge, reflections)
         previous = self._read_catalog()
-        if previous.get("source_digest") == source_digest:
+        if (
+            previous.get("source_digest") == source_digest
+            and previous.get("projection_revision") == self.projection_revision
+        ):
             return previous, True
         catalog = self._build_catalog(
             knowledge,
@@ -111,21 +116,40 @@ class LibraryProjectionService:
         previous: dict[str, Any],
     ) -> dict[str, Any]:
         reflection_by_task = {item.task_id: item for item in reflections}
-        previous_cards = {
-            str(item.get("knowledge_id")): item
-            for item in previous.get("cards", [])
-            if isinstance(item, dict)
-        }
-        cards = [
-            self._card(
-                item,
-                reflection_by_task.get(item.task_id),
-                previous_cards.get(item.knowledge_id),
+        previous_cards: dict[str, dict[str, Any]] = {}
+        for item in previous.get("cards", []):
+            if not isinstance(item, dict):
+                continue
+            member_ids = item.get("knowledge_ids") or [item.get("knowledge_id")]
+            for knowledge_id in member_ids:
+                if knowledge_id:
+                    previous_cards[str(knowledge_id)] = item
+        grouped: dict[str, list[KnowledgeRecord]] = {}
+        for item in knowledge:
+            if item.admitted:
+                grouped.setdefault(normalize_claim(item.claim), []).append(item)
+        cards = []
+        for members in grouped.values():
+            members.sort(key=lambda item: item.created_at)
+            previous_card = next(
+                (
+                    previous_cards[item.knowledge_id]
+                    for item in members
+                    if item.knowledge_id in previous_cards
+                ),
+                None,
             )
-            for item in knowledge
-            if item.admitted
-        ]
-        cards.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+            canonical_id = str(previous_card.get("knowledge_id", "")) if previous_card else ""
+            canonical = next(
+                (item for item in members if item.knowledge_id == canonical_id),
+                members[0],
+            )
+            ordered = [canonical, *(item for item in reversed(members) if item != canonical)]
+            cards.append(self._card(ordered, reflection_by_task, previous_card))
+        cards.sort(
+            key=lambda item: str(item.get("latest_occurrence_at", "")),
+            reverse=True,
+        )
         chapter_map: dict[str, list[dict[str, Any]]] = {}
         for card in cards:
             chapter_map.setdefault(str(card["chapter"]), []).append(card)
@@ -160,6 +184,7 @@ class LibraryProjectionService:
         }
         content = {
             "schema_version": self.schema_version,
+            "projection_revision": self.projection_revision,
             "source_digest": source_digest,
             "book": book,
             "chapters": chapters,
@@ -170,58 +195,91 @@ class LibraryProjectionService:
 
     def _card(
         self,
-        knowledge: KnowledgeRecord,
-        reflection: ReflectionRecord | None,
+        knowledge_group: list[KnowledgeRecord],
+        reflection_by_task: dict[str, ReflectionRecord],
         previous: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        try:
-            task = self.repository.get_task(knowledge.task_id)
-        except KeyError:
-            task = None
-        sources = []
+        knowledge = knowledge_group[0]
+        sources: list[dict[str, Any]] = []
         counterexamples: list[str] = []
-        confidence = 1.0 if knowledge.externally_grounded and knowledge.reproducible else 0.0
-        verification_result = knowledge.outcome.value
-        if task and task.result:
-            sources = [
-                {
-                    "evidence_id": evidence.evidence_id,
-                    "kind": evidence.source.value,
-                    "claim": evidence.claim,
-                    "url": self._source_url(evidence.payload),
-                }
-                for evidence in task.result.evidence
-            ]
-        if task and task.verification:
-            confidence = task.verification.score
-            verification_result = task.verification.status.value
-            counterexamples.extend(task.verification.failed_checks)
-            counterexamples.extend(task.verification.violated_constraints)
-        unresolved = []
-        if reflection and reflection.next_step.strip():
-            unresolved.append(reflection.next_step.strip())
+        confidence_scores: list[float] = []
+        verification_results: list[str] = []
+        open_questions: list[str] = []
+        source_evidence_ids: list[str] = []
+        for item in knowledge_group:
+            source_evidence_ids.extend(item.evidence_ids)
+            item_reflection = reflection_by_task.get(item.task_id)
+            open_questions.extend(
+                unresolved_questions(
+                    item_reflection.next_step if item_reflection is not None else ""
+                )
+            )
+            try:
+                task = self.repository.get_task(item.task_id)
+            except KeyError:
+                task = None
+            if task is None:
+                confidence_scores.append(
+                    1.0 if item.externally_grounded and item.reproducible else 0.0
+                )
+                verification_results.append(item.outcome.value)
+                continue
+            if task.result:
+                sources.extend(
+                    {
+                        "evidence_id": evidence.evidence_id,
+                        "kind": evidence.source.value,
+                        "claim": evidence.claim,
+                        "url": self._source_url(evidence.payload),
+                    }
+                    for evidence in task.result.evidence
+                )
+            if task.verification:
+                confidence_scores.append(float(task.verification.score))
+                verification_results.append(task.verification.status.value)
+                counterexamples.extend(task.verification.failed_checks)
+                counterexamples.extend(task.verification.violated_constraints)
+            else:
+                confidence_scores.append(0.0)
+                verification_results.append(item.outcome.value)
+        unique_sources = {
+            str(item.get("evidence_id") or self._hash(item)): item for item in sources
+        }
+        latest = max(knowledge_group, key=lambda item: item.created_at)
+        reflection = reflection_by_task.get(latest.task_id)
+        verification_result = (
+            verification_results[0]
+            if len(set(verification_results)) == 1
+            else "mixed"
+        )
         chapter = self._chapter_title(knowledge.capability)
         base = {
             "knowledge_id": knowledge.knowledge_id,
             "task_id": knowledge.task_id,
+            "knowledge_ids": [item.knowledge_id for item in knowledge_group],
+            "task_ids": [item.task_id for item in knowledge_group],
+            "occurrence_count": len(knowledge_group),
             "title": self._title(knowledge.claim),
             "claim": knowledge.claim,
             "capability": knowledge.capability,
             "chapter": chapter,
-            "sources": sources,
-            "source_evidence_ids": list(knowledge.evidence_ids),
-            "counterexamples": counterexamples,
-            "confidence": round(float(confidence), 4),
+            "sources": list(unique_sources.values()),
+            "source_evidence_ids": unique_text(source_evidence_ids),
+            "counterexamples": unique_text(counterexamples),
+            "confidence": round(min(confidence_scores, default=0.0), 4),
             "confidence_basis": "contract_verification_score",
-            "externally_grounded": knowledge.externally_grounded,
-            "reproducible": knowledge.reproducible,
+            "externally_grounded": all(
+                item.externally_grounded for item in knowledge_group
+            ),
+            "reproducible": all(item.reproducible for item in knowledge_group),
             "verification_result": verification_result,
-            "unresolved_questions": unresolved,
+            "unresolved_questions": unique_text(open_questions),
             "reflection": {
                 "observation": reflection.observation if reflection else "",
                 "lesson": reflection.lesson if reflection else "",
             },
             "created_at": knowledge.created_at.isoformat(),
+            "latest_occurrence_at": latest.created_at.isoformat(),
         }
         content_sha256 = self._hash(base)
         history = list(previous.get("revision_history", [])) if previous else []

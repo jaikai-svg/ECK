@@ -327,6 +327,18 @@ select:focus, input:focus, textarea:focus { border-color: rgba(216, 255, 114, .3
 .workspace-dialog input, .workspace-dialog textarea, .workspace-dialog select { width: 100%; padding: 11px 12px; font-size: .68rem; line-height: 1.55; resize: vertical; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 7px; }
+.project-edit-panel { padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.project-edit-panel summary { color: var(--cyan); font-size: .63rem; font-weight: 750; cursor: pointer; }
+.project-edit-panel form { display: grid; gap: 11px; margin-top: 14px; }
+.project-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.project-edit-revisions { display: grid; gap: 7px; padding: 0; list-style: none; }
+.project-edit-revisions li { display: grid; grid-template-columns: minmax(120px, .6fr) minmax(180px, 1fr) auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #12151c; }
+.project-edit-revisions p { margin: 0; color: var(--muted-strong); font-size: .55rem; line-height: 1.55; }
+.project-edit-revisions small, .project-edit-revisions span { display: block; color: var(--muted); font-size: .5rem; }
+.sleep-status { display: grid; gap: 1px; margin-top: 15px; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: var(--line); }
+.sleep-status div { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 12px; padding: 10px 11px; background: #12151c; }
+.sleep-status span { color: var(--muted); font-size: .54rem; }
+.sleep-status b { color: var(--muted-strong); font-size: .55rem; line-height: 1.55; overflow-wrap: anywhere; }
 .dialog-loading { min-height: 280px; display: grid; place-items: center; color: var(--muted); font-size: .65rem; }
 .project-detail-head { display: flex; justify-content: space-between; gap: 25px; clear: both; padding: 5px 0 21px; border-bottom: 1px solid var(--line); }
 .project-detail-head h2 { margin-top: 11px; }
@@ -419,6 +431,7 @@ select:focus, input:focus, textarea:focus { border-color: rgba(216, 255, 114, .3
   .react-cycle summary small { display: none; }
   .reason-cell, .reason-row { grid-template-columns: 1fr; gap: 5px; }
   .control-buttons { grid-template-columns: 1fr; }
+  .project-edit-grid, .project-edit-revisions li { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -26,7 +26,7 @@ export class ResultCenterComponent {
       ${this.preview(item)}
       <section><div class="section-heading"><h3>完整性與來源</h3><span>${escapeHtml(item.integrity_status)}</span></div><div class="result-summary"><p>SHA-256<br><code>${escapeHtml(item.content_sha256)}</code></p><p>來源任務：${escapeHtml(item.task_id || "無")}</p><p>來源專案：${escapeHtml(item.project_id || "無")}</p></div></section>
       <section><div class="section-heading"><h3>真實使用技能</h3><span>${item.skills.length} 筆</span></div>${usages ? `<ul class="usage-list">${usages}</ul>` : '<div class="empty-state"><p>沒有實際 Worker 技能執行紀錄。</p></div>'}</section>
-      <div class="dialog-actions"><a class="secondary-button result-download" href="/v1/workspace/results/${escapeHtml(item.artifact_id)}/preview">預覽／下載</a><button class="secondary-button" type="button" data-archive-artifact="${escapeHtml(item.artifact_id)}">封存至 NAS</button><button class="secondary-button" type="button" data-restore-artifact="${escapeHtml(item.artifact_id)}">還原快取</button></div>
+      <div class="dialog-actions"><a class="secondary-button result-download" href="/v1/workspace/results/${escapeHtml(item.artifact_id)}/preview">預覽／下載</a><button class="secondary-button" type="button" data-archive-artifact="${escapeHtml(item.artifact_id)}">封存至 NAS</button><button class="secondary-button" type="button" data-restore-artifact="${escapeHtml(item.artifact_id)}">還原快取</button><button class="danger-button" type="button" data-delete-artifact="${escapeHtml(item.artifact_id)}">徹底刪除</button></div>
     `;
     }
     card(item) {

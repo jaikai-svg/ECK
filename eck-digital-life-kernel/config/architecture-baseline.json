@@ -35,6 +35,7 @@
     "/v1/workspace/results/{artifact_id}/preview",
     "/v1/workspace/results/{artifact_id}/archive",
     "/v1/workspace/results/{artifact_id}/restore",
+    "/v1/workspace/results/{artifact_id}/deletion-plan",
     "/v1/workspace/archive/status",
     "/v1/workspace/library/domains",
     "/v1/workspace/library/domains/{domain_id}",
@@ -43,6 +44,16 @@
     "/v1/workspace/library/domains/{domain_id}/author",
     "/v1/workspace/library/books/{book_id}",
     "/v1/workspace/library/books/{book_id}/revisions/{revision_id}/download",
-    "/v1/workspace/library/books/{book_id}/suggestions"
+    "/v1/workspace/library/books/{book_id}/suggestions",
+    "/v1/missions/{mission_id}/revisions",
+    "/v1/missions/{mission_id}/revisions/{revision_id}/rollback",
+    "/v1/kernel/sleep/status",
+    "/v1/evolution/transactions",
+    "/v1/evolution/transactions/{transaction_id}",
+    "/v1/evolution/heldout-packs",
+    "/v1/evolution/core-candidates/{candidate_id}/evaluate",
+    "/v1/evolution/core-candidates/{candidate_id}/approve",
+    "/v1/evolution/core-candidates/{candidate_id}/activate",
+    "/v1/evolution/transactions/{transaction_id}/rollback"
   ]
 }

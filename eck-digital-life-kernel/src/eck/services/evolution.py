@@ -7,6 +7,7 @@ from eck.config import Settings
 from eck.domain.enums import RuntimeSkillStatus
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.core_evolution import CoreEvolutionLabService
+from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.self_model import RepositorySelfModelService
@@ -23,6 +24,7 @@ class EvolutionAuditService:
         skill_bridge: ResearchSkillBridgeService,
         core_lab: CoreEvolutionLabService,
         project_lab: AutonomousProjectLabService,
+        transactions: EvolutionTransactionService,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -31,6 +33,7 @@ class EvolutionAuditService:
         self.skill_bridge = skill_bridge
         self.core_lab = core_lab
         self.project_lab = project_lab
+        self.transactions = transactions
         self.project_root = Path(__file__).resolve().parents[3]
 
     async def status(self) -> dict[str, Any]:
@@ -47,13 +50,16 @@ class EvolutionAuditService:
         bridge = await self.skill_bridge.status()
         core_lab = self.core_lab.status()
         project_lab = await self.project_lab.status()
+        transactions = self.transactions.status()
         verifier = self.project_root / "scripts" / "verify_release.py"
         return {
             "classification": "verified_candidate_self_improvement_not_recursive_agi",
             "current_truth": (
                 "ECK can inspect a hashed repository map, generate and test isolated skills, and "
-                "draft structural changes in detached candidates. It cannot activate structural "
-                "core changes without human approval and does not train base-model weights."
+                "draft structural changes in detached candidates. A structural candidate can only "
+                "be committed after held-out evaluation and explicit human approval, then becomes "
+                "absorbed only after an exact startup receipt. ECK does not train base-model "
+                "weights."
             ),
             "verified_now": {
                 "skill_self_authoring": True,
@@ -69,11 +75,12 @@ class EvolutionAuditService:
                 "repository_self_model": bool(self_model.get("initialized")),
                 "research_skill_bridge": bridge,
                 "isolated_core_candidate_lab": core_lab,
+                "reviewed_evolution_transactions": transactions,
                 "autonomous_project_lab": project_lab,
             },
             "not_yet_verified": {
                 "automatic_structural_core_activation": True,
-                "held_out_core_candidate_evaluation": True,
+                "held_out_core_candidate_evaluation": False,
                 "dual_kernel_zero_downtime_handoff": True,
                 "automatic_model_weight_training": True,
                 "recursive_open_ended_self_improvement": True,
@@ -96,14 +103,21 @@ class EvolutionAuditService:
                 {
                     "stage": 2,
                     "name": "Regression and shadow replay gate",
-                    "state": "partial",
-                    "result": "Fixed lint, type and regression gates exist; held-out tasks remain.",
+                    "state": "verified",
+                    "result": (
+                        "Fixed gates and pre-registered held-out baseline/candidate comparisons "
+                        "are persisted with immutable hashes."
+                    ),
                 },
                 {
                     "stage": 3,
                     "name": "Human-approved blue-green handoff",
-                    "state": "proposed",
-                    "result": "Switch versioned workers with health checks and instant rollback.",
+                    "state": "partial",
+                    "result": (
+                        "Exact commit, graceful restart, startup receipt and reviewed revert "
+                        "exist; the Windows desktop watchdog also restores the exact previous "
+                        "commit after a recent catastrophic startup failure."
+                    ),
                 },
             ],
             "research_basis": [

@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 
 from eck.api.dependencies import AppDependency
 from eck.modules.archive.service import ArchiveIntegrityError, ArchiveOfflineError
+from eck.modules.artifacts.deletion import (
+    ArtifactDeletionBlockedError,
+    ArtifactDeletionError,
+)
 from eck.modules.library.authoring import LibraryReadinessError
 
 router = APIRouter(prefix="/v1/workspace", tags=["workspace-phase2"])
@@ -16,6 +20,12 @@ router = APIRouter(prefix="/v1/workspace", tags=["workspace-phase2"])
 
 class ArchiveRequest(BaseModel):
     remove_local: bool | None = None
+
+
+class ArtifactDeleteRequest(BaseModel):
+    plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirm_title: str = Field(min_length=1, max_length=500)
+    include_derived: bool = True
 
 
 class DomainCreateRequest(BaseModel):
@@ -51,6 +61,7 @@ def results(
     offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
     artifact_type: Annotated[str, Query(max_length=40)] = "",
     status: Annotated[str, Query(max_length=40)] = "",
+    storage_state: Annotated[str, Query(max_length=40)] = "",
     project_id: Annotated[str, Query(max_length=200)] = "",
     skill_id: Annotated[str, Query(max_length=200)] = "",
     q: Annotated[str, Query(max_length=200)] = "",
@@ -62,6 +73,7 @@ def results(
         offset=offset,
         artifact_type=artifact_type,
         status=status,
+        storage_state=storage_state,
         project_id=project_id,
         skill_id=skill_id,
         query=q,
@@ -76,6 +88,41 @@ def result_detail(artifact_id: str, app: AppDependency) -> dict[str, Any]:
         return app.artifacts.detail(artifact_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/results/{artifact_id}/deletion-plan")
+def result_deletion_plan(
+    artifact_id: str,
+    app: AppDependency,
+    include_derived: bool = True,
+) -> dict[str, Any]:
+    try:
+        return app.artifact_deletion.plan(
+            artifact_id, include_derived=include_derived
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/results/{artifact_id}")
+def delete_result(
+    artifact_id: str,
+    request: ArtifactDeleteRequest,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return app.artifact_deletion.purge(
+            artifact_id,
+            plan_sha256=request.plan_sha256,
+            confirm_title=request.confirm_title,
+            include_derived=request.include_derived,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ArtifactDeletionBlockedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ArtifactDeletionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/results/{artifact_id}/preview")

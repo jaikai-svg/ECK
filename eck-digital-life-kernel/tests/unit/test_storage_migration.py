@@ -82,6 +82,12 @@ def test_workspace_phase2_schema_upgrades_old_eck_copy_and_rolls_back(
         "archive_records",
         "task_skill_usages",
         "artifact_index",
+        "mission_revisions",
+        "sleep_runs",
+        "artifact_deletion_runs",
+        "evolution_transactions",
+        "evolution_evaluations",
+        "evolution_boot_receipts",
     )
     with sqlite3.connect(source) as connection:
         for table in phase2_tables:

@@ -191,6 +191,9 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert workspace_system.status_code == 200
         assert workspace_system.json()["schema_version"] == "eck-workspace-system.v1"
         assert workspace_system.json()["resources"]["project"]["cached"] is True
+        assert workspace_system.json()["evolution"]["schema_version"] == (
+            "eck-evolution-transaction.v1"
+        )
         workspace_projects = client.get("/v1/workspace/projects?limit=12&offset=0")
         assert workspace_projects.status_code == 200
         assert workspace_projects.json()["page"]["total"] == 0
@@ -205,6 +208,15 @@ def test_health_dashboard_and_acceptance(application) -> None:
         core_candidates = client.get("/v1/evolution/core-candidates")
         assert core_candidates.status_code == 200
         assert core_candidates.json()["status"]["live_core_mutation"] is False
+        evolution_transactions = client.get("/v1/evolution/transactions")
+        assert evolution_transactions.status_code == 200
+        assert evolution_transactions.json()["status"]["schema_version"] == (
+            "eck-evolution-transaction.v1"
+        )
+        assert evolution_transactions.json()["status"]["hot_live_mutation"] is False
+        heldout_packs = client.get("/v1/evolution/heldout-packs")
+        assert heldout_packs.status_code == 200
+        assert heldout_packs.json()["items"] == []
 
         roadmap = client.get("/v1/roadmap")
         assert roadmap.status_code == 200

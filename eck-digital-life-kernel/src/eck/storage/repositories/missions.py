@@ -57,29 +57,194 @@ class MissionRepositoryMixin(SQLiteRepositoryMixin):
             )
         return self.get_mission(mission_id)
 
-    def update_mission(self, mission_id: str, update: MissionUpdate) -> MissionRecord:
-        assignments = ["updated_at = ?"]
-        values: list[Any] = [iso_now()]
-        for field in (
+    def update_mission(
+        self,
+        mission_id: str,
+        update: MissionUpdate,
+        *,
+        actor: str = "user",
+    ) -> MissionRecord:
+        editable = (
             "title",
             "objective",
             "completion_requirements",
             "priority",
             "target_month",
-        ):
-            value = getattr(update, field)
-            if value is not None:
-                assignments.append(f"{field} = ?")
-                values.append(value)
-        values.append(mission_id)
+        )
+        now = iso_now()
         with self._connect() as conn:
-            cursor = conn.execute(
-                f"UPDATE missions SET {', '.join(assignments)} WHERE mission_id = ?",
-                values,
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM missions WHERE mission_id = ?", (mission_id,)
+            ).fetchone()
+            if row is None:
+                conn.execute("ROLLBACK")
+                raise KeyError(f"Unknown mission: {mission_id}")
+            before = self._mission_edit_snapshot(row)
+            after = dict(before)
+            changed_fields: list[str] = []
+            for field in editable:
+                if field not in update.model_fields_set:
+                    continue
+                value = getattr(update, field)
+                if value is None and field != "target_month":
+                    continue
+                if value != before[field]:
+                    after[field] = value
+                    changed_fields.append(field)
+            if not changed_fields:
+                conn.execute("ROLLBACK")
+                raise ValueError("No project fields changed.")
+            conn.execute(
+                """
+                UPDATE missions
+                SET title = ?, objective = ?, completion_requirements = ?,
+                    priority = ?, target_month = ?, updated_at = ?
+                WHERE mission_id = ?
+                """,
+                (
+                    after["title"],
+                    after["objective"],
+                    after["completion_requirements"],
+                    after["priority"],
+                    after["target_month"],
+                    now,
+                    mission_id,
+                ),
             )
-        if cursor.rowcount != 1:
-            raise KeyError(f"Unknown mission: {mission_id}")
+            revision = self._next_mission_revision(conn, mission_id)
+            conn.execute(
+                """
+                INSERT INTO mission_revisions (
+                    revision_id, mission_id, revision, before_json, after_json,
+                    changed_fields_json, reason, actor, rollback_of_revision_id,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                """,
+                (
+                    new_id("missionrev"),
+                    mission_id,
+                    revision,
+                    _json(before),
+                    _json(after),
+                    _json(changed_fields),
+                    update.edit_reason,
+                    actor,
+                    now,
+                ),
+            )
+            conn.execute("COMMIT")
         return self.get_mission(mission_id)
+
+    def list_mission_revisions(self, mission_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM mission_revisions
+                WHERE mission_id = ? ORDER BY revision DESC
+                """,
+                (mission_id,),
+            ).fetchall()
+        return [self._mission_revision_from_row(row) for row in rows]
+
+    def rollback_mission_revision(
+        self,
+        mission_id: str,
+        revision_id: str,
+        *,
+        reason: str,
+        actor: str = "user",
+    ) -> MissionRecord:
+        now = iso_now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            mission_row = conn.execute(
+                "SELECT * FROM missions WHERE mission_id = ?", (mission_id,)
+            ).fetchone()
+            revision_row = conn.execute(
+                """
+                SELECT * FROM mission_revisions
+                WHERE revision_id = ? AND mission_id = ?
+                """,
+                (revision_id, mission_id),
+            ).fetchone()
+            if mission_row is None or revision_row is None:
+                conn.execute("ROLLBACK")
+                raise KeyError("Unknown project or revision.")
+            before = self._mission_edit_snapshot(mission_row)
+            after = _load(str(revision_row["before_json"]))
+            if before == after:
+                conn.execute("ROLLBACK")
+                raise ValueError("The project already matches that revision.")
+            changed_fields = [key for key in before if before[key] != after[key]]
+            conn.execute(
+                """
+                UPDATE missions
+                SET title = ?, objective = ?, completion_requirements = ?,
+                    priority = ?, target_month = ?, updated_at = ?
+                WHERE mission_id = ?
+                """,
+                (
+                    after["title"],
+                    after["objective"],
+                    after["completion_requirements"],
+                    after["priority"],
+                    after["target_month"],
+                    now,
+                    mission_id,
+                ),
+            )
+            revision = self._next_mission_revision(conn, mission_id)
+            conn.execute(
+                """
+                INSERT INTO mission_revisions (
+                    revision_id, mission_id, revision, before_json, after_json,
+                    changed_fields_json, reason, actor, rollback_of_revision_id,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id("missionrev"),
+                    mission_id,
+                    revision,
+                    _json(before),
+                    _json(after),
+                    _json(changed_fields),
+                    reason,
+                    actor,
+                    revision_id,
+                    now,
+                ),
+            )
+            conn.execute("COMMIT")
+        return self.get_mission(mission_id)
+
+    @staticmethod
+    def _mission_edit_snapshot(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "title": str(row["title"]),
+            "objective": str(row["objective"]),
+            "completion_requirements": str(row["completion_requirements"]),
+            "priority": str(row["priority"]),
+            "target_month": row["target_month"],
+        }
+
+    @staticmethod
+    def _next_mission_revision(conn: sqlite3.Connection, mission_id: str) -> int:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(revision), 0) + 1 AS revision "
+            "FROM mission_revisions WHERE mission_id = ?",
+            (mission_id,),
+        ).fetchone()
+        return int(row["revision"])
+
+    @staticmethod
+    def _mission_revision_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value["before"] = _load(value.pop("before_json"))
+        value["after"] = _load(value.pop("after_json"))
+        value["changed_fields"] = _load(value.pop("changed_fields_json"))
+        return value
 
     def set_mission_status(
         self,
@@ -653,4 +818,3 @@ class MissionRepositoryMixin(SQLiteRepositoryMixin):
                 else None
             ),
         )
-

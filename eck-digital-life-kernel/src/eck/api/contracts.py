@@ -77,3 +77,27 @@ class FederationCommunityReviewRequest(BaseModel):
 
 class FederationRevocationRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
+
+
+class EvolutionHeldoutPackRequest(BaseModel):
+    pack_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,79}$")
+    description: str = Field(min_length=10, max_length=2000)
+    test_files: tuple[str, ...] = Field(min_length=1, max_length=20)
+    change_kind: Literal["correctness", "performance", "maintenance", "refactor"]
+    minimum_speedup_percent: float = Field(default=0, ge=0, le=90)
+    allow_non_regression: bool = False
+
+
+class EvolutionApprovalRequest(BaseModel):
+    approved_by: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=10, max_length=2000)
+    confirmed_candidate_tree_sha: str = Field(pattern=r"^[a-f0-9]{40,64}$")
+
+
+class EvolutionActivationRequest(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
+    confirmed_candidate_tree_sha: str = Field(pattern=r"^[a-f0-9]{40,64}$")
+
+
+class EvolutionRollbackRequest(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)

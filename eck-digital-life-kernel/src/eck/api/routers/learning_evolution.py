@@ -3,9 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
-from eck.api.contracts import LearningThemeStateRequest
+from eck.api.contracts import (
+    EvolutionActivationRequest,
+    EvolutionApprovalRequest,
+    EvolutionHeldoutPackRequest,
+    EvolutionRollbackRequest,
+    LearningThemeStateRequest,
+)
 from eck.api.dependencies import AppDependency
 from eck.domain.models import (
     CoreCandidateRequest,
@@ -13,6 +19,7 @@ from eck.domain.models import (
     GuidedSkillAcquisitionRequest,
     LearningThemeCreate,
 )
+from eck.runtime.shutdown import request_restart
 
 router = APIRouter()
 
@@ -177,6 +184,117 @@ async def validate_core_candidate(
     except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+
+@router.get("/v1/evolution/transactions")
+async def list_evolution_transactions(
+    app: AppDependency,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    return {
+        "status": app.evolution_transactions.status(),
+        "items": app.evolution_transactions.list_transactions(limit=limit),
+    }
+
+
+@router.get("/v1/evolution/transactions/{transaction_id}")
+async def get_evolution_transaction(
+    transaction_id: str,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return app.evolution_transactions.get(transaction_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/v1/evolution/heldout-packs")
+async def list_evolution_heldout_packs(app: AppDependency) -> dict[str, Any]:
+    return {"items": app.evolution_transactions.list_heldout_packs()}
+
+
+@router.post("/v1/evolution/heldout-packs", status_code=201)
+async def register_evolution_heldout_pack(
+    request: EvolutionHeldoutPackRequest,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return await app.evolution_transactions.register_heldout_pack(
+            pack_id=request.pack_id,
+            description=request.description,
+            test_files=request.test_files,
+            change_kind=request.change_kind,
+            minimum_speedup_percent=request.minimum_speedup_percent,
+            allow_non_regression=request.allow_non_regression,
+        )
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/v1/evolution/core-candidates/{candidate_id}/evaluate")
+async def evaluate_core_candidate(
+    candidate_id: str,
+    app: AppDependency,
+    pack_id: str = Query(min_length=3, max_length=80),
+) -> dict[str, Any]:
+    try:
+        return await app.evolution_transactions.evaluate(candidate_id, pack_id)
+    except (FileNotFoundError, KeyError, OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/v1/evolution/core-candidates/{candidate_id}/approve")
+async def approve_core_candidate(
+    candidate_id: str,
+    request: EvolutionApprovalRequest,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return await app.evolution_transactions.approve(
+            candidate_id,
+            approved_by=request.approved_by,
+            reason=request.reason,
+            confirmed_candidate_tree_sha=request.confirmed_candidate_tree_sha,
+        )
+    except (KeyError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/v1/evolution/core-candidates/{candidate_id}/activate", status_code=202)
+async def activate_core_candidate(
+    candidate_id: str,
+    request: EvolutionActivationRequest,
+    background_tasks: BackgroundTasks,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        result = await app.evolution_transactions.activate(
+            candidate_id,
+            confirmed_candidate_tree_sha=request.confirmed_candidate_tree_sha,
+            reason=request.reason,
+        )
+    except (FileNotFoundError, KeyError, OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(request_restart)
+    return result
+
+
+@router.post("/v1/evolution/transactions/{transaction_id}/rollback", status_code=202)
+async def rollback_evolution_transaction(
+    transaction_id: str,
+    request: EvolutionRollbackRequest,
+    background_tasks: BackgroundTasks,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        result = await app.evolution_transactions.rollback(
+            transaction_id,
+            reason=request.reason,
+        )
+    except (KeyError, OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background_tasks.add_task(request_restart)
+    return result
+
 @router.get("/v1/evolution/projects")
 async def list_autonomous_projects(app: AppDependency) -> dict[str, Any]:
     return {"status": await app.project_lab.status(), "items": app.project_lab.list_projects()}
@@ -211,4 +329,3 @@ async def publish_autonomous_project(project_id: str, app: AppDependency) -> dic
         return await app.project_lab.publish(project_id)
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-

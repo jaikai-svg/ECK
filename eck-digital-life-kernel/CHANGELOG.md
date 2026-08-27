@@ -66,6 +66,16 @@ All notable changes are documented here.
   verified filesystem/NAS archiving with rollback and bounded LRU cache, maturity-gated Library
   domains and formal book revisions, persistent revision suggestions, and complete TypeScript
   dashboard migration with the legacy `app.js` removed.
+- ECK Workspace quality audit with lifecycle-consistent skill totals, stable de-duplicated Library
+  cards, real unresolved-question classification, versioned project edits and rollback, durable
+  sleep phases and restart recovery, and SHA-confirmed artifact purge across local, NAS, cache,
+  sidecar and derived files with quarantine rollback.
+- Reviewed structural evolution transactions with deterministic protected surfaces, attributed
+  staged patches, candidate-source test isolation, externally stored held-out A/B packs, explicit
+  human tree approval, exact Git activation commits, graceful process replacement, startup SHA
+  receipts, auditable Git-revert rollback, and a Windows parent watchdog that can restore only the
+  exact recent pending commit after catastrophic startup failure. A fixed-gate pass is no longer
+  described as proven improvement.
 
 ### Planned
 

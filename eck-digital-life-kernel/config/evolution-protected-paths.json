@@ -1,0 +1,21 @@
+{
+  "schema_version": "eck-evolution-protected-paths.v1",
+  "immutable_paths": [
+    "config/evolution-protected-paths.json",
+    "scripts/evolution-recovery.py",
+    "scripts/start-eck.ps1",
+    "scripts/stop-eck.ps1",
+    "scripts/supervise-eck.ps1",
+    "src/eck/runtime/shutdown.py",
+    "src/eck/services/evolution_transaction.py",
+    "src/eck/storage/repositories/evolution_transactions.py"
+  ],
+  "owner_approval_prefixes": [
+    "src/eck/api/",
+    "src/eck/app.py",
+    "src/eck/config.py",
+    "src/eck/kernel/",
+    "src/eck/policy/",
+    "src/eck/storage/sqlite.py"
+  ]
+}

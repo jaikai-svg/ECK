@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from eck.config import Settings
+from eck.core.time import iso_now
 from eck.domain.enums import KernelPhase, TaskStatus
 from eck.domain.models import (
     KernelStatus,
@@ -17,6 +18,7 @@ from eck.events.bus import EventBus
 from eck.experimental.p6.mission_executor import DurableMissionExecutor
 from eck.runtime.resources import SystemResourceMonitor
 from eck.services.autonomous_learning import AutonomousLearningService
+from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
 from eck.services.supervisor import SupervisorService
@@ -39,6 +41,7 @@ class LifeKernel:
         project_lab: AutonomousProjectLabService,
         mission_executor: DurableMissionExecutor,
         resources: SystemResourceMonitor,
+        evolution_transactions: EvolutionTransactionService,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -51,6 +54,7 @@ class LifeKernel:
         self.project_lab = project_lab
         self.mission_executor = mission_executor
         self.resources = resources
+        self.evolution_transactions = evolution_transactions
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
         self._execution_task: asyncio.Task[TaskRecord] | None = None
@@ -63,6 +67,7 @@ class LifeKernel:
         self._stop = asyncio.Event()
         self._sleep_requested = asyncio.Event()
         self._sleep_lock = asyncio.Lock()
+        self._sleep_run_id: str | None = None
         self._boot_count = 0
         self._started_at: datetime | None = None
         self._last_heartbeat_at: datetime | None = None
@@ -78,6 +83,7 @@ class LifeKernel:
             self.phase = KernelPhase.FAULTED
             raise RuntimeError(f"Event chain verification failed at sequence {failed_sequence}.")
         self._boot_count, recovered = self.store.begin_boot(self.settings.identity)
+        await self.evolution_transactions.reconcile_startup(boot_count=self._boot_count)
         state = self.store.get_kernel_state(self.settings.identity)
         self._started_at = (
             datetime.fromisoformat(state["started_at"]) if state and state["started_at"] else None
@@ -105,6 +111,15 @@ class LifeKernel:
                 self.settings.identity,
                 {"count": reconciled_runs},
             )
+        recovered_sleep = self.store.recover_sleep_runs()
+        if recovered_sleep is not None:
+            self._sleep_run_id = str(recovered_sleep["run_id"])
+            self._sleep_requested.set()
+            await self.events.publish(
+                "SleepRunRecovered",
+                self.settings.identity,
+                {"run_id": self._sleep_run_id},
+            )
         self.phase = KernelPhase.RUNNING
         self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
         self._stop.clear()
@@ -122,15 +137,19 @@ class LifeKernel:
             self.store.update_kernel_state(self.settings.identity, self.phase)
             await self.events.publish("KernelResumed", self.settings.identity, {})
 
-    async def request_sleep(self) -> None:
+    async def request_sleep(self) -> dict[str, Any]:
+        run = self.store.create_sleep_run(trigger_kind="manual")
+        self._sleep_run_id = str(run["run_id"])
         self._sleep_requested.set()
+        return run
 
-    async def run_sleep_cycle(self) -> None:
+    async def run_sleep_cycle(self) -> dict[str, Any] | None:
         if self.phase is not KernelPhase.RUNNING:
-            return
+            return self.store.latest_sleep_run()
         async with self._sleep_lock:
             if self.phase is KernelPhase.RUNNING:
-                await self._sleep_cycle()
+                return await self._sleep_cycle()
+        return self.store.latest_sleep_run()
 
     async def stop(self, *, clean: bool = True) -> None:
         if self.phase is KernelPhase.STOPPED:
@@ -465,24 +484,101 @@ class LifeKernel:
                 },
             )
 
-    async def _sleep_cycle(self) -> None:
+    async def _sleep_cycle(self) -> dict[str, Any]:
         self._sleep_requested.clear()
+        run = (
+            self.store.get_sleep_run(self._sleep_run_id)
+            if self._sleep_run_id
+            else self.store.create_sleep_run(trigger_kind="scheduled")
+        )
+        run_id = str(run["run_id"])
+        self._sleep_run_id = run_id
+        before = self._sleep_snapshot()
         self.phase = KernelPhase.SLEEPING
         self.store.update_kernel_state(self.settings.identity, self.phase)
-        await self.events.publish("SleepStarted", self.settings.identity, {})
-        valid, failed_sequence = self.store.verify_event_chain()
-        await self.events.publish(
-            "MemoryConsolidated",
-            self.settings.identity,
-            {
+        self.store.update_sleep_run(
+            run_id,
+            status="running",
+            phase="validating_event_chain",
+            before=before,
+            started_at=iso_now(),
+        )
+        try:
+            await self.events.publish(
+                "SleepStarted", self.settings.identity, {"run_id": run_id}
+            )
+            valid, failed_sequence = self.store.verify_event_chain()
+            self.store.update_sleep_run(
+                run_id,
+                phase="measuring_authoritative_memory",
+                result={
+                    "event_chain_valid": valid,
+                    "failed_sequence": failed_sequence,
+                },
+            )
+            after = self._sleep_snapshot()
+            changes = {
+                key: int(after[key]) - int(before[key])
+                for key in before
+                if isinstance(before[key], int) and isinstance(after.get(key), int)
+            }
+            result: dict[str, Any] = {
                 "event_chain_valid": valid,
                 "failed_sequence": failed_sequence,
-                "experience_count": self.store.count_experiences(),
-                "knowledge_count": self.store.count_knowledge(),
-                "reflection_count": self.store.count_reflections(),
-                "skill_count": self.store.count_skills(),
-            },
-        )
-        await self.events.publish("SleepFinished", self.settings.identity, {})
-        self.phase = KernelPhase.RUNNING
-        self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
+                "consolidation_actions": [],
+                "summary": (
+                    "Authoritative memory counts were measured and the event chain was "
+                    "verified. No destructive consolidation action was configured."
+                ),
+            }
+            await self.events.publish(
+                "MemoryConsolidated",
+                self.settings.identity,
+                {"run_id": run_id, **result, "before": before, "after": after},
+            )
+            await self.events.publish(
+                "SleepFinished", self.settings.identity, {"run_id": run_id}
+            )
+            completed = self.store.update_sleep_run(
+                run_id,
+                status="completed",
+                phase="completed",
+                after=after,
+                changes=changes,
+                result=result,
+                completed_at=iso_now(),
+            )
+        except Exception as exc:
+            completed = self.store.update_sleep_run(
+                run_id,
+                status="failed",
+                phase="failed",
+                after=self._sleep_snapshot(),
+                error=f"{type(exc).__name__}: {exc}",
+                completed_at=iso_now(),
+            )
+            await self.events.publish(
+                "SleepFailed",
+                self.settings.identity,
+                {"run_id": run_id, "error": completed["error"]},
+            )
+        finally:
+            self.phase = KernelPhase.RUNNING
+            self.store.update_kernel_state(self.settings.identity, self.phase, heartbeat=True)
+            self._sleep_run_id = None
+        return completed
+
+    def _sleep_snapshot(self) -> dict[str, int]:
+        runtime_skills = self.store.list_runtime_skills(limit=10_000)
+        return {
+            "experiences": self.store.count_experiences(),
+            "admitted_experiences": self.store.count_experiences(admitted=True),
+            "knowledge_items": self.store.count_knowledge(),
+            "reflections": self.store.count_reflections(),
+            "memory_skills": self.store.count_skills(),
+            "active_memory_skills": self.store.count_skills(active=True),
+            "runtime_skills": len(runtime_skills),
+            "active_runtime_skills": sum(
+                item.status.value == "active" for item in runtime_skills
+            ),
+        }

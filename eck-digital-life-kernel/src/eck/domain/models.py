@@ -438,6 +438,15 @@ class MissionUpdate(FrozenModel):
     completion_requirements: str | None = Field(default=None, min_length=3, max_length=8000)
     priority: Literal["normal", "urgent"] | None = None
     target_month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    edit_reason: str = Field(default="Project details updated", min_length=3, max_length=1000)
+
+
+class MissionRollbackRequest(FrozenModel):
+    reason: str = Field(
+        default="Restore a previous project revision",
+        min_length=3,
+        max_length=1000,
+    )
 
 
 class MissionCompletionCreate(FrozenModel):

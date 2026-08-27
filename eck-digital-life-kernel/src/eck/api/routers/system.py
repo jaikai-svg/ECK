@@ -137,9 +137,14 @@ async def kernel_resume(app: AppDependency) -> Any:
     return app.kernel.status()
 
 @router.post("/v1/kernel/sleep")
-async def kernel_sleep(app: AppDependency) -> dict[str, bool]:
-    await app.kernel.request_sleep()
-    return {"accepted": True}
+async def kernel_sleep(app: AppDependency) -> dict[str, Any]:
+    run = await app.kernel.request_sleep()
+    return {"accepted": True, "run": run}
+
+
+@router.get("/v1/kernel/sleep/status")
+async def kernel_sleep_status(app: AppDependency) -> dict[str, Any]:
+    return {"run": app.store.latest_sleep_run()}
 
 @router.get("/v1/system/services")
 async def local_service_status(app: AppDependency) -> dict[str, Any]:
@@ -209,6 +214,7 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
     soul = app.identity_service.status()
     self_model = app.self_model.status()
     core_lab = app.core_lab.status()
+    evolution_transactions = app.evolution_transactions.status()
     status_calls = (
         app.skill_bridge.status(), app.project_lab.status(), app.coder_brain.health()
     )
@@ -226,9 +232,9 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
             "最終以高標準數位能力服務使用者並造福人類的自主學習核心。"
         ),
         "current_truth": (
-            "ECK v0.1.0 已完成基礎核心與 P0～P3 工程整修，具生命週期、工具、記憶、"
-            "驗證、監督、資源保護與客觀診斷架構；Qwen 權重尚未自我訓練，目前不是已證實的 AGI，"
-            "也沒有證據顯示已超越人類知識水平。"
+            "ECK v0.1.0 已完成基礎核心、P0～P5 工程整修與審核式演化交易，具生命週期、"
+            "工具、記憶、驗證、監督、資源保護、客觀診斷與可回滾核心更新架構；"
+            "Qwen 權重尚未自我訓練，目前不是已證實的 AGI，也沒有證據顯示已超越人類知識水平。"
         ),
         "verified_now": {
             "registered_capabilities": verified_capabilities,
@@ -246,6 +252,7 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
             "active_generated_skills": skill_bridge["active_generated_skills"],
             "core_candidate_count": core_lab["candidate_count"],
             "live_core_mutation": core_lab["live_core_mutation"],
+            "reviewed_evolution": evolution_transactions,
             "coder_model": coder.model,
             "coder_ready": coder.available,
             "autonomous_projects": project_lab["project_count"],
@@ -303,10 +310,22 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
                 ),
             },
             {
+                "version": "Evolution Transaction v1",
+                "title": "審核式核心候選演化",
+                "state": "verified",
+                "evidence": (
+                    "隔離候選、固定閘門、外部隱藏評估、精確 Git tree 核准、"
+                    "重啟吸收收據與 Windows 啟動失敗回滾已接入；核心不會熱修改。"
+                ),
+            },
+            {
                 "version": "Next",
-                "title": "安全核心候選自我改進",
+                "title": "跨平台失敗回滾與真實任務陰影重播",
                 "state": "not_verified",
-                "evidence": "需建立隔離 worktree、保留真實任務、陰影重播與人工批准切換。",
+                "evidence": (
+                    "仍需為 Linux、Docker 與直接 CLI 啟動加入外部 watchdog，"
+                    "並擴充真實任務重播集。"
+                ),
             },
         ],
         "targets": [

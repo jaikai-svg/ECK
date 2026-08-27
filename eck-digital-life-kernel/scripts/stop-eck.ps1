@@ -9,9 +9,14 @@ if (-not (Test-Path -LiteralPath $pidPath)) {
 $record = Get-Content -LiteralPath $pidPath -Raw | ConvertFrom-Json
 $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
 if ($process) {
-    $expectedPython = [System.IO.Path]::GetFullPath([string]$record.python)
-    if ([System.IO.Path]::GetFullPath($process.Path) -ne $expectedPython) {
-        throw "PID $($record.pid) no longer belongs to the recorded ECK Python process."
+    $expectedProcess = if ($record.process_path) {
+        [string]$record.process_path
+    } else {
+        [string]$record.python
+    }
+    $expectedProcess = [System.IO.Path]::GetFullPath($expectedProcess)
+    if ([System.IO.Path]::GetFullPath($process.Path) -ne $expectedProcess) {
+        throw "PID $($record.pid) no longer belongs to the recorded ECK process."
     }
     taskkill.exe /PID $process.Id /T /F | Out-Null
     Start-Sleep -Seconds 1

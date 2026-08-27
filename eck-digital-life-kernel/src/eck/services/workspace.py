@@ -35,6 +35,15 @@ class WorkspaceReadService:
 
     def home(self) -> dict[str, Any]:
         kernel = self.application.kernel.status()
+        lifecycle = self.application.skill_lifecycle.list(limit=2000)
+        active_memory_skills = sum(
+            item.active and item.source_kind is SkillSourceKind.EXPERIENCE
+            for item in lifecycle
+        )
+        active_runtime_skills = sum(
+            item.active and item.source_kind is SkillSourceKind.RUNTIME
+            for item in lifecycle
+        )
         missions = self.application.store.list_missions_page(
             limit=6,
             offset=0,
@@ -76,13 +85,12 @@ class WorkspaceReadService:
                     admitted=True
                 ),
                 "knowledge_items": self.application.store.count_knowledge(),
-                "memory_skills": self.application.store.count_skills(),
-                "runtime_skills": len(
-                    [
-                        item
-                        for item in self.application.store.list_runtime_skills(limit=1000)
-                        if item.status.value == "active"
-                    ]
+                "memory_skills": active_memory_skills,
+                "runtime_skills": active_runtime_skills,
+                "available_skills": active_memory_skills + active_runtime_skills,
+                "total_memory_skills": self.application.store.count_skills(),
+                "total_runtime_skills": len(
+                    self.application.store.list_runtime_skills(limit=2000)
                 ),
             },
             "resources": {
@@ -108,6 +116,7 @@ class WorkspaceReadService:
                 **self.application.local_services.status(),
                 "forge": self.application.image_generation.status(),
             },
+            "evolution": self.application.evolution_transactions.status(),
             "resources": resources,
             "project_measurement_policy": (
                 "Workspace reads the latest cached project measurement and never starts a "
@@ -144,6 +153,7 @@ class WorkspaceReadService:
 
     def project(self, mission_id: str) -> dict[str, Any]:
         mission = self.application.store.get_mission(mission_id)
+        revisions = self.application.store.list_mission_revisions(mission_id)
         execution = self._execution_item(mission_id)
         steps = list(execution.get("steps", [])) if execution else []
         cycles = list(execution.get("cycles", [])) if execution else []
@@ -169,10 +179,13 @@ class WorkspaceReadService:
                     "created_at": cycle.get("created_at"),
                 }
             )
+        project = self._project_summary(mission, execution)
+        project["edit_revision_count"] = len(revisions)
         return {
             "schema_version": "eck-workspace-project.v1",
-            "project": self._project_summary(mission, execution),
+            "project": project,
             "mission": mission.model_dump(mode="json"),
+            "edit_revisions": revisions,
             "steps": steps,
             "react_summaries": timeline,
             "artifacts": self._artifact_links(mission),
