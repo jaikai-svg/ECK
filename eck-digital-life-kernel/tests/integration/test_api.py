@@ -164,6 +164,14 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert evolution.status_code == 200
         assert evolution.json()["verified_now"]["skill_self_authoring"] is True
         assert evolution.json()["not_yet_verified"]["automatic_structural_core_activation"]
+        opportunities = client.get("/v1/evolution/opportunities")
+        assert opportunities.status_code == 200
+        assert opportunities.json()["status"]["schema_version"] == (
+            "eck-autonomous-evolution-director.v1"
+        )
+        assert client.post("/v1/evolution/opportunities/scan").status_code == 200
+        assert client.get("/v1/evolution/opportunities/missing").status_code == 404
+        assert client.post("/v1/evolution/opportunities/missing/run").status_code == 404
         soul = client.get("/v1/identity/soul")
         assert soul.status_code == 200
         assert soul.json()["integrity_valid"] is True
@@ -193,6 +201,10 @@ def test_health_dashboard_and_acceptance(application) -> None:
         assert workspace_system.json()["resources"]["project"]["cached"] is True
         assert workspace_system.json()["evolution"]["schema_version"] == (
             "eck-evolution-transaction.v1"
+        )
+        assert workspace_system.json()["evolution"]["director"]["enabled"] is False
+        assert workspace_system.json()["evolution"]["director"]["activation_policy"] == (
+            "independent_heldout_then_human_approval"
         )
         workspace_projects = client.get("/v1/workspace/projects?limit=12&offset=0")
         assert workspace_projects.status_code == 200
@@ -228,6 +240,10 @@ def test_health_dashboard_and_acceptance(application) -> None:
         )
         assert any(
             item["version"] == "P4" and item["state"] == "verified"
+            for item in roadmap.json()["milestones"]
+        )
+        assert any(
+            item["version"] == "P8" and item["state"] == "verified"
             for item in roadmap.json()["milestones"]
         )
 

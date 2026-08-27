@@ -88,6 +88,10 @@ class EvolutionHeldoutPackRequest(BaseModel):
     allow_non_regression: bool = False
 
 
+class EvolutionOpportunityAttachPackRequest(BaseModel):
+    pack_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,79}$")
+
+
 class EvolutionApprovalRequest(BaseModel):
     approved_by: str = Field(min_length=2, max_length=120)
     reason: str = Field(min_length=10, max_length=2000)

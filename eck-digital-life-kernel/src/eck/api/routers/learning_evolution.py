@@ -9,6 +9,7 @@ from eck.api.contracts import (
     EvolutionActivationRequest,
     EvolutionApprovalRequest,
     EvolutionHeldoutPackRequest,
+    EvolutionOpportunityAttachPackRequest,
     EvolutionRollbackRequest,
     LearningThemeStateRequest,
 )
@@ -98,6 +99,61 @@ async def search_learning_skill_tree(
 @router.get("/v1/evolution/status")
 async def evolution_status(app: AppDependency) -> dict[str, Any]:
     return await app.evolution.status()
+
+
+@router.get("/v1/evolution/opportunities")
+async def list_evolution_opportunities(
+    app: AppDependency,
+    limit: int = Query(default=100, ge=1, le=500),
+    status: str | None = Query(default=None, min_length=3, max_length=80),
+) -> dict[str, Any]:
+    return {
+        "status": app.evolution_director.status(),
+        "items": app.evolution_director.list_opportunities(limit=limit, status=status),
+    }
+
+
+@router.get("/v1/evolution/opportunities/{opportunity_id}")
+async def get_evolution_opportunity(
+    opportunity_id: str,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return app.evolution_director.get(opportunity_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/v1/evolution/opportunities/scan")
+async def scan_evolution_opportunities(app: AppDependency) -> dict[str, Any]:
+    return await app.evolution_director.scan()
+
+
+@router.post("/v1/evolution/opportunities/{opportunity_id}/attach-pack")
+async def attach_evolution_opportunity_pack(
+    opportunity_id: str,
+    request: EvolutionOpportunityAttachPackRequest,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return await app.evolution_director.attach_pack(opportunity_id, request.pack_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/v1/evolution/opportunities/{opportunity_id}/run", status_code=202)
+async def run_evolution_opportunity(
+    opportunity_id: str,
+    app: AppDependency,
+) -> dict[str, Any]:
+    try:
+        return await app.evolution_director.run_opportunity(opportunity_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (FileNotFoundError, OSError, RuntimeError, SyntaxError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 @router.get("/v1/identity/soul")
 async def identity_soul(app: AppDependency) -> dict[str, Any]:

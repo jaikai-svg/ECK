@@ -54,6 +54,11 @@
     "/v1/evolution/core-candidates/{candidate_id}/evaluate",
     "/v1/evolution/core-candidates/{candidate_id}/approve",
     "/v1/evolution/core-candidates/{candidate_id}/activate",
-    "/v1/evolution/transactions/{transaction_id}/rollback"
+    "/v1/evolution/transactions/{transaction_id}/rollback",
+    "/v1/evolution/opportunities",
+    "/v1/evolution/opportunities/{opportunity_id}",
+    "/v1/evolution/opportunities/scan",
+    "/v1/evolution/opportunities/{opportunity_id}/attach-pack",
+    "/v1/evolution/opportunities/{opportunity_id}/run"
   ]
 }

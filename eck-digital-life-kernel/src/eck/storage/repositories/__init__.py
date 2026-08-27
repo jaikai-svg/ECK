@@ -1,4 +1,5 @@
 from eck.storage.repositories.event_tasks import EventTaskRepositoryMixin
+from eck.storage.repositories.evolution_opportunities import EvolutionOpportunityRepositoryMixin
 from eck.storage.repositories.evolution_transactions import EvolutionTransactionRepositoryMixin
 from eck.storage.repositories.learning import LearningRepositoryMixin
 from eck.storage.repositories.missions import MissionRepositoryMixin
@@ -8,6 +9,7 @@ from eck.storage.repositories.workspace_quality import WorkspaceQualityRepositor
 
 __all__ = [
     "EventTaskRepositoryMixin",
+    "EvolutionOpportunityRepositoryMixin",
     "EvolutionTransactionRepositoryMixin",
     "LearningRepositoryMixin",
     "MissionRepositoryMixin",

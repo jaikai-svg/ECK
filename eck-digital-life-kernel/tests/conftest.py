@@ -45,6 +45,7 @@ def settings(tmp_path: Path) -> Settings:
         network_enabled=False,
         supervisor_enabled=False,
         autonomous_curriculum_enabled=False,
+        autonomous_evolution_director_enabled=False,
         autonomous_project_lab_enabled=False,
         github_account=None,
         skill_canary_delay_seconds=0,

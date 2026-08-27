@@ -175,6 +175,12 @@ tool_campaign_auto_publish: true
 tool_campaign_workspace_dir: workspace/projects/eck-agent-toolkit
 core_evolution_enabled: true
 core_evolution_timeout_seconds: 900
+autonomous_evolution_director_enabled: true
+autonomous_evolution_initial_delay_seconds: 300
+autonomous_evolution_interval_seconds: 3600
+autonomous_evolution_failure_threshold: 3
+autonomous_evolution_event_window: 2000
+autonomous_core_candidate_drafting_enabled: true
 autonomous_project_lab_enabled: true
 autonomous_project_initial_delay_seconds: 1800
 autonomous_project_interval_seconds: 86400

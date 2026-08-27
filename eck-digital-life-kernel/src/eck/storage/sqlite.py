@@ -9,6 +9,7 @@ from pathlib import Path
 from eck.core.time import iso_now
 from eck.storage.repositories.common import GENESIS_HASH
 from eck.storage.repositories.event_tasks import EventTaskRepositoryMixin
+from eck.storage.repositories.evolution_opportunities import EvolutionOpportunityRepositoryMixin
 from eck.storage.repositories.evolution_transactions import EvolutionTransactionRepositoryMixin
 from eck.storage.repositories.learning import LearningRepositoryMixin
 from eck.storage.repositories.missions import MissionRepositoryMixin
@@ -19,6 +20,7 @@ from eck.storage.repositories.workspace_quality import WorkspaceQualityRepositor
 
 class SQLiteStore(
     EventTaskRepositoryMixin,
+    EvolutionOpportunityRepositoryMixin,
     EvolutionTransactionRepositoryMixin,
     LearningRepositoryMixin,
     MissionRepositoryMixin,
@@ -732,6 +734,32 @@ class SQLiteStore(
                 );
                 CREATE INDEX IF NOT EXISTS idx_evolution_boot_receipts_transaction
                     ON evolution_boot_receipts(transaction_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS evolution_opportunities (
+                    opportunity_id TEXT PRIMARY KEY,
+                    signature_sha256 TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    objective TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    worker TEXT NOT NULL,
+                    failure_type TEXT NOT NULL,
+                    occurrence_count INTEGER NOT NULL,
+                    evidence_sequences_json TEXT NOT NULL,
+                    evidence_event_ids_json TEXT NOT NULL,
+                    target_files_json TEXT NOT NULL,
+                    test_files_json TEXT NOT NULL,
+                    heldout_pack_id TEXT,
+                    candidate_id TEXT,
+                    readiness_json TEXT NOT NULL,
+                    error TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_evolution_opportunities_status
+                    ON evolution_opportunities(status, last_seen_at DESC);
                 """
             )
             self._ensure_column(conn, "tasks", "idempotency_key", "TEXT")

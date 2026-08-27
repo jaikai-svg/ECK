@@ -53,6 +53,7 @@ from eck.services.community_sources import CommunitySourceCatalog
 from eck.services.core_evolution import CoreEvolutionLabService
 from eck.services.evaluations import EvaluationService
 from eck.services.evolution import EvolutionAuditService
+from eck.services.evolution_director import AutonomousEvolutionDirectorService
 from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.identity import IdentityService
 from eck.services.missions import MissionService
@@ -87,6 +88,7 @@ class Application:
     skill_bridge: ResearchSkillBridgeService
     tool_campaign: ToolAcquisitionCampaignService
     core_lab: CoreEvolutionLabService
+    evolution_director: AutonomousEvolutionDirectorService
     evolution_transactions: EvolutionTransactionService
     project_lab: AutonomousProjectLabService
     tasks: TaskService
@@ -255,6 +257,13 @@ def build_application(settings: Settings | None = None) -> Application:
         self_model,
         evolution_transactions,
     )
+    evolution_director = AutonomousEvolutionDirectorService(
+        settings,
+        store,
+        events,
+        core_lab,
+        evolution_transactions,
+    )
     project_lab = AutonomousProjectLabService(
         settings,
         store,
@@ -291,6 +300,7 @@ def build_application(settings: Settings | None = None) -> Application:
         core_lab,
         project_lab,
         evolution_transactions,
+        evolution_director,
     )
     portability_service = CognitiveBundleService(
         settings,
@@ -358,6 +368,7 @@ def build_application(settings: Settings | None = None) -> Application:
         mission_executor,
         resources,
         evolution_transactions,
+        evolution_director,
     )
     return Application(
         settings=settings,
@@ -374,6 +385,7 @@ def build_application(settings: Settings | None = None) -> Application:
         skill_bridge=skill_bridge,
         tool_campaign=tool_campaign,
         core_lab=core_lab,
+        evolution_director=evolution_director,
         evolution_transactions=evolution_transactions,
         project_lab=project_lab,
         tasks=task_service,

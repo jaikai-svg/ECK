@@ -7,6 +7,7 @@ from eck.config import Settings
 from eck.domain.enums import RuntimeSkillStatus
 from eck.runtime.worker import DockerSkillWorker
 from eck.services.core_evolution import CoreEvolutionLabService
+from eck.services.evolution_director import AutonomousEvolutionDirectorService
 from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
@@ -25,6 +26,7 @@ class EvolutionAuditService:
         core_lab: CoreEvolutionLabService,
         project_lab: AutonomousProjectLabService,
         transactions: EvolutionTransactionService,
+        director: AutonomousEvolutionDirectorService,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -34,6 +36,7 @@ class EvolutionAuditService:
         self.core_lab = core_lab
         self.project_lab = project_lab
         self.transactions = transactions
+        self.director = director
         self.project_root = Path(__file__).resolve().parents[3]
 
     async def status(self) -> dict[str, Any]:
@@ -51,6 +54,7 @@ class EvolutionAuditService:
         core_lab = self.core_lab.status()
         project_lab = await self.project_lab.status()
         transactions = self.transactions.status()
+        director = self.director.status()
         verifier = self.project_root / "scripts" / "verify_release.py"
         return {
             "classification": "verified_candidate_self_improvement_not_recursive_agi",
@@ -76,11 +80,13 @@ class EvolutionAuditService:
                 "research_skill_bridge": bridge,
                 "isolated_core_candidate_lab": core_lab,
                 "reviewed_evolution_transactions": transactions,
+                "failure_driven_evolution_director": director,
                 "autonomous_project_lab": project_lab,
             },
             "not_yet_verified": {
                 "automatic_structural_core_activation": True,
                 "held_out_core_candidate_evaluation": False,
+                "autonomous_failure_to_candidate_without_heldout_evidence": True,
                 "dual_kernel_zero_downtime_handoff": True,
                 "automatic_model_weight_training": True,
                 "recursive_open_ended_self_improvement": True,

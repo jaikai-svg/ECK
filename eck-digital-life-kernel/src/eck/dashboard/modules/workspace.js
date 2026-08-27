@@ -493,6 +493,7 @@ async function loadSystemSummary() {
     const services = data?.services;
     const resources = data?.resources;
     const evolution = data?.evolution;
+    const evolutionDirector = evolution?.director;
     const target = element("#system-summary");
     if (!target || !services || !resources)
         return;
@@ -509,9 +510,17 @@ async function loadSystemSummary() {
         ["磁碟可用", formatBytes(disk?.free_bytes)],
         ["ECK 專案", project?.available ? formatBytes(project.logical_bytes) : "尚未測量"],
         ["演化交易", evolution?.transaction_count ?? 0],
+        ["改善機會", evolutionDirector?.opportunity_count ?? 0],
+        ["可評估候選", evolutionDirector?.ready_count ?? 0],
         [
             "最新演化",
             evolution?.latest?.status ?? "尚無交易",
+        ],
+        [
+            "演化閘門",
+            evolutionDirector?.activation_policy === "independent_heldout_then_human_approval"
+                ? "獨立評估＋人工核准"
+                : "尚未就緒",
         ],
     ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`).join("");
     if (archive)

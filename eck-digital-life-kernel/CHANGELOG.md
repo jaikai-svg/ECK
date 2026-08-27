@@ -76,6 +76,9 @@ All notable changes are documented here.
   receipts, auditable Git-revert rollback, and a Windows parent watchdog that can restore only the
   exact recent pending commit after catastrophic startup failure. A fixed-gate pass is no longer
   described as proven improvement.
+- A P8 autonomous evolution director that deduplicates repeated real runtime failures, maps them
+  to bounded source surfaces, requires an independently registered held-out pack, drafts and
+  evaluates at most one isolated candidate, and always stops for explicit human approval.
 
 ### Planned
 

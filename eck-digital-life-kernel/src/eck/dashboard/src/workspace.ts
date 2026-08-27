@@ -522,6 +522,7 @@ async function loadSystemSummary(): Promise<void> {
   const services = data?.services as Record<string, unknown> | undefined;
   const resources = data?.resources as Record<string, unknown> | undefined;
   const evolution = data?.evolution as Record<string, unknown> | undefined;
+  const evolutionDirector = evolution?.director as Record<string, unknown> | undefined;
   const target = element<HTMLElement>("#system-summary");
   if (!target || !services || !resources) return;
   const ollama = services.ollama as Record<string, unknown> | undefined;
@@ -537,9 +538,17 @@ async function loadSystemSummary(): Promise<void> {
     ["磁碟可用", formatBytes(disk?.free_bytes)],
     ["ECK 專案", project?.available ? formatBytes(project.logical_bytes) : "尚未測量"],
     ["演化交易", evolution?.transaction_count ?? 0],
+    ["改善機會", evolutionDirector?.opportunity_count ?? 0],
+    ["可評估候選", evolutionDirector?.ready_count ?? 0],
     [
       "最新演化",
       (evolution?.latest as Record<string, unknown> | undefined)?.status ?? "尚無交易",
+    ],
+    [
+      "演化閘門",
+      evolutionDirector?.activation_policy === "independent_heldout_then_human_approval"
+        ? "獨立評估＋人工核准"
+        : "尚未就緒",
     ],
   ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`).join("");
   if (archive) renderArchiveStatus(archive);

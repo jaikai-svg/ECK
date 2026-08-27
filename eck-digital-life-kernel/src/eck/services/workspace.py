@@ -116,7 +116,10 @@ class WorkspaceReadService:
                 **self.application.local_services.status(),
                 "forge": self.application.image_generation.status(),
             },
-            "evolution": self.application.evolution_transactions.status(),
+            "evolution": {
+                **self.application.evolution_transactions.status(),
+                "director": self.application.evolution_director.status(),
+            },
             "resources": resources,
             "project_measurement_policy": (
                 "Workspace reads the latest cached project measurement and never starts a "

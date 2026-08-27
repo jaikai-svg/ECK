@@ -156,6 +156,11 @@ class EvolutionTransactionService:
                 packs.append(self._load_pack(path.parent.name))
         return sorted(packs, key=lambda item: str(item.get("created_at", "")), reverse=True)
 
+    def get_heldout_pack(self, pack_id: str) -> dict[str, Any]:
+        pack = self._load_pack(pack_id)
+        self._verify_pack_files(pack)
+        return pack
+
     async def evaluate(self, candidate_id: str, pack_id: str) -> dict[str, Any]:
         transaction = self.store.get_evolution_transaction_for_candidate(candidate_id)
         if transaction["status"] not in {

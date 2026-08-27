@@ -215,6 +215,7 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
     self_model = app.self_model.status()
     core_lab = app.core_lab.status()
     evolution_transactions = app.evolution_transactions.status()
+    evolution_director = app.evolution_director.status()
     status_calls = (
         app.skill_bridge.status(), app.project_lab.status(), app.coder_brain.health()
     )
@@ -253,6 +254,7 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
             "core_candidate_count": core_lab["candidate_count"],
             "live_core_mutation": core_lab["live_core_mutation"],
             "reviewed_evolution": evolution_transactions,
+            "autonomous_evolution_director": evolution_director,
             "coder_model": coder.model,
             "coder_ready": coder.available,
             "autonomous_projects": project_lab["project_count"],
@@ -316,6 +318,15 @@ async def roadmap(app: AppDependency) -> dict[str, Any]:
                 "evidence": (
                     "隔離候選、固定閘門、外部隱藏評估、精確 Git tree 核准、"
                     "重啟吸收收據與 Windows 啟動失敗回滾已接入；核心不會熱修改。"
+                ),
+            },
+            {
+                "version": "P8",
+                "title": "證據驅動自治演化導引",
+                "state": "verified",
+                "evidence": (
+                    "只從去重後的重複真實失敗建立改善機會；必須先綁定獨立隱藏評估包，"
+                    "才允許隔離起草候選，結構更新仍須人工核准。"
                 ),
             },
             {

@@ -190,6 +190,16 @@ class Settings(BaseSettings):
     tool_campaign_auto_publish: bool = True
     core_evolution_enabled: bool = True
     core_evolution_timeout_seconds: float = Field(default=900, ge=60, le=3600)
+    autonomous_evolution_director_enabled: bool = True
+    autonomous_evolution_initial_delay_seconds: float = Field(
+        default=300, ge=30, le=86400
+    )
+    autonomous_evolution_interval_seconds: float = Field(
+        default=3600, ge=300, le=604800
+    )
+    autonomous_evolution_failure_threshold: int = Field(default=3, ge=2, le=100)
+    autonomous_evolution_event_window: int = Field(default=2000, ge=100, le=10000)
+    autonomous_core_candidate_drafting_enabled: bool = True
     autonomous_project_lab_enabled: bool = True
     autonomous_project_initial_delay_seconds: float = Field(default=1800, ge=60, le=86400)
     autonomous_project_interval_seconds: float = Field(default=86400, ge=900, le=604800)

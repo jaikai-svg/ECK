@@ -18,6 +18,7 @@ from eck.events.bus import EventBus
 from eck.experimental.p6.mission_executor import DurableMissionExecutor
 from eck.runtime.resources import SystemResourceMonitor
 from eck.services.autonomous_learning import AutonomousLearningService
+from eck.services.evolution_director import AutonomousEvolutionDirectorService
 from eck.services.evolution_transaction import EvolutionTransactionService
 from eck.services.project_lab import AutonomousProjectLabService
 from eck.services.research_skill_bridge import ResearchSkillBridgeService
@@ -42,6 +43,7 @@ class LifeKernel:
         mission_executor: DurableMissionExecutor,
         resources: SystemResourceMonitor,
         evolution_transactions: EvolutionTransactionService,
+        evolution_director: AutonomousEvolutionDirectorService,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -55,12 +57,14 @@ class LifeKernel:
         self.mission_executor = mission_executor
         self.resources = resources
         self.evolution_transactions = evolution_transactions
+        self.evolution_director = evolution_director
         self.phase = KernelPhase.STOPPED
         self._run_task: asyncio.Task[None] | None = None
         self._execution_task: asyncio.Task[TaskRecord] | None = None
         self._supervision_task: asyncio.Task[SupervisorReviewRecord | None] | None = None
         self._curriculum_task: asyncio.Task[TaskRecord | None] | None = None
         self._skill_bridge_task: asyncio.Task[dict[str, Any]] | None = None
+        self._evolution_director_task: asyncio.Task[dict[str, Any]] | None = None
         self._tool_campaign_task: asyncio.Task[dict[str, Any]] | None = None
         self._project_lab_task: asyncio.Task[dict[str, Any]] | None = None
         self._mission_task: asyncio.Task[MissionStepRecord | None] | None = None
@@ -182,6 +186,11 @@ class LifeKernel:
             with suppress(asyncio.CancelledError):
                 await self._skill_bridge_task
             self._skill_bridge_task = None
+        if self._evolution_director_task:
+            self._evolution_director_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._evolution_director_task
+            self._evolution_director_task = None
         if self._tool_campaign_task:
             self._tool_campaign_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -245,6 +254,9 @@ class LifeKernel:
         next_skill_bridge = (
             loop.time() + self.settings.research_skill_bridge_initial_delay_seconds
         )
+        next_evolution_director = (
+            loop.time() + self.settings.autonomous_evolution_initial_delay_seconds
+        )
         next_tool_campaign = loop.time() + self.settings.tool_campaign_initial_delay_seconds
         next_project_lab = (
             loop.time() + self.settings.autonomous_project_initial_delay_seconds
@@ -297,6 +309,15 @@ class LifeKernel:
                     next_skill_bridge = (
                         loop.time() + self.settings.research_skill_bridge_interval_seconds
                     )
+                if self._evolution_director_task and self._evolution_director_task.done():
+                    try:
+                        await self._evolution_director_task
+                    except Exception as exc:
+                        await self._background_failure("autonomous_evolution_director", exc)
+                    self._evolution_director_task = None
+                    next_evolution_director = (
+                        loop.time() + self.settings.autonomous_evolution_interval_seconds
+                    )
                 if self._tool_campaign_task and self._tool_campaign_task.done():
                     try:
                         await self._tool_campaign_task
@@ -327,6 +348,7 @@ class LifeKernel:
                         and self._supervision_task is None
                         and self._curriculum_task is None
                         and self._skill_bridge_task is None
+                        and self._evolution_director_task is None
                         and self._tool_campaign_task is None
                         and self._project_lab_task is None
                         and self._mission_task is None
@@ -381,6 +403,14 @@ class LifeKernel:
                             self._skill_bridge_task = asyncio.create_task(
                                 self.skill_bridge.run_if_needed(),
                                 name="eck-research-skill-bridge",
+                            )
+                        elif (
+                            self.settings.autonomous_evolution_director_enabled
+                            and loop.time() >= next_evolution_director
+                        ):
+                            self._evolution_director_task = asyncio.create_task(
+                                self.evolution_director.run_if_needed(),
+                                name="eck-autonomous-evolution-director",
                             )
                         elif (
                             self.settings.tool_campaign_enabled

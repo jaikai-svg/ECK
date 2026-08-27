@@ -46,6 +46,8 @@
 33. [ECK Workspace Phase 2](33-eck-workspace-phase2.md)
 34. [ECK Workspace 全面品質稽核](34-eck-workspace-quality-audit.md)
 35. [Reviewed Evolution Transaction v1](35-reviewed-evolution-transaction.md)
+36. [ECK 現階段報告與版本路線](36-eck-stage-report-and-version-roadmap.md)
+37. [P8 Autonomous Evolution Director](37-p8-autonomous-evolution-director.md)
 
 ## v0.2 開發規格下載
 
